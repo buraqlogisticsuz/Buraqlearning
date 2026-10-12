@@ -4,7 +4,8 @@
 уровни, рейтинг, журналы и термины, кейсы, ошибки и наставники, сверхзадачи, опросы, учёт турникета.
 Роли: **методист** (admin) и **сотрудник**; наставник — сотрудник с отметкой «наставник».
 
-Сайт: **https://buraqceoassistant-ai.github.io/Buraq-learning/** (демо — `…/Buraq-learning/?demo=1`).
+Сайт: **https://buraqlogisticsuz.github.io/Buraqlearning/** (демо — `…/Buraqlearning/?demo=1`).
+Репозиторий: [buraqlogisticsuz/Buraqlearning](https://github.com/buraqlogisticsuz/Buraqlearning).
 Старый адрес `…/xeeds/learn/` перекидывает сюда.
 
 ## Что где лежит

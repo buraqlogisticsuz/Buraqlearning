@@ -1,6 +1,6 @@
 # BURAQ o‘quv platformasi — учебная платформа для сотрудников
 
-Сайт: https://buraqceoassistant-ai.github.io/Buraq-learning/ · устройство, сервер и настройка — `README.md`.
+Сайт: https://buraqlogisticsuz.github.io/Buraqlearning/ · устройство, сервер и настройка — `README.md`.
 
 Фирменный стиль — обязателен для всего видимого (цвета, шрифт, логотип, кнопки, иконки):
 

@@ -1,5 +1,5 @@
 /**
- * BURAQ o‘quv platformasi — сервер учебной платформы (https://buraqceoassistant-ai.github.io/Buraq-learning/).
+ * BURAQ o‘quv platformasi — сервер учебной платформы (https://buraqlogisticsuz.github.io/Buraqlearning/).
  * Хранит общее состояние платформы на Google Диске владельца скрипта, проверяет вход и каждую правку.
  * Отдельный проект Apps Script — не тот, что у таблицы отгрузок.
  *
