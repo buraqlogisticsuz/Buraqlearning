@@ -1,0 +1,10 @@
+{
+  "name": "buraq-learning",
+  "private": true,
+  "description": "BURAQ o‘quv platformasi — учебная платформа для сотрудников",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node server/index.mjs",
+    "test": "node --test tests/*.test.mjs"
+  }
+}

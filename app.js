@@ -7,6 +7,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   var KEY = 'lor-lms-demo-v8', PASS_MARK = 80;
   /* the server (lms-client.js): its address is in config.js; without it, or with ?demo=1, the demo keeps data in this browser */
   var SV = window.LmsClient && !window.LmsClient.demo ? window.LmsClient : null;
+  // сервер — Apps Script (код для него методист копирует с этой страницы), а не свой сервер на Node (server/, Railway)
+  var GS = !!SV && /^https:\/\/script\.google(usercontent)?\.com\//.test(SV.url);
   var SAY = function () {};   /* a toast by string key — App puts its own in */
 
   /* ---------------- storage & helpers ---------------- */
@@ -5281,10 +5283,10 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
 
   function Foot(p) {
     var t = p.t, s = useState(false), ask = s[0];
-    useEffect(function () { if (SV && p.admin) loadServerCode(); }, []);
+    useEffect(function () { if (GS && p.admin) loadServerCode(); }, []);
     return h('footer', { className: 'app-foot' },
       h('span', null, t(SV ? 'srv_note' : 'demo_note'), p.onTerms ? ' · ' : null, p.onTerms ? h('button', { type: 'button', className: 'app-link', onClick: p.onTerms }, t('terms_link')) : null),
-      SV ? (p.admin ? h('button', { type: 'button', className: 'app-link', onClick: function () { copyServerCode(p.say, t); } }, t('srv_code')) : null)
+      SV ? (GS && p.admin ? h('button', { type: 'button', className: 'app-link', onClick: function () { copyServerCode(p.say, t); } }, t('srv_code')) : null)
       : ask ? h('span', { className: 'app-foot-confirm' }, t('reset_confirm'), ' ',
         h(Btn, { variant: 'ghost', size: 'sm', onClick: function () { s[1](false); } }, t('cancel')),
         h(Btn, { variant: 'outline', size: 'sm', onClick: function () { s[1](false); p.onReset(); } }, t('reset_demo')))
@@ -6224,7 +6226,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var t = p.t, s = useState(null), st = s[0];
     useEffect(function () { return SV.onStatus(function (x) { s[1](x); }); }, []);
     if (!st) return null;
-    var old = p.admin && st.v && st.v < SV.SERVER_V;
+    var old = GS && p.admin && st.v && st.v < SV.SERVER_V;
     var msg = st.rejected ? t('srv_rejected') + ': ' + st.rejected.slice(0, 2).join('; ')
       : st.error ? t('srv_error') + ': ' + st.error
       : st.net === 'off' ? t('srv_offline') + (st.pending ? ' (' + st.pending + ')' : '')

@@ -8,3 +8,6 @@ credentials*
 
 node_modules/
 .DS_Store
+
+# данные сервера при запуске на своём компьютере (node server/index.mjs) — пароли и персональные данные
+data/

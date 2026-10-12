@@ -1,6 +1,7 @@
 # BURAQ o‘quv platformasi — учебная платформа для сотрудников
 
-Сайт: https://buraqlogisticsuz.github.io/Buraqlearning/ · устройство, сервер и настройка — `README.md`.
+Сайт: Railway (`server/index.mjs`, `npm start`) и https://buraqlogisticsuz.github.io/Buraqlearning/ · устройство,
+сервер и настройка — `README.md`.
 
 Фирменный стиль — обязателен для всего видимого (цвета, шрифт, логотип, кнопки, иконки):
 
@@ -11,7 +12,10 @@
 - Шрифт — Neue Montreal из `fonts/` (только латиница; кириллица — Inter), заголовки капсом обычной толщины.
 - Надписи — в `strings.js`, на четырёх языках: uz (основной, латиница), ru, en, zh. Новую надпись — сразу во все четыре.
 - Репозиторий открытый: тексты и тесты стандартов компании (4-bob) и персональные данные сюда не коммитить —
-  они живут только на сервере (Google Apps Script, `tools/lms-gs/`).
+  они живут только на сервере (Railway или Google Apps Script).
+- Код сервера один — `tools/lms-gs/Server.gs`: на Railway его выполняет `server/gas-node.mjs` (сервисы Apps Script
+  на диске), в Google Apps Script — как есть. Файлы сайта, которые отдаёт сервер, — список в `server/index.mjs`
+  и `.github/workflows/pages.yml`: новый файл сайта — в оба.
 - После правки `tools/lms-gs/Server.gs` или `lms-sync.js` — `node tools/build-lms-gs.mjs` (Code.gs и lms-gs-script.js);
   новая версия сервера — `LMS_VERSION` в Server.gs и `SERVER_V` в `lms-client.js`.
 - Проверка: `node --test tests/*.test.mjs` и `node tests/lms-e2e.mjs` (браузер, Playwright).

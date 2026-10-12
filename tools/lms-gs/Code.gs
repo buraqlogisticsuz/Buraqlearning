@@ -576,8 +576,15 @@ function aiUsage_(change) {
   });
 }
 
-/* запрос к ИИ: { messages: [{role, content}], tier: 'quick' | 'default', json } → { text, truncated } */
+/* запрос к ИИ: { messages: [{role, content}], tier: 'quick' | 'default', json } → { text, truncated }.
+   Две половины — aiRequest_ (проверки, лимит, тело запроса) и aiResult_ (ответ Claude API): сервер на Node
+   (server/, Railway) вызывает между ними fetch, не останавливая остальные запросы. */
 function ai_(s, req) {
+  var r = aiRequest_(s, req), res;
+  try { res = UrlFetchApp.fetch(r.url, r.opts); } catch (e) { return aiResult_(r, 0, '', e); }
+  return aiResult_(r, res.getResponseCode(), res.getContentText());
+}
+function aiRequest_(s, req) {
   var key = aiKey_();
   if (!key) throw err_('ai_off', 'ИИ не подключён: задайте ANTHROPIC_API_KEY в свойствах скрипта');
   var st = readState_(), me = me_(st, s), uid = String(me.id), chars = 0;
@@ -590,7 +597,6 @@ function ai_(s, req) {
   var limit = +aiProp_(me.role === 'admin' ? 'AI_DAILY_LIMIT_ADMIN' : 'AI_DAILY_LIMIT', me.role === 'admin' ? AI_LIMIT_ADMIN : AI_LIMIT);
   // место в дневном лимите занимается до запроса (два запроса сразу не обойдут лимит) и возвращается при сбое
   aiUsage_(function (u) { if ((u.n[uid] || 0) >= limit) throw err_('ai_limit', 'Лимит запросов к ИИ на сегодня исчерпан (' + limit + ')'); u.n[uid] = (u.n[uid] || 0) + 1; });
-  var refund = function () { aiUsage_(function (u) { u.n[uid] = Math.max(0, (u.n[uid] || 1) - 1); }); };
 
   var model = aiProp_('AI_MODEL', AI_MODEL);
   var body = { model: model, max_tokens: +aiProp_('AI_MAX_TOKENS', AI_MAX_TOKENS), messages: msgs,
@@ -598,12 +604,15 @@ function ai_(s, req) {
   if (req.json) body.system = 'Reply with valid JSON only: no markdown code fences, no commentary before or after it.';
   var headers = { 'x-api-key': key, 'anthropic-version': '2023-06-01' };
   if (AI_FALLBACK.indexOf(model) >= 0) { body.fallbacks = 'default'; headers['anthropic-beta'] = 'server-side-fallback-2026-07-01'; }
-  var res;
-  try {
-    res = UrlFetchApp.fetch('https://api.anthropic.com/v1/messages', { method: 'post', contentType: 'application/json', headers: headers, payload: JSON.stringify(body), muteHttpExceptions: true });
-  } catch (e) { refund(); throw err_('ai_err', 'Нет связи с Claude API: ' + ((e && e.message) || e)); }
-  var code = res.getResponseCode(), x = null;
-  try { x = JSON.parse(res.getContentText()); } catch (e) {}
+  return { uid: uid, url: 'https://api.anthropic.com/v1/messages',
+    opts: { method: 'post', contentType: 'application/json', headers: headers, payload: JSON.stringify(body), muteHttpExceptions: true } };
+}
+/* ответ Claude API (code, text) или сбой связи (fail) → ответ странице; при сбое место в лимите возвращается */
+function aiResult_(r, code, text, fail) {
+  var uid = r.uid, refund = function () { aiUsage_(function (u) { u.n[uid] = Math.max(0, (u.n[uid] || 1) - 1); }); };
+  if (fail) { refund(); throw err_('ai_err', 'Нет связи с Claude API: ' + ((fail && fail.message) || fail)); }
+  var x = null;
+  try { x = JSON.parse(text); } catch (e) {}
   if (code !== 200 || !x) {
     refund();
     var msg = (x && x.error && x.error.message) || ('HTTP ' + code);
@@ -611,8 +620,8 @@ function ai_(s, req) {
   }
   aiUsage_(function (u) { u.tin += (x.usage && x.usage.input_tokens) || 0; u.tout += (x.usage && x.usage.output_tokens) || 0; });
   if (x.stop_reason === 'refusal') throw err_('refused', 'Claude не стал отвечать на этот запрос');
-  var text = (x.content || []).filter(function (b) { return b && b.type === 'text'; }).map(function (b) { return b.text; }).join('');
-  return { ok: true, text: text, truncated: x.stop_reason === 'max_tokens', model: x.model };
+  var out = (x.content || []).filter(function (b) { return b && b.type === 'text'; }).map(function (b) { return b.text; }).join('');
+  return { ok: true, text: out, truncated: x.stop_reason === 'max_tokens', model: x.model };
 }
 
 /* ---------------- запуск, вход методиста, копии ---------------- */
