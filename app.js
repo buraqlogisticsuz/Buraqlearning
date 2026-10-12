@@ -7,7 +7,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   var KEY = 'lor-lms-demo-v8', PASS_MARK = 80;
   /* the server (lms-client.js): its address is in config.js; without it, or with ?demo=1, the demo keeps data in this browser */
   var SV = window.LmsClient && !window.LmsClient.demo ? window.LmsClient : null;
-  // сервер — Apps Script (код для него методист копирует с этой страницы), а не свой сервер на Node (server/, Railway)
+  // сервер — Apps Script (код для него SOP-менеджер копирует с этой страницы), а не свой сервер на Node (server/, Railway)
   var GS = !!SV && /^https:\/\/script\.google(usercontent)?\.com\//.test(SV.url);
   var SAY = function () {};   /* a toast by string key — App puts its own in */
 
@@ -88,7 +88,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       d.v = 20;
     }
     if (d.v === 20) {
-      /* level requirements become a list of conditions on the target level (the methodist edits them) */
+      /* level requirements become a list of conditions on the target level (the SOP manager edits them) */
       var byId = {}; seedLevels().forEach(function (x) { byId[x.id] = x; });
       var LV = d.levels || [];
       LV.forEach(function (lv, i) {
@@ -382,7 +382,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       workErrors: (db.errors || []).slice(0, 25).map(function (x) { return { employee: userOf(db, x.uid).name, category: x.cat, severity: x.sev, sop: x.lessonId ? lessonTitle(db, x.lessonId) : null, what: x.text, status: x.status }; }),
       aiDrills: (db.drills || []).map(function (x) { return { employee: userOf(db, x.uid).name, scenario: x.scen, score_1_5: x.score, criteria: x.criteria }; }),
       sopUpdatesPendingAck: (db.sopUpdates || []).filter(function (x) { return (x.required || []).some(function (uid) { return !(x.acks || {})[uid]; }); }).map(function (x) { return { sop: lessonTitle(db, x.lessonId), pending: (x.required || []).filter(function (uid) { return !(x.acks || {})[uid]; }).map(function (uid) { return userOf(db, uid).name; }) }; }),
-      initiatives: (db.initiatives || []).map(function (x) { return { type: x.type, area: x.area, title: x.title, status: x.status, author: userOf(db, x.uid).name }; }),
+      initiatives: (db.initiatives || []).filter(function (x) { return !x.to; }).map(function (x) { return { type: x.type, area: x.area, title: x.title, status: x.status, author: userOf(db, x.uid).name }; }),
       propertyNeedsHRAction: (db.assets || []).filter(assetAttn).map(function (a) { return { employee: userOf(db, a.uid).name, item: a.name, status: a.status, note: a.mismatch || (a.issue && a.issue.text) || null }; }),
       alumniAverages: (function () { var a = db.alumni || []; if (!a.length) return null; var s = function (f) { return Math.round(a.reduce(function (x, y) { return x + f(y); }, 0) / a.length); }; return { count: a.length, avgScore: s(function (x) { return x.stats.avgScore; }), avgMinutesPerDay: s(function (x) { return x.stats.avgMinutes; }), avgDaysToFinish: s(function (x) { return x.stats.days; }) }; })(),
       dailyGoalMinutes: GOAL
@@ -399,15 +399,15 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       text = (text || '').trim(); if (!text || busy[0] || !sampler) return;
       var ls = accessibleLessons(db, u), picks = pickLessons(ls, text + ' ' + msgs.filter(function (m) { return m.role === 'user'; }).slice(-1).map(function (m) { return m.content; }).join(' '), p.lessonId, admin ? 2 : 3);
       var rules = [
-        admin ? 'Siz BURAQ Logistics kompaniyasining korporativ o‘quv platformasida (BURAQ o‘quv platformasi) metodist (admin) uchun AI-yordamchisiz. Standartlar matni va xodimlar progressi (ANALITIKA JSON) asosida yordam berasiz: kim orqada qolayotganini aniqlash, savollarga javob loyihasi, standartlarni yaxshilash takliflari, xodimlar kayfiyati (pulse-so‘rovnoma), tashabbuslar va mol-mulk hisobi bo‘yicha xulosalar.'
+        admin ? 'Siz BURAQ Logistics kompaniyasining korporativ o‘quv platformasida (BURAQ o‘quv platformasi) SOP menejeri (admin) uchun AI-yordamchisiz. Standartlar matni va xodimlar progressi (ANALITIKA JSON) asosida yordam berasiz: kim orqada qolayotganini aniqlash, savollarga javob loyihasi, standartlarni yaxshilash takliflari, xodimlar kayfiyati (pulse-so‘rovnoma), tashabbuslar va mol-mulk hisobi bo‘yicha xulosalar.'
           : 'Siz BURAQ Logistics kompaniyasining korporativ o‘quv platformasidagi (BURAQ o‘quv platformasi) AI-mentorsiz. Yangi xodimga kompaniya standartlarini (SOP) tushuntirasiz.',
         'Qoidalar:',
-        '- Faqat quyida berilgan STANDARTLAR matniga (va adminga ANALITIKA ma’lumotlariga) tayaning. Matnda yo‘q narsani o‘ylab topmang. Javob topilmasa, buni ochiq ayting' + (admin ? '.' : ' va “Metodistga yuborish” tugmasi orqali savol yuborishni taklif qiling.'),
+        '- Faqat quyida berilgan STANDARTLAR matniga (va adminga ANALITIKA ma’lumotlariga) tayaning. Matnda yo‘q narsani o‘ylab topmang. Javob topilmasa, buni ochiq ayting' + (admin ? '.' : ' va “SOP menejeriga yuborish” tugmasi orqali savol yuborishni taklif qiling.'),
         '- Javob tili: ' + (LANG_NAME[p.lang] || LANG_NAME.uz) + '. Qisqa va aniq yozing; jarayonni qadamlar ro‘yxati bilan bering. Oddiy markdown (ro‘yxat, **qalin**) mumkin, jadval ishlatmang.',
         '- Javob oxirida bitta qatorda manbani yozing, masalan: "Manba: 4.2. Omborda yukni qabul qilish standartlari".',
         admin ? '' : '- Test savollariga tayyor javob varianti (A/B/C) aytmang — mavzuni tushuntiring.',
         '- Mijozlarning shaxsiy ma’lumotlari, parollar kabi maxfiy ma’lumotlarni so‘ramang va tarqatmang.',
-        'Foydalanuvchi: ' + u.name + ', lavozimi: ' + u.position + ', status: ' + (admin ? 'metodist' : u.status) + '.',
+        'Foydalanuvchi: ' + u.name + ', lavozimi: ' + u.position + ', status: ' + (admin ? 'SOP menejeri' : u.status) + '.',
         admin ? '\nANALITIKA (JSON):\n' + JSON.stringify(analyticsFor(db)) : '',
         '\nPLATFORMADAGI DARSLAR RO‘YXATI: ' + ls.map(function (l) { return l.title; }).join('; '),
         (function () { var g = glossaryBlock(db, u); return g ? '\nKOMPANIYA ATAMALARI (lug‘at — javobda shu ta’riflardan foydalaning):\n' + g : ''; })(),
@@ -817,13 +817,13 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       var text = src(), hasText = plain(draft.html).length > 40 || (draft.steps || []).length;
       if (kind !== 'custom' && !hasText) { err[1](t('ai_empty_text')); return; }
       if (kind === 'custom' && !instr[0].trim()) return;
-      var head = 'Siz BURAQ Logistics kompaniyasining o‘quv platformasida metodistga yordam beruvchi AI-muharrirsiz. Kontent tili: ' + LANG + '.\n';
+      var head = 'Siz BURAQ Logistics kompaniyasining o‘quv platformasida SOP menejeriga yordam beruvchi AI-muharrirsiz. Kontent tili: ' + LANG + '.\n';
       var prompt, json = false;
       if (kind === 'quiz') { json = true; prompt = head + 'Quyidagi standart asosida ' + qn[0] + ' ta test savolini tuzing. Har bir savol standartdagi aniq qoida, muddat, raqam yoki mas’ul shaxsni tekshirsin; to‘g‘ri javob matnda bo‘lishi shart. 4 ta variant, bittasi to‘g‘ri, qolganlari ishonarli, lekin noto‘g‘ri. To‘g‘ri variant o‘rni har xil bo‘lsin.\nFaqat JSON massiv qaytaring: [{"q":"savol","options":["A","B","C","D"],"answer":0}] (answer — to‘g‘ri variant indeksi 0–3).\n' + ((draft.quiz || []).length ? 'Mavjud savollarni takrorlamang: ' + draft.quiz.map(function (x) { return x.q; }).join(' | ') + '\n' : '') + '\nSTANDART:\n' + text; }
       else if (kind === 'steps') { json = true; prompt = head + 'Quyidagi standartdan asosiy ish jarayonini 4–8 ta ketma-ket qadamga ajrating. Har qadam — bitta aniq harakat (kim nima qiladi, qachongacha). "who" — ishtirok etuvchi rollar zanjiri (kim → kimga), standartdagi nomlar bilan.\nFaqat JSON massiv qaytaring: [{"text":"harakat","who":["Omborchi","Logist"]}].\n\nSTANDART:\n' + text; }
       else if (kind === 'intro') { prompt = head + 'Quyidagi standart uchun darsning qisqa kirishini yozing: 1–2 gap, xodimga bu standart nima uchun kerakligini tushuntirsin. Faqat kirish matnini qaytaring, qo‘shtirnoqsiz va markdownsiz.\n\nSTANDART:\n' + text; }
-      else if (kind === 'clarify') { prompt = head + 'Xodimlar ushbu standart bo‘yicha savollar berishgan. Standartning qaysi joylari noaniq ekanini aniqlang va har biri uchun standartga qo‘shiladigan aniq matnni taklif qiling. Tuzilma: har bir savol uchun "**Muammo:** …" va "**Taklif qilinadigan matn:** …". Faqat standartga tayanib yozing; standartda javob bo‘lmasa, buni ochiq ayting va metodist aniqlashtirishi kerakligini yozing.\n\nSAVOLLAR:\n' + (p.questions || []).map(function (q, i) { return (i + 1) + '. ' + q; }).join('\n') + '\n\nSTANDART:\n' + text; }
-      else { prompt = head + 'Metodist topshirig‘i: ' + instr[0].trim() + '\n\nNatijani darsning YANGI TO‘LIQ standart matni sifatida HTML ko‘rinishida qaytaring. Faqat quyidagi teglar: <h3>, <h4>, <p>, <strong>, <em>, <ul>, <ol>, <li>, <table>, <tr>, <th>, <td>, <blockquote> (eslatma uchun), <br>. Mavjud <img ...> teglarini o‘zgartirmasdan saqlang. Faktlar, raqamlar va muddatlarni o‘ylab topmang: agar topshiriq yangi mavzu bo‘lsa va ma’lumot yetarli bo‘lmasa, [metodist to‘ldiradi] belgisini qo‘ying. Faqat HTML qaytaring, izohsiz va ``` belgilarisiz.\n\nJORIY MATN (HTML):\n' + (draft.html || '').slice(0, 30000) + '\n\nDars nomi: ' + draft.title; }
+      else if (kind === 'clarify') { prompt = head + 'Xodimlar ushbu standart bo‘yicha savollar berishgan. Standartning qaysi joylari noaniq ekanini aniqlang va har biri uchun standartga qo‘shiladigan aniq matnni taklif qiling. Tuzilma: har bir savol uchun "**Muammo:** …" va "**Taklif qilinadigan matn:** …". Faqat standartga tayanib yozing; standartda javob bo‘lmasa, buni ochiq ayting va SOP menejeri aniqlashtirishi kerakligini yozing.\n\nSAVOLLAR:\n' + (p.questions || []).map(function (q, i) { return (i + 1) + '. ' + q; }).join('\n') + '\n\nSTANDART:\n' + text; }
+      else { prompt = head + 'SOP menejeri topshirig‘i: ' + instr[0].trim() + '\n\nNatijani darsning YANGI TO‘LIQ standart matni sifatida HTML ko‘rinishida qaytaring. Faqat quyidagi teglar: <h3>, <h4>, <p>, <strong>, <em>, <ul>, <ol>, <li>, <table>, <tr>, <th>, <td>, <blockquote> (eslatma uchun), <br>. Mavjud <img ...> teglarini o‘zgartirmasdan saqlang. Faktlar, raqamlar va muddatlarni o‘ylab topmang: agar topshiriq yangi mavzu bo‘lsa va ma’lumot yetarli bo‘lmasa, [SOP menejeri to‘ldiradi] belgisini qo‘ying. Faqat HTML qaytaring, izohsiz va ``` belgilarisiz.\n\nJORIY MATN (HTML):\n' + (draft.html || '').slice(0, 30000) + '\n\nDars nomi: ' + draft.title; }
       if (kind === 'improve') { prompt = head + 'Quyidagi standart matnini o‘qish uchun tuzilmaga keltiring: aniq sarlavhalar (<h4>), qadamlar uchun raqamli ro‘yxat, "ESLATMA" va "MUHIM" joylar uchun <blockquote>, imlo xatolarini tuzating. MAZMUN, RAQAMLAR, MUDDATLAR VA TALABLARNI O‘ZGARTIRMANG, hech narsa qo‘shmang va olib tashlamang. Mavjud <img ...> va <div class="ilova"> teglarini o‘zgartirmasdan saqlang. Faqat quyidagi teglar: <h3>, <h4>, <p>, <strong>, <em>, <ul>, <ol>, <li>, <table>, <tr>, <th>, <td>, <blockquote>, <br>, <div class="ilova">, <img>. Faqat HTML qaytaring, izohsiz va ``` belgilarisiz.\n\nMATN (HTML):\n' + (draft.html || '').slice(0, 30000); }
       var isHtml = kind === 'improve' || kind === 'custom';
       var c = new AbortController(); ctl.current = c;
@@ -886,12 +886,13 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   function levelGrow(lv, lang) { var o = (lv && lv.grow) || lvlLib(lv, 'grow'); return (o[lang] || o.uz || []).slice(); }
   function levelPerks(lv, lang) { var o = (lv && lv.perks) || lvlLib(lv, 'perks'); return (o[lang] || o.uz || []).slice(); }
   function levelDesc(lv, lang) { if (!lv) return ''; var d = lv.desc || lvlLib(lv, 'desc'); return d[lang] || d.uz || ''; }
-  /* keepAt: the employee’s own device congratulates but does not move the level date — with the server that is the methodist’s */
+  /* keepAt: the employee’s own device congratulates but does not move the level date — with the server that is the SOP manager’s */
   function markPromotion(d, uid, li, fromLi, keepAt) {
     d.users.forEach(function (x) { if (x.id === uid) { x.celebrate = { kind: 'level', li: li, fromLi: fromLi, at: Date.now() }; x.lastRank = String(li); if (!keepAt && (!x.levelAt || Date.now() - x.levelAt > 6e4)) x.levelAt = Date.now(); } });
     d.notifications.unshift({ id: nextId(d), userId: uid, promo: { li: li }, text: '', path: true, at: Date.now(), read: false });
   }
   function notifText(n, db, lang, t) {
+    if (n.kind === 'ini_in') return t('n_ini_in');
     if (n.kind === 'ini' && n.ini) return tpl(t('n_ini_' + n.ini.s), { x: n.ini.title }) + (n.ini.xp ? ' (+' + n.ini.xp + ' XP)' : '') + (n.ini.reply ? ' — ' + n.ini.reply : '');
     if (n.kind === 'asset' && n.asset) return tpl(t('n_as_' + n.asset.k), { x: n.asset.name });
     if (n.kind === 'pulse') return t('n_pulse');
@@ -1718,13 +1719,17 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
 
   /* ======================= 3. INITIATIVES (tashabbus) ======================= */
   var INI_TYPES = ['problem', 'idea', 'benefit'];
+  /* whom an employee sends an initiative to — each has a login of their own (role 'leader', post) and sees only theirs;
+     the SOP manager does not read them (the server hides the text from the admin) */
+  var INI_TO = ['ceo', 'pm', 'boss'];
+  function leadersOf(db, post) { return db.users.filter(function (u) { return u.role === 'leader' && (!post || u.post === post); }); }
   var INI_AREAS = ['warehouse', 'transport', 'customs', 'clients', 'office', 'it', 'training', 'other'];
   var INI_STATUS = ['new', 'review', 'accepted', 'done', 'declined'];
   var INI_BADGE = { new: 'todo', review: 'in-progress', accepted: 'exam-ready', done: 'passed', declined: 'failed' };
   function IniStatus(p) { return h(Badge, { status: INI_BADGE[p.s] || 'todo', lang: p.lang }, p.t('is_' + p.s)); }
   function IniType(p) { return h('span', { className: 'ini-type t-' + p.type }, h(Ico, { name: p.type, size: 14, w: 1.8 }), p.t('it_' + p.type)); }
   function iniXp(x, s) { return (s === 'accepted' || s === 'done' ? XP_INI_OK : 0) + (s === 'done' ? XP_INI_DONE : 0); }
-  function iniNotify(d, x, s, reply) { d.notifications.unshift({ id: nextId(d), userId: x.uid, kind: 'ini', ini: { title: x.title, s: s, reply: reply || '', xp: Math.max(0, iniXp(x, s) - iniXp(x, x.status)) }, text: '', route: 'ideas', at: Date.now(), read: false }); }
+  function iniNotify(d, x, s, reply) { d.notifications.unshift({ id: nextId(d), userId: x.uid, kind: 'ini', ini: { title: x.title, s: s, reply: reply || '', xp: Math.max(0, iniXp(x, s) - iniXp(x, x.status)), to: x.to }, text: '', route: 'ideas', at: Date.now(), read: false }); }
 
   function IniButton(p) {
     return h('button', { type: 'button', className: 'ini-btn', onClick: p.onClick, title: p.t('ini_btn_hint'), 'aria-label': p.t('ini_btn') + ' — ' + p.t('ini_btn_hint') },
@@ -1741,7 +1746,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
 
   function IniModal(p) {
     var t = p.t, u = p.user, sampler = p.sampler;
-    var f = useState({ type: '', area: '', title: '', text: '', benefit: '' }), v = f[0];
+    var f = useState({ to: '', type: '', area: '', title: '', text: '', benefit: '' }), v = f[0];
     var er = useState({}), done = useState(false), ai = useState(null), aiBusy = useState(false), aiE = useState(''), ctl = useRef(null), boxRef = useRef(null);
     useEffect(function () { function k(e) { if (e.key === 'Escape') close(); } window.addEventListener('keydown', k); return function () { window.removeEventListener('keydown', k); if (ctl.current) ctl.current.abort(); }; }, []);
     useEffect(function () { if (boxRef.current) { var b = boxRef.current.querySelector('.ini-types button'); if (b) b.focus({ preventScroll: true }); } }, []);
@@ -1759,12 +1764,18 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     }
     function submit() {
       var e = {};
+      if (!v.to) e.to = t('ini_pick_to');
       if (!v.type) e.type = t('ini_pick_type');
       if (!v.area) e.area = t('fill_required');
       if (!v.title.trim()) e.title = t('fill_required');
       if (v.text.trim().length < 15) e.text = t('ini_text_short');
       er[1](e); if (Object.keys(e).length) { var first = boxRef.current && boxRef.current.querySelector('.is-error, [aria-invalid="true"]'); if (first && first.focus) first.focus(); return; }
-      p.update(function (d) { d.initiatives = d.initiatives || []; d.initiatives.unshift({ id: 'i' + nextId(d), uid: u.id, type: v.type, area: v.area, title: v.title.trim(), text: v.text.trim(), benefit: v.benefit.trim(), status: 'new', at: Date.now() }); });
+      p.update(function (d) {
+        d.initiatives = d.initiatives || [];
+        d.initiatives.unshift({ id: 'i' + nextId(d), uid: u.id, to: v.to, type: v.type, area: v.area, title: v.title.trim(), text: v.text.trim(), benefit: v.benefit.trim(), status: 'new', at: Date.now() });
+        // the recipient learns there is something new — without the title (no one else should read it)
+        leadersOf(d, v.to).forEach(function (l) { d.notifications.unshift({ id: nextId(d), userId: l.id, kind: 'ini_in', ini: { to: v.to }, text: '', route: 'ideas', at: Date.now(), read: false }); });
+      });
       done[1](true);
     }
     var ty = v.type || 'idea';
@@ -1780,6 +1791,14 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           : h(F, null,
             h('div', { className: 'ini-head' }, h('span', { className: 'ini-head-ico', 'aria-hidden': true }, h(Ico, { name: 'bulb', size: 22, w: 1.8 })), h('div', null, h('span', { className: 'lor-eyebrow' }, t('ini_eyebrow')), h('h2', { className: 'lor-h', id: 'ini-h' }, t('ini_title')))),
             h('p', { className: 'lor-muted' }, t('ini_intro')),
+            h('span', { className: 'lor-field-label ini-to-l', id: 'ini-to-l' }, t('ini_to'), h('span', { className: 'lor-req', 'aria-hidden': true }, '*')),
+            h('div', { className: 'ini-types ini-to', role: 'radiogroup', 'aria-labelledby': 'ini-to-l' }, INI_TO.map(function (x) {
+              var who = leadersOf(p.db, x).map(function (l) { return l.name; }).join(', ');
+              return h('button', { key: x, type: 'button', role: 'radio', 'aria-checked': v.to === x, className: cx('ini-type-card ini-to-card', v.to === x && 'is-on'), onClick: function () { set('to', x); } },
+                h('span', { className: 'ini-tc-ico', 'aria-hidden': true }, h(Ico, { name: 'team', size: 20, w: 1.8 })), h('b', null, t('ini_to_' + x)), h('span', null, who || t('ini_to_sub_' + x)));
+            })),
+            er[0].to ? h('span', { className: 'lor-field-error' }, er[0].to) : h('span', { className: 'lor-sm lor-muted' }, t('ini_to_hint')),
+            h('span', { className: 'lor-field-label ini-to-l' }, t('ini_type'), h('span', { className: 'lor-req', 'aria-hidden': true }, '*')),
             h('div', { className: 'ini-types', role: 'radiogroup', 'aria-label': t('ini_type') }, INI_TYPES.map(function (x) {
               return h('button', { key: x, type: 'button', role: 'radio', 'aria-checked': v.type === x, className: cx('ini-type-card', 't-' + x, v.type === x && 'is-on'), onClick: function () { set('type', x); } },
                 h('span', { className: 'ini-tc-ico', 'aria-hidden': true }, h(Ico, { name: x, size: 20, w: 1.8 })), h('b', null, t('it_' + x)), h('span', null, t('it_' + x + '_sub')));
@@ -1814,7 +1833,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     }
     var dirty = st[0] !== x.status || rp[0].trim() !== (x.reply || '');
     return h('article', { className: cx('box ini-item', 'st-' + x.status) },
-      h('div', { className: 'ini-item-h' }, h(IniType, { type: x.type, t: t }), h('span', { className: 'ini-area' }, t('ia_' + x.area)), h('span', { className: 'lor-sm lor-muted' }, fmt(x.at, t)), h('span', { className: 'ini-sp' }), h(IniStatus, { s: x.status, t: t, lang: p.lang })),
+      h('div', { className: 'ini-item-h' }, h(IniType, { type: x.type, t: t }), h('span', { className: 'ini-area' }, t('ia_' + x.area)), x.to ? h('span', { className: 'ini-area ini-to-chip' }, '→ ' + t('ini_to_s_' + x.to)) : null, h('span', { className: 'lor-sm lor-muted' }, fmt(x.at, t)), h('span', { className: 'ini-sp' }), h(IniStatus, { s: x.status, t: t, lang: p.lang })),
       h('h3', { className: 'ini-title' }, x.title),
       admin ? h('div', { className: 'ini-author' }, h(Av, { name: author, size: 26 }), h('span', null, author, h('small', null, au.position + ' · ' + au.department))) : null,
       h('p', { className: 'ini-pre' }, x.text),
@@ -1848,8 +1867,10 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, tpl(t('ini_xp_note'), { a: XP_INI_OK, b: XP_INI_DONE }))));
   }
 
+  /* the reviewer's list: a recipient (CEO, PM, Boss) — the initiatives sent to them; the SOP manager — old ones without a recipient */
   function IniAdmin(p) {
-    var t = p.t, db = p.db, all = (db.initiatives || []).slice().sort(function (a, b) { return b.at - a.at; });
+    var only = p.only || function (x) { return !x.to; };
+    var t = p.t, db = p.db, all = (db.initiatives || []).filter(only).sort(function (a, b) { return b.at - a.at; });
     var fs = useState('open'), fty = useState(''), far = useState(''), ai = useState(''), aiBusy = useState(false), aiE = useState('');
     var SEG = [['open', t('ini_f_open')], ['new', t('is_new')], ['review', t('is_review')], ['accepted', t('is_accepted')], ['done', t('is_done')], ['declined', t('is_declined')], ['all', t('all')]];
     function inSeg(x, s) { return s === 'all' ? true : s === 'open' ? (x.status === 'new' || x.status === 'review') : x.status === s; }
@@ -1860,7 +1881,16 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       ai[1](''); aiE[1](''); aiBusy[1](true);
       p.sampler(prompt, { onText: function (x) { ai[1](x.text); } }).then(function (r) { ai[1](r.text); }).catch(function (e) { if (e && e.text) ai[1](e.text); aiE[1](aiErr(e, t)); }).then(function () { aiBusy[1](false); });
     }
+    var routed = p.only ? [] : (db.initiatives || []).filter(function (x) { return x.to; });
     return h(F, null,
+      p.only ? null : h('section', { className: 'box ini-routed' },
+        h('span', { className: 'lor-eyebrow' }, t('fb_routed_t')),
+        h('p', { className: 'lor-sm', style: { margin: 0 } }, t('fb_routed_p')),
+        h('div', { className: 'ini-routed-list' }, INI_TO.map(function (x) {
+          var mine = routed.filter(function (y) { return y.to === x; }), who = leadersOf(db, x).map(function (l) { return l.name; }).join(', ');
+          return h('div', { key: x, className: 'ini-routed-i' }, h('b', null, t('ini_to_' + x)), h('span', { className: 'lor-sm lor-muted' }, who || t('ld_none')),
+            h('span', { className: 'lor-sm' }, tpl(t('fb_routed_n'), { n: mine.length, m: mine.filter(function (y) { return y.status === 'new'; }).length })));
+        }))),
       h('div', { className: 'tiles' },
         [['new', t('is_new')], ['review', t('is_review')], ['accepted', t('is_accepted')], ['done', t('is_done')]].map(function (x) { return h('div', { key: x[0], className: 'tile' }, h('span', { className: 'lor-eyebrow' }, x[1]), h('b', null, all.filter(function (y) { return y.status === x[0]; }).length)); })),
       h('div', { className: 'seg', role: 'tablist' }, SEG.map(function (x) { var n = all.filter(function (y) { return inSeg(y, x[0]); }).length; return h('button', { key: x[0], type: 'button', role: 'tab', 'aria-selected': fs[0] === x[0], className: fs[0] === x[0] ? 'is-on' : '', onClick: function () { fs[1](x[0]); } }, x[1] + ' · ' + n); })),
@@ -1882,7 +1912,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   function FeedbackAdmin(p) {
     var t = p.t, db = p.db, tb = useState(p.tab || 'ini'), tab = tb[0];
     useEffect(function () { if (p.tab) tb[1](p.tab); }, [p.tab]);
-    var nNew = (db.initiatives || []).filter(function (x) { return x.status === 'new'; }).length;
+    var nNew = (db.initiatives || []).filter(function (x) { return !x.to && x.status === 'new'; }).length;
     return h('div', { className: 'app-wrap' },
       h('div', { className: 'page-head' }, h('div', null, h('span', { className: 'lor-eyebrow' }, t('fb_eyebrow')), h('h1', { className: 'lor-title' }, t('nav_feedback'), h(PageTip, { t: t, id: 'feedback' })))),
       h('div', { className: 'lor-tabs fb-tabs', role: 'tablist' },
@@ -2075,7 +2105,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     function finish() {
       if (!sampler || busy[0]) return;
       var dialog = msgs.filter(function (m) { return m.content; }).map(function (m) { return (m.role === 'user' ? 'XODIM: ' : 'QARSHI TOMON: ') + m.content; }).join('\n');
-      var prompt = 'Siz BURAQ Logistics metodististisiz. Xodim rolli mashqni bajardi. Uning javoblarini KOMPANIYA STANDARTI asosida baholang.\n' +
+      var prompt = 'Siz BURAQ Logistics SOP menejerisiz. Xodim rolli mashqni bajardi. Uning javoblarini KOMPANIYA STANDARTI asosida baholang.\n' +
         'Baholash mezonlari (har biri 1 dan 5 gacha butun son):\n- sop: javoblar standartga qanchalik mos\n- tone: ohang va muloqot madaniyati\n- full: javoblarning to‘liqligi (muddat, mas’ul, keyingi qadam aytilganmi)\n- safe: xavfsizlik va maxfiylik qoidalari buzilmaganmi\n' +
         'Qoidalar: faqat standart matniga tayaning; xodimni hurmat bilan, aniq va foydali baholang. "good" — 1–3 ta kuchli tomon, "improve" — 1–3 ta aniq tavsiya (nima deyish kerak edi). "summary" — 1–2 gapli umumiy xulosa. Til: ' + (LANG_NAME[lang] || LANG_NAME.uz) + '.\n' +
         'Faqat JSON qaytaring: {"sop":4,"tone":4,"full":3,"safe":5,"good":["..."],"improve":["..."],"summary":"..."}\n\n' +
@@ -2172,13 +2202,13 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         h(Btn, { variant: 'primary', arrow: true, onClick: p.onAck }, t('sop_ack'))));
   }
 
-  /* methodist: after saving a changed SOP, ask everyone who already passed it to read the changes */
+  /* SOP manager: after saving a changed SOP, ask everyone who already passed it to read the changes */
   function SopNotifyPanel(p) {
     var t = p.t, db = p.db, x = p.x, sampler = p.sampler;
     var sum = useState(''), busy = useState(false), er = useState(''), dys = useState('3');
     function ai() {
       if (!sampler || busy[0]) return;
-      var prompt = 'Siz BURAQ Logistics metodististiga yordam beruvchi AI-muharrirsiz. Quyida kompaniya standartining ESKI va YANGI matni berilgan. Xodimlar uchun nima o‘zgarganini 2–4 ta qisqa punktda yozing.\n' +
+      var prompt = 'Siz BURAQ Logistics SOP menejeriga yordam beruvchi AI-muharrirsiz. Quyida kompaniya standartining ESKI va YANGI matni berilgan. Xodimlar uchun nima o‘zgarganini 2–4 ta qisqa punktda yozing.\n' +
         'Qoidalar: har bir punkt "• " bilan boshlansin va bitta aniq o‘zgarishni bildirsin (nima edi → nima bo‘ldi). Faqat haqiqatan o‘zgargan narsalarni yozing, yangi fakt o‘ylab topmang. Imlo va formatdagi mayda o‘zgarishlarni yozmang. Til: ' + (LANG_NAME[p.lang] || LANG_NAME.uz) + '. Faqat punktlarni qaytaring.\n\n' +
         'ESKI MATN:\n' + x.before.slice(0, 14000) + '\n\nYANGI MATN:\n' + x.after.slice(0, 14000);
       busy[1](true); er[1]('');
@@ -2552,8 +2582,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     }
     function aiFill() {
       if (!sampler || busy[0]) return;
-      var prompt = 'Siz BURAQ Logistics kompaniyasining metodististiga yordam beruvchi AI-muharrirsiz. Quyida haqiqiy ish holati (keys) haqida qisqa yozuv berilgan. Uni xodimlar o‘rganadigan to‘liq keys-stadiga aylantiring.\n' +
-        'Qoidalar: faqat berilgan matndagi faktlarga tayaning, yangi raqam, ism yoki sana o‘ylab topmang. Noma’lum joyni [metodist to‘ldiradi] deb belgilang. Til: ' + (LANG_NAME[p.lang] || LANG_NAME.uz) + '.\n' +
+      var prompt = 'Siz BURAQ Logistics kompaniyasining SOP menejeriga yordam beruvchi AI-muharrirsiz. Quyida haqiqiy ish holati (keys) haqida qisqa yozuv berilgan. Uni xodimlar o‘rganadigan to‘liq keys-stadiga aylantiring.\n' +
+        'Qoidalar: faqat berilgan matndagi faktlarga tayaning, yangi raqam, ism yoki sana o‘ylab topmang. Noma’lum joyni [SOP menejeri to‘ldiradi] deb belgilang. Til: ' + (LANG_NAME[p.lang] || LANG_NAME.uz) + '.\n' +
         'Faqat JSON qaytaring: {"title":"qisqa sarlavha (70 belgigacha)","situation":"nima bo‘ldi — 2-4 gap","actions":["qadam 1","qadam 2"],"result":"natija, raqamlar bilan","lesson":"xulosa: xodim nimani o‘rganishi kerak — 1-3 gap","mistakes":"qanday xato qilingan","tags":["teg1","teg2","teg3"]}\n\n' +
         'YOZUV:\nSarlavha: ' + (draft.title || '—') + '\nHolat: ' + (draft.situation || '—') + '\nQo‘shimcha: ' + [(draft.actions || []).join('; '), draft.result, draft.lesson, draft.mistakes].filter(Boolean).join(' | ');
       busy[1]('fill'); aiErrS[1]('');
@@ -2636,7 +2666,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       })));
   }
 
-  /* ======================= FEATURES 5: company database (journal templates) + terminology, access controlled by the methodist ======================= */
+  /* ======================= FEATURES 5: company database (journal templates) + terminology, access controlled by the SOP manager ======================= */
 
   var COL_TYPES = ['text', 'number', 'date', 'select', 'user'];
   var FILE_MAX = 1500000, FILES_MAX = 6;
@@ -2661,7 +2691,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   function deptList(db) { return uniq(emps(db).map(function (u) { return u.department; })).sort(); }
   function posList(db) { return uniq(emps(db).map(function (u) { return u.position; })).sort(); }
 
-  /* who may see a journal / term — the methodist sets this per record */
+  /* who may see a journal / term — the SOP manager sets this per record */
   function canSee(db, u, a) {
     if (!u) return false;
     if (u.role === 'admin') return true;
@@ -3049,8 +3079,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     function aiFill() {
       if (!sampler || busy[0] || !String(draft.term || '').trim()) return;
       var picks = pickLessons(ls, draft.term + ' ' + (draft.short || ''), null, 2);
-      var prompt = 'Siz BURAQ Logistics kompaniyasi metodististiga yordam beruvchi AI-muharrirsiz. Kompaniya ichki atamalar lug‘ati uchun bitta atamani tushuntiring.\n' +
-        'Qoidalar: quyidagi STANDARTLAR matniga tayaning; matnda yo‘q raqam, muddat yoki ismni o‘ylab topmang. Noma’lum joyni [metodist to‘ldiradi] deb belgilang. Til: ' + (LANG_NAME[p.lang] || LANG_NAME.uz) + '.\n' +
+      var prompt = 'Siz BURAQ Logistics kompaniyasi SOP menejeriga yordam beruvchi AI-muharrirsiz. Kompaniya ichki atamalar lug‘ati uchun bitta atamani tushuntiring.\n' +
+        'Qoidalar: quyidagi STANDARTLAR matniga tayaning; matnda yo‘q raqam, muddat yoki ismni o‘ylab topmang. Noma’lum joyni [SOP menejeri to‘ldiradi] deb belgilang. Til: ' + (LANG_NAME[p.lang] || LANG_NAME.uz) + '.\n' +
         'Faqat JSON qaytaring: {"short":"bir qatorli izoh (70 belgigacha)","def":"2-4 gaplik tushuntirish: nima, nima uchun kerak va xodim uchun qanday qoida bor","syn":["sinonim1","sinonim2"]}\n\n' +
         'ATAMA: ' + draft.term + '\nIzoh (agar bor bo‘lsa): ' + (draft.short || '—') + '\n\nSTANDARTLAR:\n' + (picks.length ? standardsBlock(picks, 12000) : '(mos standart topilmadi)');
       busy[1]('fill'); aiE[1]('');
@@ -3671,7 +3701,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
 
   function riskPrompt(db, r, lang) {
     var l = findLesson(db.course, r.lessonId), txt = l ? lessonText(l).slice(0, 12000) : '';
-    return 'Siz BURAQ Logistics kompaniyasining o‘quv platformasida metodistga yordam beruvchi AI-tahlilchisiz. Quyida bitta standart matni va shu standart bo‘yicha xodimlar yo‘l qo‘ygan haqiqiy xatolar ro‘yxati berilgan.\n' +
+    return 'Siz BURAQ Logistics kompaniyasining o‘quv platformasida SOP menejeriga yordam beruvchi AI-tahlilchisiz. Quyida bitta standart matni va shu standart bo‘yicha xodimlar yo‘l qo‘ygan haqiqiy xatolar ro‘yxati berilgan.\n' +
       'Vazifa: standart matnining qaysi joyi noaniq ekanini aniqlang va uni qanday tuzatishni ayting. Faqat berilgan matn va xatolarga tayaning, yangi fakt o‘ylab topmang.\n' +
       'Javob tili: ' + (LANG_NAME[lang] || LANG_NAME.uz) + '. Qisqa yozing.\n' +
       'Format: avval “Noaniq joylar” — 2-4 ta punkt; keyin “Nima qilish kerak” — 2-4 ta aniq tahrir taklifi; oxirida bitta qatorda trenajyor uchun ssenariy g‘oyasi.\n\n' +
@@ -3934,7 +3964,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       h(ThemeSwitch, { t: t, value: p.value, onChange: p.onChange }));
   }
 
-  /* ======================= FEATURES 11: the level ruler (conditions set by the methodist) + the monthly report with a forecast ======================= */
+  /* ======================= FEATURES 11: the level ruler (conditions set by the SOP manager) + the monthly report with a forecast ======================= */
 
   /* ---------- conditions for moving up: stored on the TARGET level as lv.conds ---------- */
   var COND_TYPES = ['xp', 'sec', 'course', 'avg', 'ini', 'drill', 'days', 'plan', 'tenure', 'task'];
@@ -4051,7 +4081,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         h('span', { className: 'lr-txt' }, h('b', null, t('req_method')), h('small', null, r.pending ? t('level_pending') : r.eligible ? t('lr_ready') : t('lr_gate_hint'))))])));
   }
 
-  /* methodist: the list of conditions for one level */
+  /* SOP manager: the list of conditions for one level */
   function CondEditor(p) {
     var t = p.t, cs = p.conds || [], secs = p.db.course.sections;
     function blank(type, id) { var c = { id: id || condId(), type: type }; if (type === 'sec') c.sid = (secs[0] || {}).id; else if (type === 'task') c.title = ''; else c.n = COND_DEF[type]; return c; }
@@ -4368,7 +4398,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         h('div', null, h(Btn, { variant: fresh ? 'primary' : 'outline', size: 'sm', arrow: true, onClick: function () { p.go({ name: 'report', ym: ym }); } }, fresh ? t('mr_open_fresh') : t('mr_open')))));
   }
 
-  /* methodist: Monitoring → Monthly report */
+  /* SOP manager: Monitoring → Monthly report */
   function MonthAdmin(p) {
     var t = p.t, db = p.db, lang = p.lang, sampler = p.sampler, cur = ymOf(Date.now());
     var emps = db.users.filter(function (u) { return u.role === 'employee'; });
@@ -4391,8 +4421,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     function teamAI() {
       if (!sampler || busy[0]) return;
       var data = { month: ym, team: { employees: rows.length, avgAttendancePct: tm.att, studyHours: Math.round(tm.min / 6) / 10, lessonsPassed: tm.les, goalDays2h: tm.goal, expectedWorkDays: tm.exp }, previousMonth: tp.n ? { avgAttendancePct: tp.att, studyHours: Math.round(tp.min / 6) / 10, lessonsPassed: tp.les } : null, people: rows.map(function (r) { return reportData(db, r.u, ym); }) };
-      var prompt = 'Siz BURAQ Logistics kompaniyasining metodistiga yordam beruvchi tahlilchisiz. Quyida jamoaning oylik hisoboti (davomat, o‘qish vaqti, natijalar va shu tempdagi prognoz). Metodist uchun qisqa xulosa yozing. Javob tili: ' + (LANG_NAME[lang] || LANG_NAME.uz) + '.\n' +
-        'Tuzilma (markdown sarlavhalar, jami 220 so‘zdan oshmasin):\n## Jamoa bo‘yicha xulosa\n## Kimga e’tibor kerak (ism bilan, sababi bilan)\n## Metodist uchun 3–4 aniq qadam\nFaqat berilgan raqamlarga tayaning, o‘ylab topmang.\n\nMA’LUMOTLAR (JSON):\n' + JSON.stringify(data);
+      var prompt = 'Siz BURAQ Logistics kompaniyasining SOP menejeriga yordam beruvchi tahlilchisiz. Quyida jamoaning oylik hisoboti (davomat, o‘qish vaqti, natijalar va shu tempdagi prognoz). SOP menejeri uchun qisqa xulosa yozing. Javob tili: ' + (LANG_NAME[lang] || LANG_NAME.uz) + '.\n' +
+        'Tuzilma (markdown sarlavhalar, jami 220 so‘zdan oshmasin):\n## Jamoa bo‘yicha xulosa\n## Kimga e’tibor kerak (ism bilan, sababi bilan)\n## SOP menejeri uchun 3–4 aniq qadam\nFaqat berilgan raqamlarga tayaning, o‘ylab topmang.\n\nMA’LUMOTLAR (JSON):\n' + JSON.stringify(data);
       an[1](''); err[1](''); busy[1](true);
       sampler(prompt, { onText: function (x) { an[1](x.text); } }).then(function (r) { an[1](r.text); }).catch(function (e) { if (e && e.text) an[1](e.text); err[1](aiErr(e, t)); }).then(function () { busy[1](false); });
     }
@@ -4853,7 +4883,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       { k: 'abs', label: t('at_absent'), big: String(c.absent), sub: tpl(t('at_absent_sub'), { e: c.excused, p: c.presPct == null ? '—' : c.presPct }), alert: c.absent >= 2 }];
   }
 
-  /* section inside the monthly report (employee and methodist) */
+  /* section inside the monthly report (employee and SOP manager) */
   function AttSection(p) {
     var t = p.t, db = p.db, u = p.u, c = attMonth(db, u, p.ym), sc = schedOf(db, u);
     if (!c.has) return null;
@@ -4882,7 +4912,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       h('div', null, h('button', { type: 'button', className: 'app-link', onClick: function () { p.go({ name: 'report', ym: ymOf(Date.now()) }); } }, t('at_home_more'))));
   }
 
-  /* ---------- methodist ---------- */
+  /* ---------- SOP manager ---------- */
   function AttEdit(p) {
     var t = p.t, u = p.u, k = p.k, rec = attRec(p.db, u.id, k) || {}, a = useState(rec.in || ''), b = useState(rec.out || ''), r = useState(rec.reason || ''), n = useState(rec.note || '');
     useEffect(function () { function esc(e) { if (e.key === 'Escape') p.onClose(); } window.addEventListener('keydown', esc); return function () { window.removeEventListener('keydown', esc); }; }, []);
@@ -5094,7 +5124,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       ed[0] ? h(AttEdit, Object.assign({}, p, { key: ed[0].u.id + ed[0].k, u: ed[0].u, k: ed[0].k, onClose: function () { ed[1](null); } })) : null);
   }
 
-  /* ======================= FEATURES 13: extra tasks (сверхзадачи) — set by the methodist for one employee, handed in, accepted ======================= */
+  /* ======================= FEATURES 13: extra tasks (сверхзадачи) — set by the SOP manager for one employee, handed in, accepted ======================= */
 
   var XT_XP = 50;
   function xtasksOf(db, uid) { return (db.xtasks || []).filter(function (x) { return x.uid === uid && x.status !== 'cancel'; }); }
@@ -5160,7 +5190,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       p.children);
   }
 
-  /* methodist: one employee's extra tasks + the form to add more (to this person and, optionally, to others) */
+  /* SOP manager: one employee's extra tasks + the form to add more (to this person and, optionally, to others) */
   function XtPanel(p) {
     var t = p.t, db = p.db, u = p.u, L = levelsOf(db), li = lvIndex(db, u), next = L[li + 1];
     var open = useState(!!p.startOpen), f = useState(function () { return { title: '', desc: '', due: '', xp: String(XT_XP), scale: !!next, who: [u.id] }; }), F2 = f[0], err = useState('');
@@ -5206,7 +5236,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         : !open[0] ? h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('xt_none_admin')) : null);
   }
 
-  /* inbox tab: everything handed in and waiting for the methodist */
+  /* inbox tab: everything handed in and waiting for the SOP manager */
   function XtInbox(p) {
     var t = p.t, db = p.db, list = xtReview(db).sort(function (a, b) { return ((a.sub || {}).at || 0) - ((b.sub || {}).at || 0); });
     var hist = (db.xtasks || []).filter(function (x) { return x.review && (x.status === 'done' || x.status === 'returned'); }).sort(function (a, b) { return b.review.at - a.review.at; }).slice(0, 8);
@@ -5328,7 +5358,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   var SRV_ERR = { login: 'bad_login', locked: 'srv_locked', busy: 'srv_busy', net: 'srv_net', html: 'srv_html', setup: 'srv_setup' };
   function Login(p) {
     var t = p.t, a = useState(''), b = useState(''), e = useState(''), th = useThemePref(), busy = useState(false);
-    var demo = [['metodist', 'admin123', t('role_admin')], ['d.karimova', '1234', t('role_new')], ['a.yusupova', '1234', t('role_exam')], ['s.rahimov', '1234', t('role_off')]];
+    var demo = [['metodist', 'admin123', t('role_admin')], ['d.karimova', '1234', t('role_new')], ['a.yusupova', '1234', t('role_exam')], ['s.rahimov', '1234', t('role_off')], ['ceo', '1234', t('ini_to_ceo')]];
     function submit(ev) {
       ev.preventDefault();
       if (SV) {
@@ -5824,7 +5854,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var rep = useState(''), v = useState(null), c = useState(''), dbusy = useState(false), derr = useState('');
     function draftAI() {
       if (!p.sampler || !l) return;
-      var prompt = 'Siz BURAQ Logistics metodistisiz. Yangi xodim standart bo‘yicha savol berdi. Faqat standart matniga tayanib, xodimga yuboriladigan qisqa javob loyihasini yozing (o‘zbek tilida, lotin, 3–6 gap, "siz" deb murojaat). Oxirida standart bandini ko‘rsating. Markdown belgilarisiz (yulduzcha, #) oddiy matn yozing. Agar standartda javob bo‘lmasa, buni ayting va standartga qanday aniqlik kiritish kerakligini bir gapda taklif qiling (bu gap "[Metodist uchun]" bilan boshlansin).\n\nXODIM: ' + u.name + ' (' + u.position + ')\nSAVOL: ' + r.text + '\n\nSTANDART: ' + l.title + '\n' + lessonText(l).slice(0, 20000);
+      var prompt = 'Siz BURAQ Logistics SOP menejerisiz. Yangi xodim standart bo‘yicha savol berdi. Faqat standart matniga tayanib, xodimga yuboriladigan qisqa javob loyihasini yozing (o‘zbek tilida, lotin, 3–6 gap, "siz" deb murojaat). Oxirida standart bandini ko‘rsating. Markdown belgilarisiz (yulduzcha, #) oddiy matn yozing. Agar standartda javob bo‘lmasa, buni ayting va standartga qanday aniqlik kiritish kerakligini bir gapda taklif qiling (bu gap "[SOP menejeri uchun]" bilan boshlansin).\n\nXODIM: ' + u.name + ' (' + u.position + ')\nSAVOL: ' + r.text + '\n\nSTANDART: ' + l.title + '\n' + lessonText(l).slice(0, 20000);
       dbusy[1](true); derr[1]('');
       p.sampler(prompt, { onText: function (x) { rep[1](x.text); } }).then(function (res) { rep[1](res.text); }).catch(function (e) { if (e && e.text) rep[1](e.text); derr[1](aiErr(e, t)); }).then(function () { dbusy[1](false); });
     }
@@ -6044,6 +6074,47 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   }
 
   /* ---------------- admin: staff ---------------- */
+  /* staff page: logins of those who receive initiatives (CEO, Project Manager, Boss) — they see only the initiatives sent to them */
+  var LEADER_POS = { ceo: 'CEO', pm: 'Project Manager', boss: 'Boss' };
+  function LeadersBox(p) {
+    var t = p.t, db = p.db, leaders = leadersOf(db);
+    var blank = function () { return { post: 'ceo', name: '', login: '', password: genPw() }; };
+    var f = useState(blank), form = f[0], er = useState({}), made = useState(null), pw = useState({}), del = useState(null);
+    function set(k, v) { var o = Object.assign({}, form); o[k] = v; f[1](o); }
+    function create() {
+      var e = {}; ['name', 'login', 'password'].forEach(function (k) { if (!String(form[k]).trim()) e[k] = t('fill_required'); });
+      if (!e.login && db.users.some(function (u) { return u.login === form.login.trim().toLowerCase(); })) e.login = t('login_taken');
+      er[1](e); if (Object.keys(e).length) return;
+      var nid = Math.max.apply(null, db.users.map(function (u) { return u.id; })) + 1;
+      p.update(function (d) { d.users.push({ id: nid, role: 'leader', post: form.post, login: form.login.trim().toLowerCase(), password: form.password, name: form.name.trim(), position: LEADER_POS[form.post], department: '', status: 'official', profileComplete: true, tourDone: true, createdAt: Date.now() }); });
+      made[1]({ login: form.login.trim().toLowerCase(), password: form.password }); f[1](blank());
+    }
+    function resetPw(u) { var np = genPw(); p.update(function (d) { d.users.forEach(function (x) { if (x.id === u.id) x.password = np; }); }); var o = Object.assign({}, pw[0]); o[u.id] = np; pw[1](o); }
+    function remove(u) { del[1](null); p.update(function (d) { d.users = d.users.filter(function (x) { return x.id !== u.id; }); }); }
+    return h('section', { className: 'box ld-box' },
+      h('h2', { className: 'lor-h' }, t('ld_title')),
+      h('p', { className: 'lor-sm lor-muted', style: { margin: '0 0 12px' } }, t('ld_hint')),
+      leaders.length ? h('div', { className: 'lor-table-wrap' }, h('table', { className: 'lor-table ld-table' },
+        h('thead', null, h('tr', null, [t('ld_post'), t('fio'), t('login'), ''].map(function (x, i) { return h('th', { key: i }, x); }))),
+        h('tbody', null, leaders.map(function (u) {
+          return h('tr', { key: u.id },
+            h('td', null, t('ini_to_' + u.post)),
+            h('td', null, u.name),
+            h('td', null, h('code', null, u.login), pw[0][u.id] ? h('div', { className: 'lor-sm made' }, t('new_pw') + ': ', h('code', null, pw[0][u.id])) : null),
+            h('td', { className: 'nowrap' }, h(Btn, { variant: 'ghost', size: 'sm', onClick: function () { resetPw(u); } }, t('reset_pw')),
+              del[0] === u.id ? h(F, null, ' ', h(Btn, { variant: 'outline', size: 'sm', onClick: function () { remove(u); } }, t('ld_del_yes')), h(Btn, { variant: 'ghost', size: 'sm', onClick: function () { del[1](null); } }, t('cancel')))
+                : h('button', { type: 'button', className: 'app-link danger', onClick: function () { del[1](u.id); } }, t('remove'))));
+        })))) : h('p', { className: 'lor-sm lor-muted' }, t('ld_empty')),
+      h('div', { className: 'staff-form ld-form' },
+        h(Field, { name: 'ld-post', label: t('ld_post'), value: form.post, onChange: function (v) { set('post', v); }, options: INI_TO.map(function (x) { return [x, t('ini_to_' + x)]; }) }),
+        h(Field, { name: 'ld-name', label: t('fio'), required: true, value: form.name, error: er[0].name, onChange: function (v) { set('name', v); }, placeholder: 'Ism Familiya' }),
+        h(Field, { name: 'ld-login', label: t('login'), required: true, value: form.login, error: er[0].login, onChange: function (v) { set('login', v); }, placeholder: 'ceo' }),
+        h(Field, { name: 'ld-pw', label: t('password'), required: true, value: form.password, error: er[0].password, onChange: function (v) { set('password', v); } })),
+      h('div', { className: 'box-row' },
+        made[0] ? h('span', { className: 'lor-sm made' }, '✓ ' + t('created') + ': ', h('code', null, made[0].login + ' / ' + made[0].password)) : h('span'),
+        h(Btn, { variant: 'secondary', arrow: true, onClick: create }, t('ld_add'))));
+  }
+
   function Staff(p) {
     var t = p.t, db = p.db;
     var blank = function () { return { name: '', position: 'Omborchi', department: 'Logistika bo‘limi', login: '', password: genPw() }; };
@@ -6130,6 +6201,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         h('div', { className: 'box-row' },
           made[0] ? h('span', { className: 'lor-sm made' }, '✓ ' + t('created') + ': ', h('code', null, made[0].login + ' / ' + made[0].password)) : h('span'),
           h(Btn, { variant: 'primary', arrow: true, onClick: create }, t('create')))),
+      h(LeadersBox, p),
       h('div', { className: 'seg sp-seg', role: 'tablist' }, [['all', t('all'), emps.length]].concat(L.map(function (lv, i) { return [String(i), lvlShort(lv, p.lang), emps.filter(function (u) { return Math.min(u.level || 0, L.length - 1) === i; }).length]; })).map(function (x) {
         return h('button', { key: x[0], type: 'button', role: 'tab', 'aria-selected': fl === x[0], className: fl === x[0] ? 'is-on' : '', onClick: function () { flt[1](x[0]); } }, x[1], h('span', { className: 'lor-count' }, x[2]));
       })),
@@ -6158,7 +6230,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var theme = useThemePref(p.say, t);
     var hint = { on: hintOn, toggle: function (v) { p.update(function (d) { d.users.forEach(function (x) { if (x.id === p.user.id) x.hints = v; }); }); p.say(t(v ? 'hint_said_on' : 'hint_said_off')); } };
 
-    var attnA = (db.assets || []).filter(assetAttn).length, newIni = (db.initiatives || []).filter(function (x) { return x.status === 'new'; }).length;
+    var attnA = (db.assets || []).filter(assetAttn).length, newIni = (db.initiatives || []).filter(function (x) { return !x.to && x.status === 'new'; }).length;
     var qN = errStats(db, 90).open;
     var nav = [['inbox', t('nav_inbox'), openN], ['monitor', t('nav_monitor')], ['quality', t('nav_quality'), qN], ['rating', t('nav_rating')], ['levels', t('nav_levels')], ['cms', t('nav_cms')], ['staff', t('nav_staff')], ['assets', t('nav_assets'), attnA], ['feedback', t('nav_feedback'), newIni]].map(function (n) { return { key: n[0], label: n[1], count: n[2], active: route.name === n[0], onClick: function () { go({ name: n[0] }); } }; });
     var q = Object.assign({}, p, { goCms: function (lid) { go({ name: 'cms', lessonId: lid }); }, goAssets: function (uid) { go({ name: 'assets', uid: uid }); } });
@@ -6177,6 +6249,26 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       hintOn && !tour[0] && p.user.tourDone ? h(HintLayer, { t: t }) : null,
       pal[0] ? h(Palette, Object.assign({}, q, { user: p.user, onClose: function () { pal[1](false); }, go: function (x) { go(x); } })) : null,
       tour[0] || !p.user.tourDone ? h(Tour, { t: t, user: p.user, go: go, onClose: function () { tour[1](false); p.update(function (d) { d.users.forEach(function (x) { if (x.id === p.user.id) x.tourDone = true; }); }); } }) : null);
+  }
+
+  /* ---------------- recipient shell: CEO, Project Manager, Boss — the initiatives sent to them, nothing else ---------------- */
+  function LeaderApp(p) {
+    var t = p.t, db = p.db, u = p.user, theme = useThemePref(p.say, t);
+    var only = function (x) { return !!x.to && x.to === u.post; };
+    var nNew = (db.initiatives || []).filter(function (x) { return only(x) && x.status === 'new'; }).length;
+    return h(F, null,
+      h(Header, { t: t, lang: p.lang, setLang: p.setLang, user: u, wide: true, onLogout: p.logout, onTerms: p.showTerms, theme: theme,
+        subtitle: INI_TO.indexOf(u.post) >= 0 ? t('ini_to_' + u.post) : u.position,
+        nav: [{ key: 'ideas', label: t('fb_tab_ini'), count: nNew, active: true, onClick: function () { window.scrollTo(0, 0); } }],
+        notifs: db.notifications.filter(function (n) { return n.userId === u.id; }), fmtNotif: function (n) { return notifText(n, db, p.lang, t); },
+        onReadAll: function () { p.update(function (d) { d.notifications.forEach(function (n) { if (n.userId === u.id) n.read = true; }); }); },
+        onNotif: function (n) { p.update(function (d) { d.notifications.forEach(function (x) { if (x.id === n.id) x.read = true; }); }); } }),
+      h('div', { className: 'app-body no-side' }, h('main', { className: 'app-main', id: 'main' },
+        h('div', { className: 'app-wrap' },
+          h('div', { className: 'page-head' }, h('div', null, h('span', { className: 'lor-eyebrow' }, t('ini_eyebrow')), h('h1', { className: 'lor-title' }, t('ld_inbox_t')),
+            h('p', { className: 'lor-muted', style: { margin: '6px 0 0' } }, t('ld_inbox_p')))),
+          h(IniAdmin, Object.assign({}, p, { only: only }))),
+        h(Foot, { t: t, onReset: p.onReset, onTerms: p.showTerms, say: p.say }))));
   }
 
   /* ---------------- server: templates, course import, sync status, server code ---------------- */
@@ -6221,7 +6313,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       h('label', { className: 'lor-btn lor-btn-outline lor-btn-sm', htmlFor: 'cms-import' }, t('imp_btn')),
       h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('imp_hint')));
   }
-  /* bottom-left: no connection, changes the server did not take, outdated server code (methodist) */
+  /* bottom-left: no connection, changes the server did not take, outdated server code (SOP manager) */
   function SyncChip(p) {
     var t = p.t, s = useState(null), st = s[0];
     useEffect(function () { return SV.onStatus(function (x) { s[1](x); }); }, []);
@@ -6237,7 +6329,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       msg ? h('span', null, msg) : null,
       st.rejected || st.error ? h('button', { type: 'button', className: 'app-link', onClick: SV.clearNotice }, t('srv_ok')) : null);
   }
-  /* the server code (tools/lms-gs/Code.gs) for Apps Script — lms-gs-script.js, loaded for the methodist only */
+  /* the server code (tools/lms-gs/Code.gs) for Apps Script — lms-gs-script.js, loaded for the SOP manager only */
   function loadServerCode(cb) {
     if (window.LMS_GS_SCRIPT) { if (cb) cb(); return; }
     var el = document.getElementById('lms-gs-script');
@@ -6261,7 +6353,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     useEffect(function () { document.documentElement.lang = lang; }, [lang]);
     var user = db.users.filter(function (u) { return u.id === db.session; })[0];
     SAY = function (k) { ts[1]({ msg: t(k), k: Date.now() }); };
-    /* the 1st of a month (or the first open after it): the closed month's report goes out — with the server only from the methodist */
+    /* the 1st of a month (or the first open after it): the closed month's report goes out — with the server only from the SOP manager */
     var due = monthlyDue(db, Date.now()), canIssue = !SV || !!(user && user.role === 'admin');
     useEffect(function () { if (due && canIssue) update(function (d) { if (monthlyDue(d, Date.now()) === due) issueMonthly(d, due); }); }, [due, canIssue]);
     /* new platform on the server: levels, programmes, adaptation plan and schedule come from the templates */
@@ -6278,6 +6370,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var view = !user ? h(Login, Object.assign({}, p, { onLogin: function (u) { update(function (d) { d.session = u.id; }); } }))
       : needTpl ? h('div', { className: 'app-wrap' }, h('p', { className: 'lor-muted' }, t('srv_preparing')))
       : user.role === 'admin' ? h(AdminApp, Object.assign({ key: 'a' + user.id }, p))
+      : user.role === 'leader' ? h(LeaderApp, Object.assign({ key: 'l' + user.id }, p))
       : h(EmployeeApp, Object.assign({ key: 'e' + user.id }, p));
     return h(F, null, view, tm[0] ? h(TermsModal, { t: t, lang: lang, acceptedAt: user && user.termsAcceptedAt, onClose: function () { tm[1](false); } }) : null,
       SV && user ? h(SyncChip, { t: t, admin: user.role === 'admin', say: p.say }) : null, h(Toast, { toast: toast }));

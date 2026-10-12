@@ -6,10 +6,10 @@
  * 1) script.google.com → Новый проект → вставьте весь код из tools/lms-gs/Code.gs (собирается из этого файла
  *    и lms-sync.js: node tools/build-lms-gs.mjs) → Сохранить.
  * 2) Вверху выберите функцию setup → ▶ Выполнить → разрешите доступ (Диск, триггеры).
- *    В «Журнале выполнения» — логин и пароль методиста: запишите, пароль показывается один раз.
+ *    В «Журнале выполнения» — логин и пароль SOP-менеджера: запишите, пароль показывается один раз.
  * 3) Развернуть → Новое развертывание → Тип: Веб-приложение. Выполнять как: Я. Доступ: Все. → Развернуть.
  *    Ссылка …/exec — адрес сервера для страницы платформы.
- * Забыли пароль методиста — функция newAdmin: новый вход методиста, логин и пароль — в журнале выполнения.
+ * Забыли пароль SOP-менеджера — функция newAdmin: новый вход SOP-менеджера, логин и пароль — в журнале выполнения.
  * Копия данных — каждую ночь (функция backup, папка backups рядом с state.json), хранится 30 дней.
  * Файлы (сканы паспортов, вложения журналов и сверхзадач) — в папке files рядом с state.json: в данных остаётся
  * ссылка lmsfile:<id>, сам файл сервер отдаёт только тому, кому видна эта ссылка (действие file).
@@ -20,7 +20,8 @@
  *
  * Запрос — POST с JSON { action, token, … }, ответ — JSON { ok, … } или { ok: false, code, error }.
  */
-var LMS_VERSION = 3;           // 2: файлы — отдельно на Диске, действие file; 3: ИИ через Claude API (действие ai)
+var LMS_VERSION = 4;           // 2: файлы — отдельно на Диске, действие file; 3: ИИ через Claude API (действие ai);
+                               // 4: адресаты идей — CEO, Project Manager, руководитель компании (свой вход, role 'leader')
 var PBKDF2_ITER = 10000;          // пароль хранится только как PBKDF2-SHA256 с солью
 var SESSION_DAYS = 30;            // вход на устройстве живёт 30 дней с последнего запроса
 var FAIL_MAX = 5, FAIL_LOCK_MIN = 15;  // 5 неверных паролей подряд — логин закрыт на 15 минут
@@ -31,12 +32,16 @@ var MAX_OPS = 500;
 var FILE_MIN = 2048;              // data:-строки короче (значки) остаются в данных, длиннее — файлом на Диске
 var AUDIT_KEEP = 500;             // журнал нарушений защиты урока — последние 500 записей
 var AI_MODEL = 'claude-opus-5-5';  // свойство AI_MODEL меняет модель без правки кода
-var AI_LIMIT = 30, AI_LIMIT_ADMIN = 200;  // запросов к ИИ в день на сотрудника / методиста
+var AI_LIMIT = 30, AI_LIMIT_ADMIN = 200;  // запросов к ИИ в день на сотрудника / SOP-менеджера
 var AI_MAX_TOKENS = 4096;         // ответ должен уложиться в минуту — столько Apps Script ждёт внешний запрос
 var AI_MAX_CHARS = 200000;        // длина запроса (текст стандартов + переписка)
 // модели, у которых Claude API сам повторяет отказанный запрос на запасной модели (fallbacks: "default")
 var AI_FALLBACK = ['claude-opus-5-5', 'claude-opus-5', 'claude-fable-5-1', 'claude-sonnet-5-5'];
 var DAY_MS = 864e5;
+// идею сотрудник отправляет одному из адресатов; у адресата свой вход (role 'leader', post — кто он) и только эти идеи
+var INI_TO = ['ceo', 'pm', 'boss'];
+var INI_STATUS = ['new', 'review', 'accepted', 'done', 'declined'];
+var INI_ANSWER = ['status', 'reply', 'repliedAt', 'acceptedAt'];   // ответ адресата на идею
 
 /* ---------------- вход в веб-приложение ---------------- */
 
@@ -221,7 +226,7 @@ function password_(s, req) {
 function resetPassword_(s, req) {
   return withLock_(function () {
     var st = readState_(), me = me_(st, s);
-    if (me.role !== 'admin') throw err_('forbidden', 'Пароль сбрасывает методист');
+    if (me.role !== 'admin') throw err_('forbidden', 'Пароль сбрасывает SOP-менеджер');
     var u = userById_(st, req.userId);
     if (!u || !u.login) throw err_('bad', 'Нет такого сотрудника или у него нет логина');
     var pw = genPassword_();
@@ -233,7 +238,7 @@ function resetPassword_(s, req) {
 
 /* ---------------- что видит пользователь ---------------- */
 
-var PUBLIC_USER = ['id', 'role', 'name', 'position', 'department', 'status', 'cohort', 'level', 'levelXpBase', 'levelAt', 'mentor', 'trackId', 'startedAt'];
+var PUBLIC_USER = ['id', 'role', 'post', 'name', 'position', 'department', 'status', 'cohort', 'level', 'levelXpBase', 'levelAt', 'mentor', 'trackId', 'startedAt'];
 function pick_(o, keys) { var r = {}; keys.forEach(function (k) { if (o[k] !== undefined) r[k] = o[k]; }); return r; }
 function own_(list, field, uid) { return (list || []).filter(function (x) { return x && String(x[field]) === String(uid); }); }
 
@@ -254,11 +259,12 @@ function canSee_(u, a) {
 }
 
 function viewFor_(st, me) {
+  if (me.role === 'leader') return leaderView_(st, me);
   var v = clone_(st);
   delete v.rev;
-  if (me.role === 'admin') return v;
+  if (me.role === 'admin') { hideAddressed_(v); return v; }
   var uid = String(me.id), official = me.status === 'official';
-  // уроки: правильные ответы тестов не уходят никому, кроме методиста; закрытые разделы — только названия
+  // уроки: правильные ответы тестов не уходят никому, кроме SOP-менеджера; закрытые разделы — только названия
   ((v.course || {}).sections || []).forEach(function (s) {
     s.lessons = (s.lessons || []).map(function (l) {
       if (s.officialOnly && !official) return pick_(l, ['id', 'title', 'n', 'source']);
@@ -272,7 +278,7 @@ function viewFor_(st, me) {
     if (u.pulse) p.pulse = { n: u.pulse.n || 0 };   // для рейтинга — только число опросов
     return p;
   });
-  // прогресс коллег — только статус и балл (рейтинг); комментарии методиста — только свои
+  // прогресс коллег — только статус и балл (рейтинг); комментарии SOP-менеджера — только свои
   v.progress = {};
   Object.keys(st.progress || {}).forEach(function (k) {
     if (k === uid) { v.progress[k] = clone_(st.progress[k]); return; }
@@ -298,16 +304,37 @@ function viewFor_(st, me) {
   return clone_(v);
 }
 
+/* идеи, адресованные CEO, Project Manager или руководителю, SOP-менеджер не читает: остаётся то, из чего считаются
+   XP и уровни сотрудника (статус, даты). В уведомлениях автору об ответе — без названия и текста ответа */
+function hideAddressed_(v) {
+  v.initiatives = (v.initiatives || []).map(function (x) { return x && x.to ? pick_(x, ['id', 'uid', 'to', 'status', 'at', 'acceptedAt', 'repliedAt']) : x; });
+  v.notifications = (v.notifications || []).map(function (n) {
+    return n && n.kind === 'ini' && n.ini && n.ini.to ? Object.assign({}, n, { ini: pick_(n.ini, ['s', 'xp', 'to']) }) : n;
+  });
+}
+
+/* адресат идей видит только идеи, адресованные его должности, кто их прислал и свои уведомления */
+function leaderView_(st, me) {
+  var uid = String(me.id), v = emptyState_();
+  delete v.rev;
+  v.v = st.v; v.seq = st.seq;
+  v.levels = clone_(st.levels || []); v.settings = clone_(st.settings || {});
+  v.users = (st.users || []).map(function (u) { return String(u.id) === uid ? clone_(u) : pick_(u, PUBLIC_USER); });
+  v.initiatives = (st.initiatives || []).filter(function (x) { return x && x.to && x.to === me.post; }).map(clone_);
+  v.notifications = own_(st.notifications, 'userId', uid).map(clone_);
+  return v;
+}
+
 /* ---------------- правки ---------------- */
 
-// поля своей карточки, которые сотрудник не меняет сам (их ставит методист)
-var LOCKED_USER = ['id', 'role', 'login', 'password', 'name', 'status', 'position', 'department', 'cohort', 'trackId', 'mentor', 'level', 'levelXpBase', 'levelAt', 'levelTasks', 'startedAt'];
+// поля своей карточки, которые сотрудник не меняет сам (их ставит SOP-менеджер)
+var LOCKED_USER = ['id', 'role', 'post', 'login', 'password', 'name', 'status', 'position', 'department', 'cohort', 'trackId', 'mentor', 'level', 'levelXpBase', 'levelAt', 'levelTasks', 'startedAt'];
 // списки «своих» записей: поле владельца
 var OWN = { requests: 'userId', notifications: 'userId', assets: 'uid', surveys: 'uid', initiatives: 'uid', drills: 'uid', audit: 'userId', errors: 'uid', xtasks: 'uid' };
-// поля своих записей, которые ставит методист или наставник
+// поля своих записей, которые ставит SOP-менеджер или наставник
 var LOCKED_ITEM = {
   requests: ['verdict', 'reply', 'repliedAt'],
-  initiatives: ['status', 'reply', 'repliedAt'],
+  initiatives: ['status', 'reply', 'repliedAt', 'acceptedAt', 'to'],   // ответ ставит адресат, адресата не сменить
   xtasks: ['title', 'desc', 'due', 'xp', 'scale', 'li', 'by', 'at', 'review', 'doneAt'],
   errors: ['by', 'at', 'lessonId', 'cat', 'sev', 'text', 'impact', 'closedAt'],
   assets: ['confirmedAt', 'resolved', 'mismatch', 'returnedAt'],   // о проблеме (issue) сотрудник сообщает сам
@@ -323,11 +350,13 @@ function isId_(s) { return LmsSync.isIdSeg(s); }
 function checkEmployee_(st, me, op) {
   var p = op.path || [], top = p[0], uid = String(me.id);
   if (!Array.isArray(p) || !p.length) return 'пустой путь';
+  // адресат идей: своя карточка и уведомления — как у сотрудника, остальное — только ответ на свои идеи
+  if (me.role === 'leader' && ['users', 'notifications', 'study', 'reminded'].indexOf(top) < 0) return checkLeader_(st, me, op);
 
   if (top === 'users') {
     if (!isId_(p[1]) || String(p[1].id) !== uid) return 'чужая карточка';
-    if (p.length < 3) return 'карточку целиком меняет методист';
-    if (LOCKED_USER.indexOf(p[2]) >= 0) return 'поле «' + p[2] + '» меняет методист';
+    if (p.length < 3) return 'карточку целиком меняет SOP-менеджер';
+    if (LOCKED_USER.indexOf(p[2]) >= 0) return 'поле «' + p[2] + '» меняет SOP-менеджер';
     return null;
   }
 
@@ -348,7 +377,7 @@ function checkEmployee_(st, me, op) {
 
   if (top === 'sopUpdates') {
     // «ознакомлен» с новой редакцией стандарта — только своя отметка
-    if (!isId_(p[1]) || p[2] !== 'acks' || op.op !== 'set') return 'новые редакции стандартов публикует методист';
+    if (!isId_(p[1]) || p[2] !== 'acks' || op.op !== 'set') return 'новые редакции стандартов публикует SOP-менеджер';
     var up = LmsSync.get(st, p.slice(0, 2));
     if (!up || (up.required || []).map(String).indexOf(uid) < 0) return 'эта редакция вам не назначена';
     if (p.length === 4) return p[3] === uid && typeof op.value === 'number' ? null : 'чужая отметка';
@@ -357,17 +386,17 @@ function checkEmployee_(st, me, op) {
   }
 
   if (top === 'journals') {
-    // строка в журнал, куда методист разрешил добавлять
-    if (!isId_(p[1]) || p[2] !== 'rows' || !isId_(p[3]) || p.length !== 4 || op.op !== 'set') return 'журналы ведёт методист';
+    // строка в журнал, куда SOP-менеджер разрешил добавлять
+    if (!isId_(p[1]) || p[2] !== 'rows' || !isId_(p[3]) || p.length !== 4 || op.op !== 'set') return 'журналы ведёт SOP-менеджер';
     var j = LmsSync.get(st, p.slice(0, 2));
     if (!j || j.status !== 'published' || (j.access || {}).canAdd !== 'viewers' || !canSee_(me, j.access)) return 'в этот журнал добавлять нельзя';
-    if (LmsSync.get(st, p)) return 'строку меняет методист';
+    if (LmsSync.get(st, p)) return 'строку меняет SOP-менеджер';
     return op.value && String(op.value.by) === uid ? null : 'строка — только от своего имени';
   }
 
   if (OWN[top]) {
     var f = OWN[top];
-    if (!isId_(p[1])) return 'список целиком меняет методист';
+    if (!isId_(p[1])) return 'список целиком меняет SOP-менеджер';
     var item = LmsSync.get(st, p.slice(0, 2));
     if (!item) {
       if (p.length !== 2 || op.op !== 'set') return 'такой записи уже нет';
@@ -376,15 +405,15 @@ function checkEmployee_(st, me, op) {
     var mine = String(item[f]) === uid, mentorOwn = top === 'errors' && me.mentor && String(item.by) === uid;
     if (!mine && !mentorOwn) return 'чужая запись';
     if (top === 'audit') return 'журнал нарушений не правится';
-    if (op.op === 'del') return ['assets', 'notifications'].indexOf(top) >= 0 && mine ? null : 'запись удаляет методист';
+    if (op.op === 'del') return ['assets', 'notifications'].indexOf(top) >= 0 && mine ? null : 'запись удаляет SOP-менеджер';
     if (mentorOwn) return null;
-    var locked = (LOCKED_ITEM[top] || []).concat([f, 'id']);
+    var locked = (LOCKED_ITEM[top] || []).concat([f, 'id']), who = top === 'initiatives' ? 'адресат идеи' : 'SOP-менеджер';
     if (p.length === 2) {
       var bad = locked.filter(function (k) { return !LmsSync.equal(item[k], (op.value || {})[k]); })[0];
-      return bad ? 'поле «' + bad + '» меняет методист' : null;
+      return bad ? 'поле «' + bad + '» меняет ' + who : null;
     }
-    if (locked.indexOf(p[2]) >= 0) return 'поле «' + p[2] + '» меняет методист';
-    if (top === 'xtasks' && p[2] === 'status' && ['review', 'open'].indexOf(op.value) < 0) return 'итог сверхзадачи ставит методист';
+    if (locked.indexOf(p[2]) >= 0) return 'поле «' + p[2] + '» меняет ' + who;
+    if (top === 'xtasks' && p[2] === 'status' && ['review', 'open'].indexOf(op.value) < 0) return 'итог сверхзадачи ставит SOP-менеджер';
     if (top === 'errors' && p[2] === 'status' && op.value === 'closed') return 'ошибку закрывает наставник';
     return null;
   }
@@ -392,30 +421,59 @@ function checkEmployee_(st, me, op) {
   return 'нет прав на «' + top + '»';
 }
 
+/* правка адресата идей: ответ (статус, текст, даты) на идею, адресованную его должности; саму идею меняет только автор */
+function checkLeader_(st, me, op) {
+  var p = op.path, top = p[0];
+  if (top !== 'initiatives') return 'нет прав на «' + top + '»';
+  if (!isId_(p[1])) return 'список идей целиком не меняется';
+  var item = LmsSync.get(st, p.slice(0, 2));
+  if (!item || !item.to || item.to !== me.post) return 'эта идея адресована не вам';
+  if (op.op !== 'set') return 'идею удалить нельзя';
+  if (p.length === 2) {
+    var nv = op.value || {}, keys = Object.keys(item).concat(Object.keys(nv));
+    var bad = keys.filter(function (k) { return INI_ANSWER.indexOf(k) < 0 && !LmsSync.equal(item[k], nv[k]); })[0];
+    if (bad) return 'поле «' + bad + '» меняет автор идеи';
+    return INI_STATUS.indexOf(nv.status) < 0 ? 'неверный статус идеи' : null;
+  }
+  if (p.length !== 3 || INI_ANSWER.indexOf(p[2]) < 0) return 'поле «' + p[2] + '» меняет автор идеи';
+  return p[2] === 'status' && INI_STATUS.indexOf(op.value) < 0 ? 'неверный статус идеи' : null;
+}
+
+/* правка SOP-менеджера: идею с адресатом он не видит — менять её нельзя, удалить (вместе с сотрудником) можно */
+function checkAdmin_(st, op) {
+  var p = op.path;
+  if (p[0] !== 'initiatives') return null;
+  if (p.length === 1) return op.op === 'set' && (st.initiatives || []).some(function (x) { return x && x.to; }) ? 'список идей целиком не меняется' : null;
+  var item = isId_(p[1]) ? LmsSync.get(st, p.slice(0, 2)) : null;
+  return item && item.to && op.op !== 'del' ? 'на эту идею отвечает её адресат' : null;
+}
+
 /* новый урок в прогрессе или изменённый: сотрудник ставит только «читаю / вопрос / готов к тесту» */
 function checkLesson_(cur, next) {
   cur = cur || {};
   if (!next || typeof next !== 'object') return 'неверная запись урока';
   if (cur.status === 'passed' && next.status !== 'passed') return 'урок уже сдан';
-  if (next.status !== cur.status && EMP_LESSON_STATUS.indexOf(next.status) < 0) return 'итог урока ставит методист';
+  if (next.status !== cur.status && EMP_LESSON_STATUS.indexOf(next.status) < 0) return 'итог урока ставит SOP-менеджер';
   var bad = Object.keys(next).filter(function (k) {
     if (k === 'status' || k === 'at') return false;
     if (k === 'score' || k === 'comment') return !(next[k] === null || LmsSync.equal(next[k], cur[k]));
     return !LmsSync.equal(next[k], cur[k]);
   })[0];
   if (bad === 'score') return 'балл ставит сервер по ответам теста';
-  return bad ? 'поле «' + bad + '» меняет методист' : null;
+  return bad ? 'поле «' + bad + '» меняет SOP-менеджер' : null;
 }
 
 function checkNew_(top, me, value) {
   var uid = String(me.id);
   if (!value || typeof value !== 'object') return 'пустая запись';
-  // уведомить методиста или наставника о своём действии; поздравление с уровнем (экран с салютом) — только себе
-  if (top === 'notifications') return value.promo && String(value.userId) !== uid ? 'поздравление с уровнем отправляет методист' : null;
+  // уведомить SOP-менеджера или наставника о своём действии; поздравление с уровнем (экран с салютом) — только себе
+  if (top === 'notifications') return value.promo && String(value.userId) !== uid ? 'поздравление с уровнем отправляет SOP-менеджер' : null;
   if (top === 'errors') return me.mentor && String(value.by) === uid ? null : 'ошибку записывает наставник';
-  if (top === 'xtasks') return 'сверхзадачу выдаёт методист';
+  if (top === 'xtasks') return 'сверхзадачу выдаёт SOP-менеджер';
   if (String(value[OWN[top]]) !== uid) return 'запись — только от своего имени';
-  if (top === 'initiatives' && value.status && value.status !== 'new') return 'статус идеи ставит методист';
+  if (top === 'initiatives' && value.status && value.status !== 'new') return 'статус идеи ставит её адресат';
+  if (top === 'initiatives' && INI_TO.indexOf(value.to) < 0) return 'выберите, кому отправить идею: CEO, Project Manager или руководителю компании';
+  if (top === 'initiatives' && ['reply', 'repliedAt', 'acceptedAt'].some(function (k) { return value[k] != null; })) return 'ответ на идею даёт её адресат';
   return null;
 }
 
@@ -434,7 +492,7 @@ function patch_(s, ops) {
     }
     ops.forEach(function (op, i) {
       var top = op && Array.isArray(op.path) ? op.path[0] : '';
-      var why = !top ? 'неверная правка' : DEVICE_KEYS.indexOf(top) >= 0 ? '«' + top + '» хранится только на устройстве' : admin ? null : checkEmployee_(st, me, op) || (foreignFile(op) ? 'чужой файл' : null);
+      var why = !top ? 'неверная правка' : DEVICE_KEYS.indexOf(top) >= 0 ? '«' + top + '» хранится только на устройстве' : admin ? checkAdmin_(st, op) : checkEmployee_(st, me, op) || (foreignFile(op) ? 'чужой файл' : null);
       if (!why && !admin && top === 'notifications' && op.path.length === 2 && op.op === 'set' && !LmsSync.get(st, op.path)) op = Object.assign({}, op, { value: Object.assign({}, op.value, { from: me.id }) });
       if (why) { rejected.push({ i: i, reason: why }); return; }
       try {
@@ -449,7 +507,7 @@ function patch_(s, ops) {
   });
 }
 
-/* после правок методиста: пароли из карточек — в учётные записи (в состоянии их не храним), смена логина,
+/* после правок SOP-менеджера: пароли из карточек — в учётные записи (в состоянии их не храним), смена логина,
    удалённые сотрудники теряют вход */
 function syncCreds_(st, before, me, s, rejected) {
   var cr = creds_(), taken = {}, prev = {};
@@ -624,11 +682,11 @@ function aiResult_(r, code, text, fail) {
   return { ok: true, text: out, truncated: x.stop_reason === 'max_tokens', model: x.model };
 }
 
-/* ---------------- запуск, вход методиста, копии ---------------- */
+/* ---------------- запуск, вход SOP-менеджера, копии ---------------- */
 
 function setup() {
   var P = props_();
-  if (P.getProperty('LMS_STATE')) throw new Error('Платформа уже настроена. Новый вход методиста — функция newAdmin.');
+  if (P.getProperty('LMS_STATE')) throw new Error('Платформа уже настроена. Новый вход SOP-менеджера — функция newAdmin.');
   var folder = DriveApp.createFolder('BURAQ o‘quv platformasi — ma’lumotlar');
   var st = emptyState_();
   var file = folder.createFile('state.json', JSON.stringify(st), 'application/json');
@@ -648,11 +706,11 @@ function newAdmin() {
     var id = 10001;
     (st.users || []).forEach(function (u) { if (+u.id >= id) id = +u.id + 1; });
     var pw = genPassword_();
-    st.users.push({ id: id, role: 'admin', login: login, name: 'Metodist', position: 'Metodist', department: 'HR va o‘qitish', status: 'official', profileComplete: true });
+    st.users.push({ id: id, role: 'admin', login: login, name: 'SOP menejeri', position: 'SOP menejeri', department: 'HR va o‘qitish', status: 'official', profileComplete: true });
     setCred_(makeCred_(id, login, pw));
     st.rev = (+st.rev || 0) + 1;
     writeState_(st);
-    Logger.log('Вход методиста — логин: ' + login + ', пароль: ' + pw + '. Запишите: пароль больше нигде не показывается.');
+    Logger.log('Вход SOP-менеджера — логин: ' + login + ', пароль: ' + pw + '. Запишите: пароль больше нигде не показывается.');
     return { login: login, password: pw };
   });
 }

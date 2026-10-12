@@ -1,6 +1,6 @@
 // Учебная платформа локально — с сервером, но без Google: сайт из репозитория, а запросы к /exec выполняет код
 // tools/lms-gs/Code.gs на заглушках Apps Script (tests/lms-gs-mock.mjs, данные — в памяти, до перезапуска).
-//   node tests/lms-dev-server.mjs [порт]   → http://localhost:8790/  (логин и пароль методиста — в консоли)
+//   node tests/lms-dev-server.mjs [порт]   → http://localhost:8790/  (логин и пароль SOP-менеджера — в консоли)
 // Для тестов в браузере: import { startDevServer } from './lms-dev-server.mjs'.
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
@@ -43,5 +43,5 @@ export async function startDevServer({ port = 0, iter = 1000, now, fetch } = {})
 if (import.meta.url === `file://${process.argv[1]}`) {
   const s = await startDevServer({ port: +process.argv[2] || 8790 });
   console.log('Учебная платформа с сервером (данные в памяти): ' + s.url.replace('127.0.0.1', 'localhost'));
-  console.log('Методист — логин: ' + s.admin.login + ', пароль: ' + s.admin.password);
+  console.log('SOP-менеджер — логин: ' + s.admin.login + ', пароль: ' + s.admin.password);
 }

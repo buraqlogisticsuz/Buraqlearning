@@ -40,12 +40,12 @@ test('сайт: страница, адрес сервера, только фай
     for (const p of ['/js/..%2ftools/lms-gs/Code.gs', '/js/..%2f..%2fetc/passwd', '/fonts/%2e%2e/README.md'])
       assert.equal(await new Promise(r => http.get(s.url.slice(0, -1) + p, res => { res.resume(); r(res.statusCode); })), 404, p);
     const ping = await (await fetch(s.url + 'api')).json();
-    assert.equal(ping.ok, true); assert.equal(ping.ready, true); assert.equal(ping.v, 3);
+    assert.equal(ping.ok, true); assert.equal(ping.ready, true); assert.equal(ping.v, 4);
     assert.equal((await s.api(null, 'не json')).code, 'bad');
   } finally { await s.close(); rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('данные на диске: вход методиста в журнале при первом запуске, после перезапуска — те же данные и пароли, файлы', async () => {
+test('данные на диске: вход SOP-менеджера в журнале при первом запуске, после перезапуска — те же данные и пароли, файлы', async () => {
   const dir = tmp();
   let s = await start(dir), adm = adminFrom(s.logs), pdf, ref;
   try {
@@ -66,7 +66,7 @@ test('данные на диске: вход методиста в журнал�
 
   s = await start(dir);
   try {
-    assert.equal(adminFrom(s.logs), null);                                      // второй методист не создаётся
+    assert.equal(adminFrom(s.logs), null);                                      // второй SOP-менеджер не создаётся
     const d = await s.api({ action: 'login', login: 'd.karimova', password: 'pw-dilnoza' });
     assert.equal(d.ok, true, JSON.stringify(d));
     const me = (await s.api({ action: 'load', token: d.token })).state.users.find(u => u.id === 10427);
@@ -123,7 +123,7 @@ test('ИИ: ключ из переменных окружения, пока Clau
   } finally { await s.close(); rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('NEW_ADMIN — новый вход методиста один раз на значение; большой запрос — понятная ошибка', async () => {
+test('NEW_ADMIN — новый вход SOP-менеджера один раз на значение; большой запрос — понятная ошибка', async () => {
   const dir = tmp();
   let s = await start(dir); await s.close();
   s = await start(dir, { env: { NEW_ADMIN: '1' } });

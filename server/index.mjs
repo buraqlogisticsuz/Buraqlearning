@@ -4,8 +4,8 @@
 //   /config.js  — адрес сервера для страницы: этот же /api
 //   /healthz    — проверка для Railway
 // Данные — в папке DATA_DIR (на Railway — том, Volume; путь берётся сам из RAILWAY_VOLUME_MOUNT_PATH).
-// Первый запуск — в журнале (Railway → Deployments → View logs) логин и пароль методиста.
-// Переменные окружения: PORT, DATA_DIR, ANTHROPIC_API_KEY и AI_* (см. README, «ИИ»), NEW_ADMIN — новый вход методиста.
+// Первый запуск — в журнале (Railway → Deployments → View logs) логин и пароль SOP-менеджера.
+// Переменные окружения: PORT, DATA_DIR, ANTHROPIC_API_KEY и AI_* (см. README, «ИИ»), NEW_ADMIN — новый вход SOP-менеджера.
 //   node server/index.mjs
 import http from 'node:http';
 import { gzipSync } from 'node:zlib';
@@ -44,10 +44,10 @@ export async function startServer({ port = 8080, host = '0.0.0.0', dir, env = pr
   const g = loadServer({ dir, env, iter, log });
   const C = g.ctx;
   if (!g.ready()) {
-    C.setup();   // вход методиста — в журнале (Logger.log)
+    C.setup();   // вход SOP-менеджера — в журнале (Logger.log)
     log('Платформа запущена впервые. Данные: ' + dir);
   }
-  // NEW_ADMIN=<любое новое значение> — ещё один вход методиста (если пароль потерян); одно значение — один раз
+  // NEW_ADMIN=<любое новое значение> — ещё один вход SOP-менеджера (если пароль потерян); одно значение — один раз
   const na = String(env.NEW_ADMIN || '').trim();
   if (na && g.props.NEW_ADMIN_DONE !== na) { C.newAdmin(); C.PropertiesService.getScriptProperties().setProperty('NEW_ADMIN_DONE', na); }
 

@@ -1162,6 +1162,18 @@ code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; 
 .ini-type-card.is-on.t-problem { border-color: var(--red-text); box-shadow: inset 0 0 0 1px var(--red-text); }
 .ini-type-card.is-on.t-idea { border-color: var(--blue-text); box-shadow: inset 0 0 0 1px var(--blue-text); }
 .ini-type-card.is-on.t-benefit { border-color: var(--gold); box-shadow: inset 0 0 0 1px var(--gold); }
+/* to whom: CEO, Project Manager, Boss */
+.ini-to-l { display: block; margin-bottom: -6px; }
+.ini-to-card .ini-tc-ico { background: var(--surface-sunken); color: var(--ink); }
+.ini-to-card.is-on { border-color: var(--blue-text); box-shadow: inset 0 0 0 1px var(--blue-text); }
+.ini-to-card.is-on .ini-tc-ico { background: var(--blue-soft); color: var(--blue-text); }
+.ini-to-chip { color: var(--blue-text); }
+.ini-routed .lor-eyebrow { display: block; margin-bottom: 6px; }
+.ini-routed-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+.ini-routed-i { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: var(--radius-md); border: var(--hairline) solid var(--line); }
+.ini-routed-i b { font-weight: 500; }
+.ld-form { margin-top: 12px; }
+@media (max-width: 640px) { .ini-routed-list, .ini-to { grid-template-columns: 1fr; } }
 .ini-ai { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .ini-pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .ini-done { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 12px; padding: 8px 0 0; }

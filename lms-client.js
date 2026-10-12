@@ -9,7 +9,7 @@
 (function (root) {
   'use strict';
   var S = root.LmsSync;
-  var SERVER_V = 3;                       // версия сервера (tools/lms-gs), под которую написана эта страница
+  var SERVER_V = 4;                       // версия сервера (tools/lms-gs), под которую написана эта страница
   var URL_ = String(root.LMS_SERVER || '').trim();
   var DEMO = !URL_ || /[?&]demo=1(&|$)/.test(root.location.search);
   var K = { token: 'lor-lms-token', cache: 'lor-lms-cache', queue: 'lor-lms-queue', lang: 'lor-lms-lang' };

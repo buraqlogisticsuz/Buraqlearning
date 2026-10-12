@@ -13,7 +13,7 @@ const course = { sections: [
   { id: 's1', title: 'Ombor', officialOnly: false, lessons: [{ id: 'b4-1', title: '4.1', html: '<p>matn</p>', quiz }, { id: 'b4-2', title: '4.2', html: '<p>ikki</p>', quiz }] },
   { id: 's2', title: 'Bojxona', officialOnly: true, lessons: [{ id: 'b4-9', title: '4.9', html: '<p>yopiq</p>', quiz, intro: 'x' }] }] };
 
-// запущенная платформа: методист, три сотрудника (наставник Sardor — официальный), курс, журнал и кейсы
+// запущенная платформа: SOP-менеджер, три сотрудника (наставник Sardor — официальный), курс, журнал и кейсы
 function platform(opts = {}) {
   const g = loadLms({ iter: 50, ...opts });
   const adm = g.ctx.setup();
@@ -45,7 +45,7 @@ function platform(opts = {}) {
 }
 const rejected = r => r.rejected.map(x => x.reason);
 
-test('setup: папка и state.json на Диске, вход методиста в журнале, ночная копия; повторный setup отказывает', () => {
+test('setup: папка и state.json на Диске, вход SOP-менеджера в журнале, ночная копия; повторный setup отказывает', () => {
   const g = loadLms({ iter: 50 });
   assert.equal(g.get().ready, false);
   assert.equal(g.post({ action: 'load', token: 'x' }).code, 'auth');
@@ -115,7 +115,7 @@ test('сессия: выход закрывает токен; через 30 дн
   assert.ok(!Object.keys(g.props).some(k => k.startsWith('sess:') && JSON.parse(g.props[k]).exp < now.value));
 });
 
-test('методист добавляет сотрудника с паролем: пароль уходит в учётную запись, в данных его нет; занятый логин не принимается', () => {
+test('SOP-менеджер добавляет сотрудника с паролем: пароль уходит в учётную запись, в данных его нет; занятый логин не принимается', () => {
   const { g, A, login } = platform();
   assert.ok(!g.state().users.some(u => 'password' in u));
   assert.ok(!g.files[g.props.LMS_STATE].content.includes('pw-dilnoza'));
@@ -123,7 +123,7 @@ test('методист добавляет сотрудника с паролем
   assert.match(rejected(dup)[0], /логин «d.karimova» уже занят/);
   assert.equal(g.state().users.find(u => u.id === 10500).login, undefined);
   assert.equal(g.post({ action: 'login', login: 'd.karimova', password: 'x1234567' }).code, 'login');
-  // смена логина методистом
+  // смена логина SOP-менеджером
   A({ action: 'patch', ops: [{ op: 'set', path: ['users', { id: 10427 }, 'login'], value: 'dilnoza' }] });
   login('dilnoza', 'pw-dilnoza');
   // удалённый сотрудник теряет вход и сессии
@@ -203,6 +203,72 @@ test('сотрудник: свои правки проходят, чужие и 
   assert.equal(st.session, undefined);
 });
 
+test('идеи: адресат — CEO, Project Manager или руководитель; он видит и отвечает только на свои, SOP-менеджер их не читает', () => {
+  const { g, A, D, Z, login } = platform();
+  const add = A({ action: 'patch', ops: [
+    { op: 'set', path: ['users', { id: 10901 }], value: { id: 10901, role: 'leader', post: 'ceo', login: 'ceo', password: 'pw-ceo-1', name: 'Bosh direktor', position: 'CEO' } },
+    { op: 'set', path: ['users', { id: 10902 }], value: { id: 10902, role: 'leader', post: 'pm', login: 'pm', password: 'pw-pm-1', name: 'Loyiha rahbari', position: 'Project Manager' } }] });
+  assert.deepEqual(add.rejected, []);
+  const idea = (id, to, extra) => ({ op: 'set', path: ['initiatives', { id }], value: { id, uid: 10427, to, type: 'idea', area: 'it', title: 'G‘oya ' + id, text: 'Batafsil matn ' + id, status: 'new', at: 5, ...extra } });
+  const sent = D({ action: 'patch', ops: [
+    idea('i5', 'ceo'), idea('i6', 'pm'),
+    /* 2 */ idea('i7', undefined), /* 3 */ idea('i8', 'hr'), /* 4 */ idea('i9', 'ceo', { reply: 'o‘zim javob berdim' }),
+    { op: 'set', path: ['notifications', { id: 50 }], value: { id: 50, userId: 10901, kind: 'ini_in', ini: { to: 'ceo' }, at: 5, read: false } }] });
+  assert.deepEqual(sent.rejected.map(x => x.i), [2, 3, 4]);
+  assert.match(sent.rejected[0].reason, /кому отправить идею/); assert.match(sent.rejected[2].reason, /даёт её адресат/);
+
+  // адресат видит только свои идеи и почти ничего больше
+  const C = login('ceo', 'pw-ceo-1'), cv = C({ action: 'load' }).state;
+  assert.deepEqual(cv.initiatives.map(x => x.id), ['i5']);
+  assert.equal(cv.initiatives[0].text, 'Batafsil matn i5');
+  assert.deepEqual(cv.course.sections, []); assert.deepEqual(cv.progress, {}); assert.deepEqual(cv.journals, []); assert.deepEqual(cv.errors, []);
+  assert.deepEqual(cv.notifications.map(n => n.id), [50]);
+  const author = cv.users.find(u => u.id === 10427);
+  assert.equal(author.name, 'Dilnoza Karimova'); assert.equal(author.passport, undefined); assert.equal(author.login, undefined);
+
+  // ответ на свою идею — можно; чужую идею, текст идеи, курс, свою должность — нельзя
+  const ans = C({ action: 'patch', ops: [
+    { op: 'set', path: ['initiatives', { id: 'i5' }, 'status'], value: 'accepted' },
+    { op: 'set', path: ['initiatives', { id: 'i5' }, 'reply'], value: 'Zo‘r, qilamiz' },
+    { op: 'set', path: ['initiatives', { id: 'i5' }, 'acceptedAt'], value: 9 },
+    { op: 'set', path: ['notifications', { id: 51 }], value: { id: 51, userId: 10427, kind: 'ini', ini: { title: 'G‘oya i5', s: 'accepted', reply: 'Zo‘r, qilamiz', xp: 25, to: 'ceo' }, at: 9, read: false } },
+    { op: 'set', path: ['users', { id: 10901 }, 'hints'], value: false },
+    /* 5 */ { op: 'set', path: ['initiatives', { id: 'i6' }, 'status'], value: 'declined' },
+    /* 6 */ { op: 'set', path: ['initiatives', { id: 'i5' }, 'title'], value: 'boshqa' },
+    /* 7 */ { op: 'set', path: ['initiatives', { id: 'i5' }, 'status'], value: 'zo‘r' },
+    /* 8 */ { op: 'del', path: ['initiatives', { id: 'i5' }] },
+    /* 9 */ { op: 'set', path: ['course', 'sections'], value: [] },
+    /* 10 */ { op: 'set', path: ['users', { id: 10901 }, 'post'], value: 'boss' },
+    /* 11 */ { op: 'set', path: ['initiatives', { id: 'i1' }, 'status'], value: 'done' }] });
+  assert.deepEqual(ans.rejected.map(x => x.i), [5, 6, 7, 8, 9, 10, 11]);
+  assert.match(ans.rejected[0].reason, /адресована не вам/); assert.match(ans.rejected[1].reason, /меняет автор идеи/);
+  const i5 = g.state().initiatives.find(x => x.id === 'i5');
+  assert.equal(i5.status, 'accepted'); assert.equal(i5.reply, 'Zo‘r, qilamiz'); assert.equal(i5.title, 'G‘oya i5');
+
+  // автор: ответ видит, но сам ни ответ, ни адресата не меняет
+  const mine = D({ action: 'load' }).state.initiatives.find(x => x.id === 'i5');
+  assert.equal(mine.reply, 'Zo‘r, qilamiz');
+  const dno = D({ action: 'patch', ops: [{ op: 'set', path: ['initiatives', { id: 'i5' }, 'to'], value: 'pm' }, { op: 'set', path: ['initiatives', { id: 'i5' }, 'status'], value: 'done' }] });
+  assert.equal(dno.applied, 0); assert.match(dno.rejected[0].reason, /меняет адресат идеи/);
+  // коллега — только то, из чего считается рейтинг
+  assert.deepEqual(Z({ action: 'load' }).state.initiatives.find(x => x.id === 'i5'), { id: 'i5', uid: 10427, status: 'accepted' });
+
+  // SOP-менеджер: статус и даты (для XP и уровней), без названия, текста и ответа; старые идеи без адресата — как раньше
+  const av = A({ action: 'load' }).state;
+  assert.deepEqual(av.initiatives.find(x => x.id === 'i5'), { id: 'i5', uid: 10427, to: 'ceo', status: 'accepted', at: 5, acceptedAt: 9 });
+  assert.equal(av.initiatives.find(x => x.id === 'i1').title, 'Aziza g‘oyasi');
+  assert.deepEqual(av.notifications.find(n => n.id === 51).ini, { s: 'accepted', xp: 25, to: 'ceo' });
+  assert.ok(!JSON.stringify(av).includes('Zo‘r, qilamiz') && !JSON.stringify(av).includes('Batafsil matn i5'));
+  const ano = A({ action: 'patch', ops: [
+    { op: 'set', path: ['initiatives', { id: 'i5' }, 'title'], value: 'x' },
+    { op: 'set', path: ['initiatives', { id: 'i5' }], value: { id: 'i5', uid: 10427, to: 'ceo', status: 'accepted' } },
+    { op: 'set', path: ['initiatives'], value: [] },
+    { op: 'set', path: ['initiatives', { id: 'i1' }, 'reply'], value: 'rahmat' }] });
+  assert.deepEqual(ano.rejected.map(x => x.i), [0, 1, 2]);
+  assert.match(ano.rejected[0].reason, /отвечает её адресат/);
+  assert.equal(g.state().initiatives.find(x => x.id === 'i5').text, 'Batafsil matn i5');
+});
+
 test('прогресс урока: сотрудник ставит «читаю / вопрос / готов к тесту», балл и итог — нет', () => {
   const { g, D, Z } = platform();
   const ok = D({ action: 'patch', ops: [
@@ -217,7 +283,7 @@ test('прогресс урока: сотрудник ставит «читаю 
     { op: 'set', path: ['progress', '10427', 'b4-2'], value: { status: 'passed', score: 100 } },
     { op: 'del', path: ['progress', '10427', 'b4-1'] }] });
   assert.equal(no.applied, 0);
-  assert.match(rejected(no)[0], /балл ставит сервер/); assert.match(rejected(no)[1], /итог урока ставит методист/);
+  assert.match(rejected(no)[0], /балл ставит сервер/); assert.match(rejected(no)[1], /итог урока ставит SOP-менеджер/);
   // сданный урок назад не откатить
   const back = Z({ action: 'patch', ops: [{ op: 'set', path: ['progress', '10391', 'b4-1', 'status'], value: 'in-progress' }] });
   assert.match(rejected(back)[0], /уже сдан/);
@@ -269,7 +335,7 @@ test('повторная проверка после ошибки: балл сч
   const r = D({ action: 'patch', ops: [{ op: 'set', path: ['users', { id: 10427 }, 'levelTasks'], value: { t1: { at: 1 } } }] });
   assert.match(rejected(r)[0], /levelTasks/);
 });
-test('мол-мулк: сотрудник сообщает о проблеме со своим имуществом, подтверждает его методист', () => {
+test('мол-мулк: сотрудник сообщает о проблеме со своим имуществом, подтверждает его SOP-менеджер', () => {
   const { g, D, A } = platform();
   A({ action: 'patch', ops: [{ op: 'set', path: ['assets', { id: 'as1' }], value: { id: 'as1', uid: 10427, type: 'laptop', name: 'Noutbuk', status: 'active' } }] });
   const r = D({ action: 'patch', ops: [
@@ -284,7 +350,7 @@ const pickN = n => ({ userId: n.userId, kind: n.kind, route: n.route, err: n.err
 test('since: та же версия — без данных; после правки — новое состояние', () => {
   const { D, A } = platform();
   const v = D({ action: 'load' });
-  assert.deepEqual(D({ action: 'since', rev: v.rev }), { ok: true, v: 3, ai: false, rev: v.rev, same: true });
+  assert.deepEqual(D({ action: 'since', rev: v.rev }), { ok: true, v: 4, ai: false, rev: v.rev, same: true });
   A({ action: 'patch', ops: [{ op: 'set', path: ['notifications', { id: 9 }], value: { id: 9, userId: 10427, text: 'yangi' }, after: null }] });
   const n = D({ action: 'since', rev: v.rev });
   assert.equal(n.rev, v.rev + 1); assert.equal(n.state.notifications[0].text, 'yangi');
@@ -305,7 +371,7 @@ test('файлы: скан паспорта и вложения — на Дис�
   const id = ref.slice(8), f = g.files[id];
   assert.equal(f.name, 'pasport.pdf'); assert.equal(f.type, 'application/pdf'); assert.match(f.description, /10427/);
   assert.equal(g.folders[f.folder].name, 'files');
-  // своё — можно, методисту — можно, коллеге — нельзя
+  // своё — можно, SOP-менеджеру — можно, коллеге — нельзя
   const mine = D({ action: 'file', id });
   assert.equal(mine.name, 'pasport.pdf'); assert.equal(Buffer.from(mine.data, 'base64').toString().slice(0, 8), '%PDF-1.4');
   assert.equal(A({ action: 'file', id }).ok, true);
@@ -381,7 +447,7 @@ test('ИИ: дневной лимит на человека и другая мо
   assert.equal(g.calls[0].body.fallbacks, undefined); assert.equal(g.calls[0].opts.headers['anthropic-beta'], undefined);
 });
 
-test('пароли: смена своим паролем закрывает другие входы; сброс методистом выдаёт новый один раз', () => {
+test('пароли: смена своим паролем закрывает другие входы; сброс SOP-менеджером выдаёт новый один раз', () => {
   const { g, D, A, login } = platform();
   const other = login('d.karimova', 'pw-dilnoza');
   assert.equal(D({ action: 'password', old: 'wrong', password: 'new-pass-1' }).code, 'login');
