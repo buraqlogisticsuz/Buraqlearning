@@ -2512,6 +2512,7 @@ Object.assign(APP_T.zh, {
 
 /* ---------- strings: server mode (sign-in, sync, course import, server code) ---------- */
 Object.assign(APP_T.uz, {
+  srv_ai_unavail: 'AI hali ulanmagan — metodist serverga Claude API kalitini qo‘shishi kerak.', srv_ai_limit: 'Bugungi AI so‘rovlari limiti tugadi — ertaga qayta urinib ko‘ring.',
   video_yt: 'YouTube · faqat havola orqali',
   srv_cms_hint: 'Kurs matnlari serverda — faqat tizimga kirgan xodimlarga ko‘rinadi',
   srv_note: 'Ma’lumotlar BURAQ serverida saqlanadi.', srv_signing: 'Kirilmoqda…',
@@ -2528,6 +2529,7 @@ Object.assign(APP_T.uz, {
   imp_demo: 'Bu sayt demo fayli — unda standart matnlari yo‘q. Claude’dagi asl prototip faylini tanlang.'
 });
 Object.assign(APP_T.ru, {
+  srv_ai_unavail: 'ИИ ещё не подключён — методист добавляет ключ Claude API на сервере.', srv_ai_limit: 'Лимит запросов к ИИ на сегодня исчерпан — попробуйте завтра.',
   video_yt: 'YouTube · доступ по ссылке',
   srv_cms_hint: 'Тексты курса — на сервере, их видят только вошедшие сотрудники',
   srv_note: 'Данные хранятся на сервере BURAQ.', srv_signing: 'Вход…',
@@ -2544,6 +2546,7 @@ Object.assign(APP_T.ru, {
   imp_demo: 'Это файл демо с сайта — в нём нет текстов стандартов. Выберите исходный файл прототипа из Claude.'
 });
 Object.assign(APP_T.en, {
+  srv_ai_unavail: 'AI isn’t connected yet — the methodist adds a Claude API key on the server.', srv_ai_limit: 'Today’s AI request limit is used up — try again tomorrow.',
   video_yt: 'YouTube · unlisted',
   srv_cms_hint: 'Course texts live on the server — only signed-in employees see them',
   srv_note: 'Data is stored on the BURAQ server.', srv_signing: 'Signing in…',
@@ -2560,6 +2563,7 @@ Object.assign(APP_T.en, {
   imp_demo: 'This is the site’s demo file — it has no standard texts. Choose the original prototype file from Claude.'
 });
 Object.assign(APP_T.zh, {
+  srv_ai_unavail: 'AI 尚未连接——需由培训主管在服务器上添加 Claude API 密钥。', srv_ai_limit: '今天的 AI 请求次数已用完——请明天再试。',
   video_yt: 'YouTube · 仅限链接访问',
   srv_cms_hint: '课程文本保存在服务器上——仅登录的员工可见',
   srv_note: '数据保存在 BURAQ 服务器上。', srv_signing: '正在登录…',

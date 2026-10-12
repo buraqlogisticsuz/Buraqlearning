@@ -13,10 +13,14 @@
  * Копия данных — каждую ночь (функция backup, папка backups рядом с state.json), хранится 30 дней.
  * Файлы (сканы паспортов, вложения журналов и сверхзадач) — в папке files рядом с state.json: в данных остаётся
  * ссылка lmsfile:<id>, сам файл сервер отдаёт только тому, кому видна эта ссылка (действие file).
+ * ИИ (наставник, кейсы, опросы, редактор курса) — Claude API через этот скрипт (действие ai): ⚙ Настройки проекта →
+ * Свойства скрипта → ANTHROPIC_API_KEY = ключ с platform.claude.com. Ключ не уходит на страницу. Необязательно:
+ * AI_MODEL (по умолчанию claude-opus-5-5), AI_DAILY_LIMIT / AI_DAILY_LIMIT_ADMIN (запросов в день на человека),
+ * AI_MAX_TOKENS (длина ответа). Без ключа платформа работает, ИИ-кнопки пишут «ИИ не подключён».
  *
  * Запрос — POST с JSON { action, token, … }, ответ — JSON { ok, … } или { ok: false, code, error }.
  */
-var LMS_VERSION = 2;           // 2: файлы — отдельно на Диске, действие file
+var LMS_VERSION = 3;           // 2: файлы — отдельно на Диске, действие file; 3: ИИ через Claude API (действие ai)
 var PBKDF2_ITER = 10000;          // пароль хранится только как PBKDF2-SHA256 с солью
 var SESSION_DAYS = 30;            // вход на устройстве живёт 30 дней с последнего запроса
 var FAIL_MAX = 5, FAIL_LOCK_MIN = 15;  // 5 неверных паролей подряд — логин закрыт на 15 минут
@@ -26,6 +30,12 @@ var PASS_MARK = 80;
 var MAX_OPS = 500;
 var FILE_MIN = 2048;              // data:-строки короче (значки) остаются в данных, длиннее — файлом на Диске
 var AUDIT_KEEP = 500;             // журнал нарушений защиты урока — последние 500 записей
+var AI_MODEL = 'claude-opus-5-5';  // свойство AI_MODEL меняет модель без правки кода
+var AI_LIMIT = 30, AI_LIMIT_ADMIN = 200;  // запросов к ИИ в день на сотрудника / методиста
+var AI_MAX_TOKENS = 4096;         // ответ должен уложиться в минуту — столько Apps Script ждёт внешний запрос
+var AI_MAX_CHARS = 200000;        // длина запроса (текст стандартов + переписка)
+// модели, у которых Claude API сам повторяет отказанный запрос на запасной модели (fallbacks: "default")
+var AI_FALLBACK = ['claude-opus-5-5', 'claude-opus-5', 'claude-fable-5-1', 'claude-sonnet-5-5'];
 var DAY_MS = 864e5;
 
 /* ---------------- вход в веб-приложение ---------------- */
@@ -49,13 +59,14 @@ function route_(req) {
   if (a === 'logout') { props_().deleteProperty(s.key); return { ok: true }; }
   if (a === 'since') {
     var rev = +props_().getProperty('LMS_REV') || 0;
-    if (+req.rev === rev) return { ok: true, v: LMS_VERSION, rev: rev, same: true };
+    if (+req.rev === rev) return { ok: true, v: LMS_VERSION, ai: !!aiKey_(), rev: rev, same: true };
     return load_(s);
   }
   if (a === 'load') return load_(s);
   if (a === 'patch') return patch_(s, req.ops);
   if (a === 'quiz') return quiz_(s, req);
   if (a === 'retest') return retest_(s, req);
+  if (a === 'ai') return ai_(s, req);
   if (a === 'password') return password_(s, req);
   if (a === 'resetPassword') return resetPassword_(s, req);
   if (a === 'file') return file_(s, req);
@@ -192,7 +203,7 @@ function me_(st, s) {
 
 function load_(s) {
   var st = readState_(), me = me_(st, s);
-  return { ok: true, v: LMS_VERSION, rev: st.rev, me: me.id, state: viewFor_(st, me) };
+  return { ok: true, v: LMS_VERSION, ai: !!aiKey_(), rev: st.rev, me: me.id, state: viewFor_(st, me) };
 }
 
 function password_(s, req) {
@@ -546,6 +557,62 @@ function retest_(s, req) {
     }
     return { ok: true, rev: st.rev, score: sc, passMark: PASS_MARK };
   });
+}
+
+/* ---------------- ИИ: Claude API через сервер ---------------- */
+
+function aiProp_(k, d) { var v = String(props_().getProperty(k) || '').trim(); return v || d; }
+function aiKey_() { return aiProp_('ANTHROPIC_API_KEY', ''); }
+
+/* сколько запросов к ИИ сегодня сделал каждый: одно свойство AI_USAGE на день (Ташкент) */
+function aiUsage_(change) {
+  return withLock_(function () {
+    var day = Utilities.formatDate(new Date(), 'Asia/Tashkent', 'yyyy-MM-dd');
+    var u = JSON.parse(props_().getProperty('AI_USAGE') || 'null');
+    if (!u || u.day !== day) u = { day: day, n: {}, tin: 0, tout: 0 };
+    var r = change(u);
+    props_().setProperty('AI_USAGE', JSON.stringify(u));
+    return r;
+  });
+}
+
+/* запрос к ИИ: { messages: [{role, content}], tier: 'quick' | 'default', json } → { text, truncated } */
+function ai_(s, req) {
+  var key = aiKey_();
+  if (!key) throw err_('ai_off', 'ИИ не подключён: задайте ANTHROPIC_API_KEY в свойствах скрипта');
+  var st = readState_(), me = me_(st, s), uid = String(me.id), chars = 0;
+  var msgs = (Array.isArray(req.messages) ? req.messages : []).slice(-40).map(function (m) {
+    var c = String((m && m.content) || ''); chars += c.length;
+    return { role: m && m.role === 'assistant' ? 'assistant' : 'user', content: c };
+  }).filter(function (m) { return m.content; });
+  if (!msgs.length || msgs[0].role !== 'user' || msgs[msgs.length - 1].role !== 'user') throw err_('bad', 'Переписка с ИИ должна начинаться и заканчиваться вопросом');
+  if (chars > AI_MAX_CHARS) throw err_('bad', 'Слишком длинный запрос к ИИ');
+  var limit = +aiProp_(me.role === 'admin' ? 'AI_DAILY_LIMIT_ADMIN' : 'AI_DAILY_LIMIT', me.role === 'admin' ? AI_LIMIT_ADMIN : AI_LIMIT);
+  // место в дневном лимите занимается до запроса (два запроса сразу не обойдут лимит) и возвращается при сбое
+  aiUsage_(function (u) { if ((u.n[uid] || 0) >= limit) throw err_('ai_limit', 'Лимит запросов к ИИ на сегодня исчерпан (' + limit + ')'); u.n[uid] = (u.n[uid] || 0) + 1; });
+  var refund = function () { aiUsage_(function (u) { u.n[uid] = Math.max(0, (u.n[uid] || 1) - 1); }); };
+
+  var model = aiProp_('AI_MODEL', AI_MODEL);
+  var body = { model: model, max_tokens: +aiProp_('AI_MAX_TOKENS', AI_MAX_TOKENS), messages: msgs,
+    output_config: { effort: req.tier === 'quick' ? 'low' : 'medium' } };
+  if (req.json) body.system = 'Reply with valid JSON only: no markdown code fences, no commentary before or after it.';
+  var headers = { 'x-api-key': key, 'anthropic-version': '2023-06-01' };
+  if (AI_FALLBACK.indexOf(model) >= 0) { body.fallbacks = 'default'; headers['anthropic-beta'] = 'server-side-fallback-2026-07-01'; }
+  var res;
+  try {
+    res = UrlFetchApp.fetch('https://api.anthropic.com/v1/messages', { method: 'post', contentType: 'application/json', headers: headers, payload: JSON.stringify(body), muteHttpExceptions: true });
+  } catch (e) { refund(); throw err_('ai_err', 'Нет связи с Claude API: ' + ((e && e.message) || e)); }
+  var code = res.getResponseCode(), x = null;
+  try { x = JSON.parse(res.getContentText()); } catch (e) {}
+  if (code !== 200 || !x) {
+    refund();
+    var msg = (x && x.error && x.error.message) || ('HTTP ' + code);
+    throw err_(code === 429 || code === 529 ? 'rate_limited' : code === 401 || code === 403 ? 'ai_key' : 'ai_err', 'Claude API: ' + msg);
+  }
+  aiUsage_(function (u) { u.tin += (x.usage && x.usage.input_tokens) || 0; u.tout += (x.usage && x.usage.output_tokens) || 0; });
+  if (x.stop_reason === 'refusal') throw err_('refused', 'Claude не стал отвечать на этот запрос');
+  var text = (x.content || []).filter(function (b) { return b && b.type === 'text'; }).map(function (b) { return b.text; }).join('');
+  return { ok: true, text: text, truncated: x.stop_reason === 'max_tokens', model: x.model };
 }
 
 /* ---------------- запуск, вход методиста, копии ---------------- */

@@ -7,8 +7,8 @@ import { buildLmsGs } from '../tools/build-lms-gs.mjs';
 const sbytes = buf => Array.from(buf, b => (b > 127 ? b - 256 : b));
 const ubuf = x => typeof x === 'string' ? Buffer.from(x, 'utf8') : Buffer.from(x.map(b => (b + 256) % 256));
 
-export function loadLms({ now, iter } = {}) {
-  const props = {}, files = {}, folders = {}, triggers = [], logs = [], cache = new Map();
+export function loadLms({ now, iter, fetch } = {}) {
+  const props = {}, files = {}, folders = {}, triggers = [], logs = [], cache = new Map(), calls = [];
   let seq = 0, writes = 0, uuid = 0;
   const clock = () => (now && now.value != null ? now.value : Date.now());
   // id как у Google Диска — длинные; файл — текст (content) или байты (bytes, type) для загруженных файлов
@@ -68,6 +68,11 @@ export function loadLms({ now, iter } = {}) {
       newTrigger: fn => { const b = { timeBased: () => b, atHour: h => { b.h = h; return b; }, everyDays: () => b, inTimezone: () => b, create: () => { const t = { getHandlerFunction: () => fn, hour: b.h }; triggers.push(t); return t; } }; return b; }
     },
     Logger: { log: s => logs.push(String(s)) },
+    // внешние запросы (Claude API): fetch(url, body, opts) → { status, body } или Error
+    UrlFetchApp: { fetch: (url, opts = {}) => {
+      const body = opts.payload ? JSON.parse(opts.payload) : null; calls.push({ url, opts, body });
+      const r = fetch ? fetch(url, body, opts) : new Error('сеть недоступна'); if (r instanceof Error) throw r;
+      return { getResponseCode: () => r.status ?? 200, getContentText: () => typeof r.body === 'string' ? r.body : JSON.stringify(r.body) }; } },
     Date: class extends Date { constructor(...a) { if (!a.length) super(clock()); else super(...a); } static now() { return clock(); } }
   };
   vm.createContext(ctx);
@@ -76,6 +81,6 @@ export function loadLms({ now, iter } = {}) {
   vm.runInContext(src, ctx);
   const post = body => JSON.parse(ctx.doPost({ postData: { contents: JSON.stringify(body) } }).text);
   const state = () => { const id = props.LMS_STATE; return id ? JSON.parse(files[id].content) : null; };
-  return { ctx, props, files, folders, triggers, logs, cache, post, state, writes: () => writes,
+  return { ctx, props, files, folders, triggers, logs, cache, calls, post, state, writes: () => writes,
     get: () => JSON.parse(ctx.doGet().text), setLocked: v => { locked = v; } };
 }

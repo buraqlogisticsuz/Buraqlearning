@@ -9,7 +9,7 @@
 (function (root) {
   'use strict';
   var S = root.LmsSync;
-  var SERVER_V = 2;                       // версия сервера (tools/lms-gs), под которую написана эта страница
+  var SERVER_V = 3;                       // версия сервера (tools/lms-gs), под которую написана эта страница
   var URL_ = String(root.LMS_SERVER || '').trim();
   var DEMO = !URL_ || /[?&]demo=1(&|$)/.test(root.location.search);
   var K = { token: 'lor-lms-token', cache: 'lor-lms-cache', queue: 'lor-lms-queue', lang: 'lor-lms-lang' };
@@ -24,7 +24,7 @@
   var cache = token ? getJ(K.cache) : null;         // { rev, me, v, state }
   var queue = getJ(K.queue) || { me: null, ops: [] };
   var listeners = [], statusL = [];
-  var status = { net: 'ok', error: null, rejected: null, v: cache ? cache.v : null };
+  var status = { net: 'ok', error: null, rejected: null, v: cache ? cache.v : null, ai: !!(cache && cache.ai) };
   var inflight = null, flushT = null, retryMs = 0, epoch = 0;
 
   function saveQueue() { put(K.queue, queue.ops.length ? JSON.stringify(queue) : null); }
@@ -49,15 +49,16 @@
   function setStatus(patch) { Object.assign(status, patch); statusL.forEach(function (fn) { fn(Object.assign({}, status, { pending: queue.ops.length })); }); }
 
   function fail(code, msg) { var e = new Error(msg || code); e.code = code; return e; }
-  function call(action, body) {
+  function call(action, body, signal) {
     var payload = JSON.stringify(Object.assign({ action: action, token: token }, body || {}));
     // text/plain — «простой» запрос: браузер не делает предварительный OPTIONS, Apps Script его не умеет
-    return fetch(URL_, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: payload, cache: 'no-store', redirect: 'follow' })
-      .then(function (r) { return r.text(); }, function () { throw fail('net'); })
+    return fetch(URL_, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: payload, cache: 'no-store', redirect: 'follow', signal: signal })
+      .then(function (r) { return r.text(); }, function (e) { throw fail(e && e.name === 'AbortError' ? 'cancelled' : 'net'); })
       .then(function (txt) {
         var x; try { x = JSON.parse(txt); } catch (e) { throw fail('html', 'Сервер ответил не JSON'); }
         if (!x || !x.ok) throw fail((x && x.code) || 'script', x && x.error);
         if (x.v) setStatus({ v: x.v });
+        if (typeof x.ai === 'boolean' && x.ai !== status.ai) setStatus({ ai: x.ai });
         return x;
       })
       .catch(function (e) {
@@ -67,7 +68,7 @@
   }
   function dropSession() { token = null; cache = null; put(K.token, null); saveCache(); emit(); }
 
-  function take(x) { cache = { rev: x.rev, me: x.me, v: x.v, state: x.state }; saveCache(); emit(); }
+  function take(x) { cache = { rev: x.rev, me: x.me, v: x.v, ai: !!x.ai, state: x.state }; saveCache(); emit(); }
   function load() { var ep = epoch; return call('load').then(function (x) { if (ep === epoch) take(x); else return sync(); }); }
   /* что нового на сервере; ответы, начатые до последней отправленной правки, устарели — спросить снова */
   function sync() {
@@ -162,6 +163,11 @@
         .then(function (r) { sync(); return r; });
     },
     file: function (id) { return call('file', { id: id }); },
+    /* ИИ через сервер (ключ Claude API — только в свойствах скрипта): messages — [{ role, content }] */
+    ai: function (messages, opts) {
+      opts = opts || {};
+      return call('ai', { messages: messages, tier: opts.tier, json: !!opts.json }, opts.signal);
+    },
     resetPassword: function (userId) { return call('resetPassword', { userId: userId }); },
     changePassword: function (old, password) { return call('password', { old: old, password: password }); },
     sync: function () { return sync().then(flush); },

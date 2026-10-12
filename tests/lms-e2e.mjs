@@ -18,7 +18,10 @@ if (shots) mkdirSync(shots, { recursive: true });
 const shot = async (p, name) => { if (shots) await p.screenshot({ path: shots + '/' + name + '.png' }); };
 const step = (s) => console.log('· ' + s);
 
-const srv = await startDevServer();
+// Claude API на заглушке: ИИ-наставник отвечает по последнему вопросу
+const aiCalls = [];
+const srv = await startDevServer({ fetch: (url, body) => { aiCalls.push(body); const q = body.messages[body.messages.length - 1].content;
+  return { body: { model: body.model, stop_reason: 'end_turn', usage: { input_tokens: 10, output_tokens: 5 }, content: [{ type: 'text', text: 'Javob: ' + q }] } }; } });
 const browser = await pw.chromium.launch();
 const errors = [];
 let offline = false;   // ошибки сети, пока /exec выключен нарочно, — ожидаемые
@@ -236,6 +239,21 @@ try {
   assert.equal(await E.locator('.lor-shield').count(), 0, 'клик в видео не прячет урок');
   await E.keyboard.press('Escape');
   step('видео урока: ссылка YouTube встраивается, защита урока её не прячет');
+
+  // ---------- ИИ-наставник через сервер ----------
+  await E.locator('#ai-input').count().then(n => n ? null : E.getByRole('button', { name: 'AI-mentor' }).first().click());
+  await E.waitForTimeout(300);
+  assert.ok((await E.innerText('body')).includes('AI hali ulanmagan'), 'без ключа — «ИИ не подключён»');
+  srv.g.props.ANTHROPIC_API_KEY = 'sk-ant-test';
+  await E.evaluate(() => LmsClient.sync()); await E.waitForTimeout(400);
+  await E.fill('#ai-input', 'Packing list nima?');
+  await E.locator('.ai-form button[type="submit"]').click();
+  await E.waitForFunction(() => document.body.innerText.includes('Javob: Packing list nima?'), null, { timeout: 10000 });
+  assert.equal(aiCalls.length, 1); assert.equal(aiCalls[0].model, 'claude-opus-5-5');
+  assert.ok(!(await E.evaluate(() => JSON.stringify(localStorage))).includes('sk-ant-test'), 'ключ не попадает на устройство');
+  await shot(E, '12-ai');
+  await E.keyboard.press('Escape');
+  step('ИИ-наставник: без ключа — «не подключён», с ключом отвечает через сервер');
 
   assert.deepEqual(await rejected(E), [], 'сервер не отклонил ни одной правки сотрудника');
   assert.deepEqual(await rejected(A), [], 'сервер не отклонил ни одной правки методиста');

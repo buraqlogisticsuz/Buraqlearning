@@ -12,8 +12,9 @@ const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml',
   '.png': 'image/png', '.woff2': 'font/woff2', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.md': 'text/plain; charset=utf-8' };
 
-export async function startDevServer({ port = 0, iter = 1000, now } = {}) {
-  const g = loadLms({ iter, now });
+// fetch — подмена Claude API для ИИ (см. tests/lms-gs-mock.mjs); без неё запросы к ИИ отвечают ошибкой сети
+export async function startDevServer({ port = 0, iter = 1000, now, fetch } = {}) {
+  const g = loadLms({ iter, now, fetch });
   const admin = g.ctx.setup();
   let offline = false;   // для теста «нет сети»: /exec не отвечает
   const server = http.createServer(async (req, res) => {

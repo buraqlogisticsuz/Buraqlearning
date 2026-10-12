@@ -284,7 +284,7 @@ const pickN = n => ({ userId: n.userId, kind: n.kind, route: n.route, err: n.err
 test('since: та же версия — без данных; после правки — новое состояние', () => {
   const { D, A } = platform();
   const v = D({ action: 'load' });
-  assert.deepEqual(D({ action: 'since', rev: v.rev }), { ok: true, v: 2, rev: v.rev, same: true });
+  assert.deepEqual(D({ action: 'since', rev: v.rev }), { ok: true, v: 3, ai: false, rev: v.rev, same: true });
   A({ action: 'patch', ops: [{ op: 'set', path: ['notifications', { id: 9 }], value: { id: 9, userId: 10427, text: 'yangi' }, after: null }] });
   const n = D({ action: 'since', rev: v.rev });
   assert.equal(n.rev, v.rev + 1); assert.equal(n.state.notifications[0].text, 'yangi');
@@ -326,6 +326,59 @@ test('журнал нарушений: сотрудник добавляет т�
   assert.deepEqual(r.rejected, []);
   const au = g.state().audit;
   assert.equal(au.length, 500); assert.equal(au[0].id, 'a1'); assert.equal(au[499].id, 'old498');
+});
+
+test('ИИ: без ключа — «не подключён»; с ключом — Claude API, ключ только на сервере, отказ и ошибки понятны', () => {
+  const replies = [];
+  const { g, D, A } = platform({ fetch: (url, body, opts) => replies.shift() });
+  const ask = (who, extra = {}) => who({ action: 'ai', messages: [{ role: 'user', content: 'Packing list nima?' }], ...extra });
+  assert.equal(ask(D).code, 'ai_off');
+  assert.equal(D({ action: 'load' }).ai, false);
+  g.props.ANTHROPIC_API_KEY = 'sk-ant-test';
+  assert.equal(D({ action: 'load' }).ai, true);
+
+  replies.push({ body: { model: 'claude-opus-5-5', stop_reason: 'end_turn', usage: { input_tokens: 120, output_tokens: 30 },
+    content: [{ type: 'thinking', thinking: '' }, { type: 'text', text: 'Packing list — ' }, { type: 'text', text: 'yuk ro‘yxati.' }] } });
+  const r = ask(D, { tier: 'quick' });
+  assert.deepEqual([r.ok, r.text, r.truncated], [true, 'Packing list — yuk ro‘yxati.', false]);
+  const c = g.calls[0];
+  assert.equal(c.url, 'https://api.anthropic.com/v1/messages');
+  assert.equal(c.opts.headers['x-api-key'], 'sk-ant-test'); assert.equal(c.opts.headers['anthropic-version'], '2023-06-01');
+  assert.equal(c.opts.headers['anthropic-beta'], 'server-side-fallback-2026-07-01');
+  assert.equal(c.body.model, 'claude-opus-5-5'); assert.equal(c.body.fallbacks, 'default');
+  assert.deepEqual(c.body.output_config, { effort: 'low' }); assert.equal(c.body.system, undefined);
+  assert.equal(c.body.thinking, undefined); assert.equal(c.body.max_tokens, 4096);
+  assert.ok(!JSON.stringify(D({ action: 'load' })).includes('sk-ant-test'), 'ключ не уходит на страницу');
+
+  // JSON-режим и обычный уровень; ответ обрезан по длине
+  replies.push({ body: { model: 'claude-opus-5-5', stop_reason: 'max_tokens', content: [{ type: 'text', text: '{"a":' }] } });
+  const j = ask(A, { json: true });
+  assert.equal(j.truncated, true);
+  assert.match(g.calls[1].body.system, /JSON only/); assert.deepEqual(g.calls[1].body.output_config, { effort: 'medium' });
+
+  // отказ модели, перегрузка API (место в лимите возвращается), переписка должна заканчиваться вопросом
+  replies.push({ body: { stop_reason: 'refusal', content: [] } });
+  assert.equal(ask(D).code, 'refused');
+  replies.push({ status: 529, body: { error: { message: 'Overloaded' } } });
+  const busy = ask(D); assert.equal(busy.code, 'rate_limited'); assert.match(busy.error, /Overloaded/);
+  replies.push({ status: 401, body: { error: { message: 'invalid x-api-key' } } });
+  assert.equal(ask(D).code, 'ai_key');
+  assert.equal(D({ action: 'ai', messages: [{ role: 'user', content: 'a' }, { role: 'assistant', content: 'b' }] }).code, 'bad');
+  const u = JSON.parse(g.props.AI_USAGE);
+  assert.equal(u.n['10427'], 2, 'учтены удачный запрос и отказ; сбои API — нет');
+  assert.equal(u.tin, 120); assert.equal(u.tout, 30);
+});
+
+test('ИИ: дневной лимит на человека и другая модель из свойства AI_MODEL (без fallbacks у Haiku)', () => {
+  const ok = { body: { stop_reason: 'end_turn', content: [{ type: 'text', text: 'ok' }] } };
+  const { g, D, Z } = platform({ fetch: () => ok });
+  Object.assign(g.props, { ANTHROPIC_API_KEY: 'sk-ant-test', AI_DAILY_LIMIT: '2', AI_MODEL: 'claude-haiku-5-5' });
+  const ask = who => who({ action: 'ai', messages: [{ role: 'user', content: 'savol' }] });
+  assert.equal(ask(D).ok, true); assert.equal(ask(D).ok, true);
+  const third = ask(D); assert.equal(third.code, 'ai_limit'); assert.match(third.error, /\(2\)/);
+  assert.equal(ask(Z).ok, true, 'у другого сотрудника свой лимит');
+  assert.equal(g.calls[0].body.model, 'claude-haiku-5-5');
+  assert.equal(g.calls[0].body.fallbacks, undefined); assert.equal(g.calls[0].opts.headers['anthropic-beta'], undefined);
 });
 
 test('пароли: смена своим паролем закрывает другие входы; сброс методистом выдаёт новый один раз', () => {

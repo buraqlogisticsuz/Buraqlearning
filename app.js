@@ -306,9 +306,34 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   }
 
   /* ---------- AI (claude.use("sample")) ---------- */
+  /* AI through the server (Claude API; the key lives only in the script properties) — the same interface as claude.use('sample'):
+     sampler(prompt | turns, { signal, modelTier, onText }) → { text, truncated }, sampler.json(...) → parsed JSON */
+  function looseJson(s) {
+    var t = String(s || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+    try { return JSON.parse(t); } catch (e) {}
+    var a = Math.min.apply(null, ['{', '['].map(function (c) { var i = t.indexOf(c); return i < 0 ? Infinity : i; })), b = Math.max(t.lastIndexOf('}'), t.lastIndexOf(']'));
+    if (a !== Infinity && b > a) { try { return JSON.parse(t.slice(a, b + 1)); } catch (e) {} }
+    var err = new Error('bad json'); err.code = 'bad_json'; throw err;
+  }
+  var SERVER_SAMPLER = SV ? (function () {
+    function run(input, opts, json) {
+      opts = opts || {};
+      var msgs = typeof input === 'string' ? [{ role: 'user', content: input }]
+        : (input || []).map(function (m) { return { role: m.role === 'assistant' ? 'assistant' : 'user', content: String(m.content || '') }; });
+      return SV.ai(msgs, { tier: opts.modelTier === 'quick' ? 'quick' : 'default', json: json, signal: opts.signal }).then(function (r) {
+        if (json) return looseJson(r.text);
+        if (opts.onText) opts.onText({ text: r.text });
+        return { text: r.text, truncated: !!r.truncated };
+      }, function (e) { var x = new Error(e.message); x.code = e.code; x.text = ''; throw x; });
+    }
+    var f = function (input, opts) { return run(input, opts, false); };
+    f.json = function (input, opts) { return run(input, opts, true); };
+    return f;
+  })() : null;
   function useSampler() {
     var s = useState(undefined);
     useEffect(function () {
+      if (SV) return SV.onStatus(function (st) { s[1](function () { return st.ai ? SERVER_SAMPLER : null; }); });
       var alive = true;
       if (!window.claude || typeof window.claude.use !== 'function') { s[1](null); return; }
       window.claude.use('sample').then(function (x) { if (alive) s[1](function () { return x || null; }); }, function () { if (alive) s[1](null); });
@@ -320,6 +345,9 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var c = e && e.code;
     if (c === 'not_granted' || c === 'sampling_disabled' || c === 'not_declared' || c === 'capability_disabled' || c === 'capability_removed') return t('ai_denied');
     if (c === 'rate_limited') return t('ai_rate');
+    if (c === 'ai_limit') return t('srv_ai_limit');
+    if (c === 'ai_off' || c === 'ai_key') return t('srv_ai_unavail');
+    if (c === 'net') return t('srv_net');
     if (c === 'refused') return t('ai_refused');
     return t('ai_err');
   }
@@ -6225,7 +6253,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   /* ---------------- root ---------------- */
   function App() {
     var s = useDB(), db = s[0], update = s[1], setDb = s[2];
-    var lang = db.lang || 'uz', t = T(lang);
+    var lang = db.lang || 'uz', t0 = T(lang), t = SV ? function (k) { return t0(k === 'ai_unavail' ? 'srv_ai_unavail' : k); } : t0;
     var ts = useState(null), toast = ts[0], sampler = useSampler(), tm = useState(false);
     useEffect(function () { if (!toast) return; var id = setTimeout(function () { ts[1](null); }, 3600); return function () { clearTimeout(id); }; }, [toast]);
     useEffect(function () { document.documentElement.lang = lang; }, [lang]);
