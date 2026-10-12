@@ -20,8 +20,9 @@
  *
  * Запрос — POST с JSON { action, token, … }, ответ — JSON { ok, … } или { ok: false, code, error }.
  */
-var LMS_VERSION = 4;           // 2: файлы — отдельно на Диске, действие file; 3: ИИ через Claude API (действие ai);
-                               // 4: адресаты идей — CEO, Project Manager, руководитель компании (свой вход, role 'leader')
+var LMS_VERSION = 5;           // 2: файлы — отдельно на Диске, действие file; 3: ИИ через Claude API (действие ai);
+                               // 4: адресаты идей — CEO, Project Manager, руководитель компании (свой вход, role 'leader');
+                               // 5: у идеи несколько адресатов (to — список), repliedBy — кто ответил
 var PBKDF2_ITER = 10000;          // пароль хранится только как PBKDF2-SHA256 с солью
 var SESSION_DAYS = 30;            // вход на устройстве живёт 30 дней с последнего запроса
 var FAIL_MAX = 5, FAIL_LOCK_MIN = 15;  // 5 неверных паролей подряд — логин закрыт на 15 минут
@@ -38,10 +39,12 @@ var AI_MAX_CHARS = 200000;        // длина запроса (текст ст�
 // модели, у которых Claude API сам повторяет отказанный запрос на запасной модели (fallbacks: "default")
 var AI_FALLBACK = ['claude-opus-5-5', 'claude-opus-5', 'claude-fable-5-1', 'claude-sonnet-5-5'];
 var DAY_MS = 864e5;
-// идею сотрудник отправляет одному из адресатов; у адресата свой вход (role 'leader', post — кто он) и только эти идеи
+// идею сотрудник отправляет одному или нескольким адресатам (to — список); у адресата свой вход (role 'leader',
+// post — кто он) и только эти идеи; ответ общий, repliedBy — кто из адресатов ответил последним
 var INI_TO = ['ceo', 'pm', 'boss'];
 var INI_STATUS = ['new', 'review', 'accepted', 'done', 'declined'];
-var INI_ANSWER = ['status', 'reply', 'repliedAt', 'acceptedAt'];   // ответ адресата на идею
+var INI_ANSWER = ['status', 'reply', 'repliedAt', 'acceptedAt', 'repliedBy'];   // ответ адресата на идею
+function iniTo_(x) { return !x ? [] : Array.isArray(x.to) ? x.to : x.to ? [x.to] : []; }   // ранние идеи — одна строка
 
 /* ---------------- вход в веб-приложение ---------------- */
 
@@ -307,9 +310,9 @@ function viewFor_(st, me) {
 /* идеи, адресованные CEO, Project Manager или руководителю, SOP-менеджер не читает: остаётся то, из чего считаются
    XP и уровни сотрудника (статус, даты). В уведомлениях автору об ответе — без названия и текста ответа */
 function hideAddressed_(v) {
-  v.initiatives = (v.initiatives || []).map(function (x) { return x && x.to ? pick_(x, ['id', 'uid', 'to', 'status', 'at', 'acceptedAt', 'repliedAt']) : x; });
+  v.initiatives = (v.initiatives || []).map(function (x) { return iniTo_(x).length ? pick_(x, ['id', 'uid', 'to', 'status', 'at', 'acceptedAt', 'repliedAt']) : x; });
   v.notifications = (v.notifications || []).map(function (n) {
-    return n && n.kind === 'ini' && n.ini && n.ini.to ? Object.assign({}, n, { ini: pick_(n.ini, ['s', 'xp', 'to']) }) : n;
+    return n && n.kind === 'ini' && n.ini && iniTo_(n.ini).length ? Object.assign({}, n, { ini: pick_(n.ini, ['s', 'xp', 'to']) }) : n;
   });
 }
 
@@ -320,7 +323,7 @@ function leaderView_(st, me) {
   v.v = st.v; v.seq = st.seq;
   v.levels = clone_(st.levels || []); v.settings = clone_(st.settings || {});
   v.users = (st.users || []).map(function (u) { return String(u.id) === uid ? clone_(u) : pick_(u, PUBLIC_USER); });
-  v.initiatives = (st.initiatives || []).filter(function (x) { return x && x.to && x.to === me.post; }).map(clone_);
+  v.initiatives = (st.initiatives || []).filter(function (x) { return iniTo_(x).indexOf(me.post) >= 0; }).map(clone_);
   v.notifications = own_(st.notifications, 'userId', uid).map(clone_);
   return v;
 }
@@ -421,21 +424,23 @@ function checkEmployee_(st, me, op) {
   return 'нет прав на «' + top + '»';
 }
 
-/* правка адресата идей: ответ (статус, текст, даты) на идею, адресованную его должности; саму идею меняет только автор */
+/* правка адресата идей: ответ (статус, текст, даты, кто ответил) на идею, где он среди адресатов; саму идею меняет автор */
 function checkLeader_(st, me, op) {
   var p = op.path, top = p[0];
   if (top !== 'initiatives') return 'нет прав на «' + top + '»';
   if (!isId_(p[1])) return 'список идей целиком не меняется';
   var item = LmsSync.get(st, p.slice(0, 2));
-  if (!item || !item.to || item.to !== me.post) return 'эта идея адресована не вам';
+  if (!item || iniTo_(item).indexOf(me.post) < 0) return 'эта идея адресована не вам';
   if (op.op !== 'set') return 'идею удалить нельзя';
   if (p.length === 2) {
     var nv = op.value || {}, keys = Object.keys(item).concat(Object.keys(nv));
     var bad = keys.filter(function (k) { return INI_ANSWER.indexOf(k) < 0 && !LmsSync.equal(item[k], nv[k]); })[0];
     if (bad) return 'поле «' + bad + '» меняет автор идеи';
+    if (nv.repliedBy !== item.repliedBy && nv.repliedBy !== me.post) return 'ответ — только от своего имени';
     return INI_STATUS.indexOf(nv.status) < 0 ? 'неверный статус идеи' : null;
   }
   if (p.length !== 3 || INI_ANSWER.indexOf(p[2]) < 0) return 'поле «' + p[2] + '» меняет автор идеи';
+  if (p[2] === 'repliedBy' && op.value !== me.post) return 'ответ — только от своего имени';
   return p[2] === 'status' && INI_STATUS.indexOf(op.value) < 0 ? 'неверный статус идеи' : null;
 }
 
@@ -443,9 +448,9 @@ function checkLeader_(st, me, op) {
 function checkAdmin_(st, op) {
   var p = op.path;
   if (p[0] !== 'initiatives') return null;
-  if (p.length === 1) return op.op === 'set' && (st.initiatives || []).some(function (x) { return x && x.to; }) ? 'список идей целиком не меняется' : null;
+  if (p.length === 1) return op.op === 'set' && (st.initiatives || []).some(function (x) { return iniTo_(x).length; }) ? 'список идей целиком не меняется' : null;
   var item = isId_(p[1]) ? LmsSync.get(st, p.slice(0, 2)) : null;
-  return item && item.to && op.op !== 'del' ? 'на эту идею отвечает её адресат' : null;
+  return item && iniTo_(item).length && op.op !== 'del' ? 'на эту идею отвечает её адресат' : null;
 }
 
 /* новый урок в прогрессе или изменённый: сотрудник ставит только «читаю / вопрос / готов к тесту» */
@@ -472,8 +477,11 @@ function checkNew_(top, me, value) {
   if (top === 'xtasks') return 'сверхзадачу выдаёт SOP-менеджер';
   if (String(value[OWN[top]]) !== uid) return 'запись — только от своего имени';
   if (top === 'initiatives' && value.status && value.status !== 'new') return 'статус идеи ставит её адресат';
-  if (top === 'initiatives' && INI_TO.indexOf(value.to) < 0) return 'выберите, кому отправить идею: CEO, Project Manager или руководителю компании';
-  if (top === 'initiatives' && ['reply', 'repliedAt', 'acceptedAt'].some(function (k) { return value[k] != null; })) return 'ответ на идею даёт её адресат';
+  if (top === 'initiatives') {
+    var to = iniTo_(value);
+    if (!to.length || to.some(function (k, i) { return INI_TO.indexOf(k) < 0 || to.indexOf(k) !== i; })) return 'выберите, кому отправить идею: CEO, Project Manager и (или) руководителю компании';
+    if (['reply', 'repliedAt', 'acceptedAt', 'repliedBy'].some(function (k) { return value[k] != null; })) return 'ответ на идею даёт её адресат';
+  }
   return null;
 }
 

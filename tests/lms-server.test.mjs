@@ -213,13 +213,15 @@ test('идеи: адресат — CEO, Project Manager или руководи�
   const sent = D({ action: 'patch', ops: [
     idea('i5', 'ceo'), idea('i6', 'pm'),
     /* 2 */ idea('i7', undefined), /* 3 */ idea('i8', 'hr'), /* 4 */ idea('i9', 'ceo', { reply: 'o‘zim javob berdim' }),
-    { op: 'set', path: ['notifications', { id: 50 }], value: { id: 50, userId: 10901, kind: 'ini_in', ini: { to: 'ceo' }, at: 5, read: false } }] });
-  assert.deepEqual(sent.rejected.map(x => x.i), [2, 3, 4]);
+    { op: 'set', path: ['notifications', { id: 50 }], value: { id: 50, userId: 10901, kind: 'ini_in', ini: { to: 'ceo' }, at: 5, read: false } },
+    // несколько адресатов: список без повторов, только CEO, Project Manager, руководитель
+    /* 6 */ idea('i10', ['ceo', 'pm']), /* 7 */ idea('i11', []), /* 8 */ idea('i12', ['ceo', 'ceo']), /* 9 */ idea('i13', ['pm', 'hr'])] });
+  assert.deepEqual(sent.rejected.map(x => x.i), [2, 3, 4, 7, 8, 9]);
   assert.match(sent.rejected[0].reason, /кому отправить идею/); assert.match(sent.rejected[2].reason, /даёт её адресат/);
 
   // адресат видит только свои идеи и почти ничего больше
   const C = login('ceo', 'pw-ceo-1'), cv = C({ action: 'load' }).state;
-  assert.deepEqual(cv.initiatives.map(x => x.id), ['i5']);
+  assert.deepEqual(cv.initiatives.map(x => x.id).sort(), ['i10', 'i5']);
   assert.equal(cv.initiatives[0].text, 'Batafsil matn i5');
   assert.deepEqual(cv.course.sections, []); assert.deepEqual(cv.progress, {}); assert.deepEqual(cv.journals, []); assert.deepEqual(cv.errors, []);
   assert.deepEqual(cv.notifications.map(n => n.id), [50]);
@@ -244,6 +246,19 @@ test('идеи: адресат — CEO, Project Manager или руководи�
   assert.match(ans.rejected[0].reason, /адресована не вам/); assert.match(ans.rejected[1].reason, /меняет автор идеи/);
   const i5 = g.state().initiatives.find(x => x.id === 'i5');
   assert.equal(i5.status, 'accepted'); assert.equal(i5.reply, 'Zo‘r, qilamiz'); assert.equal(i5.title, 'G‘oya i5');
+
+  // идея нескольким адресатам: видят оба, отвечает любой — только от своего имени
+  const P = login('pm', 'pw-pm-1');
+  assert.deepEqual(P({ action: 'load' }).state.initiatives.map(x => x.id).sort(), ['i10', 'i6']);
+  const pa = P({ action: 'patch', ops: [
+    { op: 'set', path: ['initiatives', { id: 'i10' }, 'status'], value: 'review' },
+    { op: 'set', path: ['initiatives', { id: 'i10' }, 'repliedBy'], value: 'pm' },
+    /* 2 */ { op: 'set', path: ['initiatives', { id: 'i10' }, 'repliedBy'], value: 'ceo' },
+    /* 3 */ { op: 'set', path: ['initiatives', { id: 'i5' }, 'status'], value: 'done' }] });
+  assert.deepEqual(pa.rejected.map(x => x.i), [2, 3]);
+  assert.match(pa.rejected[0].reason, /от своего имени/);
+  assert.equal(C({ action: 'load' }).state.initiatives.find(x => x.id === 'i10').repliedBy, 'pm');
+  assert.deepEqual(A({ action: 'load' }).state.initiatives.find(x => x.id === 'i10'), { id: 'i10', uid: 10427, to: ['ceo', 'pm'], status: 'review', at: 5 });
 
   // автор: ответ видит, но сам ни ответ, ни адресата не меняет
   const mine = D({ action: 'load' }).state.initiatives.find(x => x.id === 'i5');
@@ -350,7 +365,7 @@ const pickN = n => ({ userId: n.userId, kind: n.kind, route: n.route, err: n.err
 test('since: та же версия — без данных; после правки — новое состояние', () => {
   const { D, A } = platform();
   const v = D({ action: 'load' });
-  assert.deepEqual(D({ action: 'since', rev: v.rev }), { ok: true, v: 4, ai: false, rev: v.rev, same: true });
+  assert.deepEqual(D({ action: 'since', rev: v.rev }), { ok: true, v: 5, ai: false, rev: v.rev, same: true });
   A({ action: 'patch', ops: [{ op: 'set', path: ['notifications', { id: 9 }], value: { id: 9, userId: 10427, text: 'yangi' }, after: null }] });
   const n = D({ action: 'since', rev: v.rev });
   assert.equal(n.rev, v.rev + 1); assert.equal(n.state.notifications[0].text, 'yangi');

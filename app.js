@@ -382,7 +382,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       workErrors: (db.errors || []).slice(0, 25).map(function (x) { return { employee: userOf(db, x.uid).name, category: x.cat, severity: x.sev, sop: x.lessonId ? lessonTitle(db, x.lessonId) : null, what: x.text, status: x.status }; }),
       aiDrills: (db.drills || []).map(function (x) { return { employee: userOf(db, x.uid).name, scenario: x.scen, score_1_5: x.score, criteria: x.criteria }; }),
       sopUpdatesPendingAck: (db.sopUpdates || []).filter(function (x) { return (x.required || []).some(function (uid) { return !(x.acks || {})[uid]; }); }).map(function (x) { return { sop: lessonTitle(db, x.lessonId), pending: (x.required || []).filter(function (uid) { return !(x.acks || {})[uid]; }).map(function (uid) { return userOf(db, uid).name; }) }; }),
-      initiatives: (db.initiatives || []).filter(function (x) { return !x.to; }).map(function (x) { return { type: x.type, area: x.area, title: x.title, status: x.status, author: userOf(db, x.uid).name }; }),
+      initiatives: (db.initiatives || []).filter(function (x) { return !iniTo(x).length; }).map(function (x) { return { type: x.type, area: x.area, title: x.title, status: x.status, author: userOf(db, x.uid).name }; }),
       propertyNeedsHRAction: (db.assets || []).filter(assetAttn).map(function (a) { return { employee: userOf(db, a.uid).name, item: a.name, status: a.status, note: a.mismatch || (a.issue && a.issue.text) || null }; }),
       alumniAverages: (function () { var a = db.alumni || []; if (!a.length) return null; var s = function (f) { return Math.round(a.reduce(function (x, y) { return x + f(y); }, 0) / a.length); }; return { count: a.length, avgScore: s(function (x) { return x.stats.avgScore; }), avgMinutesPerDay: s(function (x) { return x.stats.avgMinutes; }), avgDaysToFinish: s(function (x) { return x.stats.days; }) }; })(),
       dailyGoalMinutes: GOAL
@@ -1193,6 +1193,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     keys: 'M15 3a5 5 0 1 1-4.2 7.7L4 17.5V21h3.5v-2h2v-2h2l1.3-1.3A5 5 0 0 1 15 3zM16.5 7.5h.01', furniture: 'M7 3h10v8H7zM5 11h14v3H5zM7 14v7M17 14v7',
     other: 'M3 7.5l9-4.5 9 4.5v9L12 21l-9-4.5zM3 7.5l9 4.5 9-4.5M12 12v9',
     bulb: 'M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.7.5 1.1 1.3 1.1 2.1V16h5v-.1c0-.8.4-1.6 1.1-2.1A6 6 0 0 0 12 3z',
+    check: 'M5 12.5l4.5 4.5L19 7.5',
     problem: 'M12 3l9.5 17h-19zM12 10v4.5M12 17.5v.01', idea: 'M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.7.5 1.1 1.3 1.1 2.1V16h5v-.1c0-.8.4-1.6 1.1-2.1A6 6 0 0 0 12 3z',
     benefit: 'M12 3l2.6 5.6 6.1.7-4.5 4.2 1.2 6L12 16.6 6.6 19.5l1.2-6-4.5-4.2 6.1-.7z', spark: 'M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8zM18.5 15.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z',
     lock: 'M7 11V8a5 5 0 0 1 10 0v3M6 11h12v9H6z',
@@ -1723,13 +1724,16 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
      the SOP manager does not read them (the server hides the text from the admin) */
   var INI_TO = ['ceo', 'pm', 'boss'];
   function leadersOf(db, post) { return db.users.filter(function (u) { return u.role === 'leader' && (!post || u.post === post); }); }
+  /* recipients of an initiative — one or several (an early one may hold a single string) */
+  function iniTo(x) { return !x ? [] : Array.isArray(x.to) ? x.to : x.to ? [x.to] : []; }
+  function iniToLabel(x, t) { return iniTo(x).map(function (k) { return t('ini_to_s_' + k); }).join(', '); }
   var INI_AREAS = ['warehouse', 'transport', 'customs', 'clients', 'office', 'it', 'training', 'other'];
   var INI_STATUS = ['new', 'review', 'accepted', 'done', 'declined'];
   var INI_BADGE = { new: 'todo', review: 'in-progress', accepted: 'exam-ready', done: 'passed', declined: 'failed' };
   function IniStatus(p) { return h(Badge, { status: INI_BADGE[p.s] || 'todo', lang: p.lang }, p.t('is_' + p.s)); }
   function IniType(p) { return h('span', { className: 'ini-type t-' + p.type }, h(Ico, { name: p.type, size: 14, w: 1.8 }), p.t('it_' + p.type)); }
   function iniXp(x, s) { return (s === 'accepted' || s === 'done' ? XP_INI_OK : 0) + (s === 'done' ? XP_INI_DONE : 0); }
-  function iniNotify(d, x, s, reply) { d.notifications.unshift({ id: nextId(d), userId: x.uid, kind: 'ini', ini: { title: x.title, s: s, reply: reply || '', xp: Math.max(0, iniXp(x, s) - iniXp(x, x.status)), to: x.to }, text: '', route: 'ideas', at: Date.now(), read: false }); }
+  function iniNotify(d, x, s, reply) { d.notifications.unshift({ id: nextId(d), userId: x.uid, kind: 'ini', ini: { title: x.title, s: s, reply: reply || '', xp: Math.max(0, iniXp(x, s) - iniXp(x, x.status)), to: iniTo(x) }, text: '', route: 'ideas', at: Date.now(), read: false }); }
 
   function IniButton(p) {
     return h('button', { type: 'button', className: 'ini-btn', onClick: p.onClick, title: p.t('ini_btn_hint'), 'aria-label': p.t('ini_btn') + ' — ' + p.t('ini_btn_hint') },
@@ -1746,7 +1750,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
 
   function IniModal(p) {
     var t = p.t, u = p.user, sampler = p.sampler;
-    var f = useState({ to: '', type: '', area: '', title: '', text: '', benefit: '' }), v = f[0];
+    var f = useState({ to: [], type: '', area: '', title: '', text: '', benefit: '' }), v = f[0];
     var er = useState({}), done = useState(false), ai = useState(null), aiBusy = useState(false), aiE = useState(''), ctl = useRef(null), boxRef = useRef(null);
     useEffect(function () { function k(e) { if (e.key === 'Escape') close(); } window.addEventListener('keydown', k); return function () { window.removeEventListener('keydown', k); if (ctl.current) ctl.current.abort(); }; }, []);
     useEffect(function () { if (boxRef.current) { var b = boxRef.current.querySelector('.ini-types button'); if (b) b.focus({ preventScroll: true }); } }, []);
@@ -1764,7 +1768,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     }
     function submit() {
       var e = {};
-      if (!v.to) e.to = t('ini_pick_to');
+      if (!v.to.length) e.to = t('ini_pick_to');
       if (!v.type) e.type = t('ini_pick_type');
       if (!v.area) e.area = t('fill_required');
       if (!v.title.trim()) e.title = t('fill_required');
@@ -1772,9 +1776,10 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       er[1](e); if (Object.keys(e).length) { var first = boxRef.current && boxRef.current.querySelector('.is-error, [aria-invalid="true"]'); if (first && first.focus) first.focus(); return; }
       p.update(function (d) {
         d.initiatives = d.initiatives || [];
-        d.initiatives.unshift({ id: 'i' + nextId(d), uid: u.id, to: v.to, type: v.type, area: v.area, title: v.title.trim(), text: v.text.trim(), benefit: v.benefit.trim(), status: 'new', at: Date.now() });
+        var to = INI_TO.filter(function (k) { return v.to.indexOf(k) >= 0; });
+        d.initiatives.unshift({ id: 'i' + nextId(d), uid: u.id, to: to, type: v.type, area: v.area, title: v.title.trim(), text: v.text.trim(), benefit: v.benefit.trim(), status: 'new', at: Date.now() });
         // the recipient learns there is something new — without the title (no one else should read it)
-        leadersOf(d, v.to).forEach(function (l) { d.notifications.unshift({ id: nextId(d), userId: l.id, kind: 'ini_in', ini: { to: v.to }, text: '', route: 'ideas', at: Date.now(), read: false }); });
+        leadersOf(d).filter(function (l) { return to.indexOf(l.post) >= 0; }).forEach(function (l) { d.notifications.unshift({ id: nextId(d), userId: l.id, kind: 'ini_in', ini: { to: to }, text: '', route: 'ideas', at: Date.now(), read: false }); });
       });
       done[1](true);
     }
@@ -1792,10 +1797,11 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
             h('div', { className: 'ini-head' }, h('span', { className: 'ini-head-ico', 'aria-hidden': true }, h(Ico, { name: 'bulb', size: 22, w: 1.8 })), h('div', null, h('span', { className: 'lor-eyebrow' }, t('ini_eyebrow')), h('h2', { className: 'lor-h', id: 'ini-h' }, t('ini_title')))),
             h('p', { className: 'lor-muted' }, t('ini_intro')),
             h('span', { className: 'lor-field-label ini-to-l', id: 'ini-to-l' }, t('ini_to'), h('span', { className: 'lor-req', 'aria-hidden': true }, '*')),
-            h('div', { className: 'ini-types ini-to', role: 'radiogroup', 'aria-labelledby': 'ini-to-l' }, INI_TO.map(function (x) {
-              var who = leadersOf(p.db, x).map(function (l) { return l.name; }).join(', ');
-              return h('button', { key: x, type: 'button', role: 'radio', 'aria-checked': v.to === x, className: cx('ini-type-card ini-to-card', v.to === x && 'is-on'), onClick: function () { set('to', x); } },
-                h('span', { className: 'ini-tc-ico', 'aria-hidden': true }, h(Ico, { name: 'team', size: 20, w: 1.8 })), h('b', null, t('ini_to_' + x)), h('span', null, who || t('ini_to_sub_' + x)));
+            h('div', { className: 'ini-types ini-to', role: 'group', 'aria-labelledby': 'ini-to-l' }, INI_TO.map(function (x) {
+              var who = leadersOf(p.db, x).map(function (l) { return l.name; }).join(', '), on = v.to.indexOf(x) >= 0;
+              return h('button', { key: x, type: 'button', role: 'checkbox', 'aria-checked': on, className: cx('ini-type-card ini-to-card', on && 'is-on'),
+                  onClick: function () { set('to', on ? v.to.filter(function (k) { return k !== x; }) : v.to.concat([x])); } },
+                h('span', { className: 'ini-tc-ico', 'aria-hidden': true }, h(Ico, { name: on ? 'check' : 'team', size: 20, w: 1.8 })), h('b', null, t('ini_to_' + x)), h('span', null, who || t('ini_to_sub_' + x)));
             })),
             er[0].to ? h('span', { className: 'lor-field-error' }, er[0].to) : h('span', { className: 'lor-sm lor-muted' }, t('ini_to_hint')),
             h('span', { className: 'lor-field-label ini-to-l' }, t('ini_type'), h('span', { className: 'lor-req', 'aria-hidden': true }, '*')),
@@ -1828,17 +1834,17 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var author = userOf(db, x.uid).name, au = userOf(db, x.uid);
     function save() {
       var s = st[0], r = rp[0].trim();
-      p.update(function (d) { d.initiatives.forEach(function (y) { if (y.id === x.id) { y.status = s; y.reply = r; y.repliedAt = Date.now(); if (s === 'accepted' && !y.acceptedAt) y.acceptedAt = Date.now(); } }); iniNotify(d, x, s, r); });
+      p.update(function (d) { d.initiatives.forEach(function (y) { if (y.id === x.id) { y.status = s; y.reply = r; y.repliedAt = Date.now(); if (p.post) y.repliedBy = p.post; if (s === 'accepted' && !y.acceptedAt) y.acceptedAt = Date.now(); } }); iniNotify(d, x, s, r); });
       p.say(t('ini_saved'));
     }
     var dirty = st[0] !== x.status || rp[0].trim() !== (x.reply || '');
     return h('article', { className: cx('box ini-item', 'st-' + x.status) },
-      h('div', { className: 'ini-item-h' }, h(IniType, { type: x.type, t: t }), h('span', { className: 'ini-area' }, t('ia_' + x.area)), x.to ? h('span', { className: 'ini-area ini-to-chip' }, '→ ' + t('ini_to_s_' + x.to)) : null, h('span', { className: 'lor-sm lor-muted' }, fmt(x.at, t)), h('span', { className: 'ini-sp' }), h(IniStatus, { s: x.status, t: t, lang: p.lang })),
+      h('div', { className: 'ini-item-h' }, h(IniType, { type: x.type, t: t }), h('span', { className: 'ini-area' }, t('ia_' + x.area)), iniTo(x).length ? h('span', { className: 'ini-area ini-to-chip' }, '→ ' + iniToLabel(x, t)) : null, h('span', { className: 'lor-sm lor-muted' }, fmt(x.at, t)), h('span', { className: 'ini-sp' }), h(IniStatus, { s: x.status, t: t, lang: p.lang })),
       h('h3', { className: 'ini-title' }, x.title),
       admin ? h('div', { className: 'ini-author' }, h(Av, { name: author, size: 26 }), h('span', null, author, h('small', null, au.position + ' · ' + au.department))) : null,
       h('p', { className: 'ini-pre' }, x.text),
       x.benefit ? h('div', { className: 'ini-benefit' }, h('span', { className: 'lor-eyebrow' }, t('ini_benefit_' + x.type)), h('p', { className: 'ini-pre' }, x.benefit)) : null,
-      !admin && x.reply ? h('div', { className: 'ini-reply' }, h('span', { className: 'lor-eyebrow' }, t('ini_reply') + (x.repliedAt ? ' · ' + fmt(x.repliedAt, t) : '')), h('p', null, x.reply)) : null,
+      !admin && x.reply ? h('div', { className: 'ini-reply' }, h('span', { className: 'lor-eyebrow' }, t('ini_reply') + (x.repliedBy ? ' · ' + t('ini_to_s_' + x.repliedBy) : '') + (x.repliedAt ? ' · ' + fmt(x.repliedAt, t) : '')), h('p', null, x.reply)) : null,
       !admin && (x.status === 'accepted' || x.status === 'done') ? h('span', { className: 'ini-xp' }, '+' + (XP_INI_OK + (x.status === 'done' ? XP_INI_DONE : 0)) + ' XP') : null,
       admin ? h('div', { className: 'ini-admin' },
         h('div', { className: 'ini-admin-row' },
@@ -1869,7 +1875,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
 
   /* the reviewer's list: a recipient (CEO, PM, Boss) — the initiatives sent to them; the SOP manager — old ones without a recipient */
   function IniAdmin(p) {
-    var only = p.only || function (x) { return !x.to; };
+    var only = p.only || function (x) { return !iniTo(x).length; };
     var t = p.t, db = p.db, all = (db.initiatives || []).filter(only).sort(function (a, b) { return b.at - a.at; });
     var fs = useState('open'), fty = useState(''), far = useState(''), ai = useState(''), aiBusy = useState(false), aiE = useState('');
     var SEG = [['open', t('ini_f_open')], ['new', t('is_new')], ['review', t('is_review')], ['accepted', t('is_accepted')], ['done', t('is_done')], ['declined', t('is_declined')], ['all', t('all')]];
@@ -1881,13 +1887,13 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       ai[1](''); aiE[1](''); aiBusy[1](true);
       p.sampler(prompt, { onText: function (x) { ai[1](x.text); } }).then(function (r) { ai[1](r.text); }).catch(function (e) { if (e && e.text) ai[1](e.text); aiE[1](aiErr(e, t)); }).then(function () { aiBusy[1](false); });
     }
-    var routed = p.only ? [] : (db.initiatives || []).filter(function (x) { return x.to; });
+    var routed = p.only ? [] : (db.initiatives || []).filter(function (x) { return iniTo(x).length; });
     return h(F, null,
       p.only ? null : h('section', { className: 'box ini-routed' },
         h('span', { className: 'lor-eyebrow' }, t('fb_routed_t')),
         h('p', { className: 'lor-sm', style: { margin: 0 } }, t('fb_routed_p')),
         h('div', { className: 'ini-routed-list' }, INI_TO.map(function (x) {
-          var mine = routed.filter(function (y) { return y.to === x; }), who = leadersOf(db, x).map(function (l) { return l.name; }).join(', ');
+          var mine = routed.filter(function (y) { return iniTo(y).indexOf(x) >= 0; }), who = leadersOf(db, x).map(function (l) { return l.name; }).join(', ');
           return h('div', { key: x, className: 'ini-routed-i' }, h('b', null, t('ini_to_' + x)), h('span', { className: 'lor-sm lor-muted' }, who || t('ld_none')),
             h('span', { className: 'lor-sm' }, tpl(t('fb_routed_n'), { n: mine.length, m: mine.filter(function (y) { return y.status === 'new'; }).length })));
         }))),
@@ -1904,7 +1910,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         aiBusy[0] && !ai[0] ? h('p', { className: 'ai-thinking' }, t('ai_thinking')) : null,
         ai[0] ? h('div', { className: 'ai-md', dangerouslySetInnerHTML: { __html: mdLite(ai[0]) } }) : null,
         aiE[0] ? h('p', { className: 'lor-field-error' }, aiE[0]) : null),
-      list.length ? list.map(function (x) { return h(IniItem, { key: x.id, x: x, t: t, db: db, lang: p.lang, admin: true, update: p.update, say: p.say }); })
+      list.length ? list.map(function (x) { return h(IniItem, { key: x.id, x: x, t: t, db: db, lang: p.lang, admin: true, update: p.update, say: p.say, post: p.user && p.user.role === 'leader' ? p.user.post : null }); })
         : h('section', { className: 'box' }, h('p', { className: 'lor-muted', style: { margin: 0 } }, t('ini_none_rows'))));
   }
 
@@ -1912,7 +1918,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   function FeedbackAdmin(p) {
     var t = p.t, db = p.db, tb = useState(p.tab || 'ini'), tab = tb[0];
     useEffect(function () { if (p.tab) tb[1](p.tab); }, [p.tab]);
-    var nNew = (db.initiatives || []).filter(function (x) { return !x.to && x.status === 'new'; }).length;
+    var nNew = (db.initiatives || []).filter(function (x) { return !iniTo(x).length && x.status === 'new'; }).length;
     return h('div', { className: 'app-wrap' },
       h('div', { className: 'page-head' }, h('div', null, h('span', { className: 'lor-eyebrow' }, t('fb_eyebrow')), h('h1', { className: 'lor-title' }, t('nav_feedback'), h(PageTip, { t: t, id: 'feedback' })))),
       h('div', { className: 'lor-tabs fb-tabs', role: 'tablist' },
@@ -6230,7 +6236,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var theme = useThemePref(p.say, t);
     var hint = { on: hintOn, toggle: function (v) { p.update(function (d) { d.users.forEach(function (x) { if (x.id === p.user.id) x.hints = v; }); }); p.say(t(v ? 'hint_said_on' : 'hint_said_off')); } };
 
-    var attnA = (db.assets || []).filter(assetAttn).length, newIni = (db.initiatives || []).filter(function (x) { return !x.to && x.status === 'new'; }).length;
+    var attnA = (db.assets || []).filter(assetAttn).length, newIni = (db.initiatives || []).filter(function (x) { return !iniTo(x).length && x.status === 'new'; }).length;
     var qN = errStats(db, 90).open;
     var nav = [['inbox', t('nav_inbox'), openN], ['monitor', t('nav_monitor')], ['quality', t('nav_quality'), qN], ['rating', t('nav_rating')], ['levels', t('nav_levels')], ['cms', t('nav_cms')], ['staff', t('nav_staff')], ['assets', t('nav_assets'), attnA], ['feedback', t('nav_feedback'), newIni]].map(function (n) { return { key: n[0], label: n[1], count: n[2], active: route.name === n[0], onClick: function () { go({ name: n[0] }); } }; });
     var q = Object.assign({}, p, { goCms: function (lid) { go({ name: 'cms', lessonId: lid }); }, goAssets: function (uid) { go({ name: 'assets', uid: uid }); } });
@@ -6254,7 +6260,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   /* ---------------- recipient shell: CEO, Project Manager, Boss — the initiatives sent to them, nothing else ---------------- */
   function LeaderApp(p) {
     var t = p.t, db = p.db, u = p.user, theme = useThemePref(p.say, t);
-    var only = function (x) { return !!x.to && x.to === u.post; };
+    var only = function (x) { return iniTo(x).indexOf(u.post) >= 0; };
     var nNew = (db.initiatives || []).filter(function (x) { return only(x) && x.status === 'new'; }).length;
     return h(F, null,
       h(Header, { t: t, lang: p.lang, setLang: p.setLang, user: u, wide: true, onLogout: p.logout, onTerms: p.showTerms, theme: theme,

@@ -219,9 +219,10 @@ try {
   await E.reload({ waitUntil: 'networkidle' }); await watchSync(E); await skipTour(E);   // свежие данные: вход CEO уже есть
   await click(E, 'Tashabbus', { wait: 500 });
   await click(E, 'Yuborish', { wait: 300 });                   // без адресата не уходит
-  assert.ok((await E.innerText('.ini-modal')).includes('Kimga yuborishni tanlang'), 'нужно выбрать, кому');
-  await E.locator('.ini-to-card').first().click();
+  assert.ok((await E.innerText('.ini-modal')).includes('Kamida bitta rahbarni tanlang'), 'нужно выбрать, кому');
+  await E.locator('.ini-to-card').nth(0).click(); await E.locator('.ini-to-card').nth(1).click();   // сразу двум
   assert.ok((await E.innerText('.ini-to-card >> nth=0')).includes('Sherzod Aliyev'), 'в карточке — имя CEO');
+  assert.equal(await E.locator('.ini-to-card[aria-checked="true"]').count(), 2, 'выбраны оба');
   await E.locator('.ini-types:not(.ini-to) .ini-type-card').first().click();
   await E.fill('#f-ini-title', 'Yorliqlarni oldindan chop etish'); await E.fill('#f-ini-text', 'Ertalab navbat kamayadi');
   await E.selectOption('#f-ini-area', { label: 'Ombor' });
@@ -230,7 +231,7 @@ try {
   await E.keyboard.press('Escape');
   await settle(E);
   const idea = srv.g.state().initiatives.find(x => x.uid === emp.id);
-  assert.ok(idea && idea.to === 'ceo', 'идея на сервере, адресат — CEO');
+  assert.deepEqual(idea && idea.to, ['ceo', 'pm'], 'идея на сервере, адресаты — CEO и Project Manager');
   assert.ok(srv.g.state().notifications.some(n => n.userId === ceo.id && n.kind === 'ini_in'), 'CEO получил уведомление');
 
   const C = await device('CEO');
@@ -243,7 +244,7 @@ try {
   await settle(C);
   await shot(C, '11b-ceo');
   const ans = srv.g.state().initiatives.find(x => x.id === idea.id);
-  assert.equal(ans.status, 'accepted'); assert.equal(ans.reply, 'Zo‘r, keyingi haftadan boshlaymiz');
+  assert.equal(ans.status, 'accepted'); assert.equal(ans.reply, 'Zo‘r, keyingi haftadan boshlaymiz'); assert.equal(ans.repliedBy, 'ceo');
   assert.deepEqual(await rejected(C), [], 'сервер не отклонил ответ CEO');
   await A.reload({ waitUntil: 'networkidle' }); await watchSync(A);
   const seen = await A.evaluate(id => LmsClient.initial().initiatives.find(x => x.id === id), idea.id);
