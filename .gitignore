@@ -1,0 +1,10 @@
+# Тексты стандартов и персональные данные в открытый репозиторий не коммитим
+*.xlsx
+*.xls
+*.csv
+prototip*.html
+credentials*
+.env*
+
+node_modules/
+.DS_Store

@@ -1,0 +1,23 @@
+/* BURAQ Logistics — дизайн-токены из брендбука */
+:root {
+  /* Цвета */
+  --buraq-navy:  #0E2E54; /* основной: фоны, текст, логотип */
+  --buraq-white: #FFFFFF;
+  --buraq-blue:  #034CAA; /* второстепенные кнопки и акценты */
+  --buraq-gray:  #BFBFBF; /* нейтральные фоны */
+  --buraq-red:   #DE0441; /* акценты: стрелки, главные кнопки */
+
+  /* Шрифт: Neue Montreal, замена в вебе — Inter */
+  --buraq-font: "Neue Montreal", "Inter", "Helvetica Neue", Arial, sans-serif;
+
+  /* Формы */
+  --buraq-line: 1px;          /* тонкие линии и стрелки */
+  --buraq-radius-pill: 999px; /* кнопки-«таблетки» */
+}
+
+/* Заголовки: капсом, обычной толщины */
+.buraq-title {
+  font-family: var(--buraq-font);
+  font-weight: 400;
+  text-transform: uppercase;
+}
