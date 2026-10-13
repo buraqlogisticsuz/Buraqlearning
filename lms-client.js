@@ -174,6 +174,9 @@
     account: function (o) { return call('account', o); },
     /* SOP-менеджер: все данные и файлы — копия вне сервера */
     exportAll: function () { return call('export'); },
+    /* Telegram (сервер на Node): ссылка привязки и отвязка */
+    tgLink: function () { return call('tgLink'); },
+    tgUnlink: function () { return call('tgUnlink'); },
     sync: function () { return sync().then(flush); },
     flushAll: flushAll
   };

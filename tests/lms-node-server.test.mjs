@@ -178,3 +178,56 @@ test('свой домен (SITE_HOST): страницы со старого ад
     assert.equal(api.status, 200); assert.equal(JSON.parse(api.body).ok, true);
   } finally { await s.close(); rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('Telegram: привязка по ссылке, новое уведомление — в чат, напоминание учиться, /stop', async () => {
+  const dir = tmp(), sent = [];
+  const fetch = async (url, init) => {
+    const m = url.match(/api\.telegram\.org\/botT0KEN\/(\w+)/);
+    if (!m) throw new Error('не Telegram: ' + url);
+    const body = JSON.parse(init.body || '{}');
+    if (m[1] === 'getMe') return { json: async () => ({ ok: true, result: { username: 'buraq_test_bot' } }) };
+    if (m[1] === 'sendMessage') { sent.push(body); return { json: async () => ({ ok: true, result: {} }) }; }
+    return { json: async () => ({ ok: true, result: [] }) };
+  };
+  let s = await start(dir), adm = adminFrom(s.logs); await s.close();
+  s = await start(dir, { env: { TELEGRAM_BOT_TOKEN: 'T0KEN', SITE_HOST: 'buraqbilim.com' }, fetch, tgPoll: false });
+  try {
+    await s.tg.ready;
+    const a = await s.api({ action: 'login', ...adm });
+    await s.api({ action: 'patch', token: a.token, ops: [{ op: 'set', path: ['users', { id: 10427 }], value: { id: 10427, role: 'employee', login: 'd.karimova', password: 'pw-dilnoza', name: 'Dilnoza', status: 'probation', reminderTime: '19:00' } }] });
+    const d = await s.api({ action: 'login', login: 'd.karimova', password: 'pw-dilnoza' });
+    const link = await s.api({ action: 'tgLink', token: d.token });
+    assert.equal(link.ok, true); assert.match(link.url, /^https:\/\/t\.me\/buraq_test_bot\?start=[\w-]+$/);
+    await s.tg.handle({ update_id: 1, message: { chat: { id: 555 }, text: '/start ' + link.url.split('=')[1] } });
+    assert.equal(s.g.props['tg:10427'], '555');
+    assert.equal((await s.api({ action: 'load', token: d.token })).state.users.find(u => u.id === 10427).tg, true);
+    assert.match(sent.pop().text, /Ulandi/);
+    await s.tg.handle({ update_id: 2, message: { chat: { id: 777 }, text: '/start eskirgan' } });
+    assert.match(sent.pop().text, /eskirgan/);
+    // новое уведомление сотруднику — в его чат, с адресом сайта; чужое — никуда
+    await s.api({ action: 'patch', token: a.token, ops: [
+      { op: 'set', path: ['notifications', { id: 901 }], value: { id: 901, userId: 10427, kind: 'pulse', text: '', at: 1, read: false } },
+      { op: 'set', path: ['notifications', { id: 902 }], value: { id: 902, userId: 10001, text: 'SOP uchun', at: 1, read: false } }] });
+    assert.equal(sent.length, 1); assert.equal(sent[0].chat_id, '555');
+    assert.match(sent[0].text, /so‘rovnoma|So‘rovnoma/i); assert.match(sent[0].text, /https:\/\/buraqbilim\.com$/);
+    sent.length = 0;
+    // напоминание: 19:00 по Ташкенту (14:00 UTC), сегодня меньше цели; второй раз за день — нет
+    s.tg.tick(Date.UTC(2026, 9, 13, 14, 0, 20));
+    assert.equal(sent.length, 1); assert.match(sent[0].text, /0 daqiqa/);
+    s.tg.tick(Date.UTC(2026, 9, 13, 14, 0, 50));
+    s.tg.tick(Date.UTC(2026, 9, 13, 15, 0, 0));
+    assert.equal(sent.length, 1);
+    // сотрудник не может сам поставить себе отметку tg
+    assert.equal((await s.api({ action: 'patch', token: d.token, ops: [{ op: 'set', path: ['users', { id: 10427 }, 'tg'], value: false }] })).rejected.length, 1);
+    // /stop — отвязка
+    await s.tg.handle({ update_id: 3, message: { chat: { id: 555 }, text: '/stop' } });
+    assert.equal(s.g.props['tg:10427'], undefined);
+    assert.equal((await s.api({ action: 'load', token: d.token })).state.users.find(u => u.id === 10427).tg, undefined);
+  } finally { await s.close(); }
+  // без токена — понятный отказ
+  s = await start(dir);
+  try {
+    const d = await s.api({ action: 'login', login: 'd.karimova', password: 'pw-dilnoza' });
+    assert.equal((await s.api({ action: 'tgLink', token: d.token })).code, 'tg_off');
+  } finally { await s.close(); rmSync(dir, { recursive: true, force: true }); }
+});

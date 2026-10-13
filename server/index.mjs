@@ -7,6 +7,7 @@
 // Первый запуск — в журнале (Railway → Deployments → View logs) логин и пароль SOP-менеджера.
 // Переменные окружения: PORT, DATA_DIR, ANTHROPIC_API_KEY и AI_* (см. README, «ИИ»), NEW_ADMIN — новый вход SOP-менеджера,
 // SITE_HOST — свой домен (buraqbilim.com): с других адресов страницы перекидываются на него.
+// TELEGRAM_BOT_TOKEN — бот для уведомлений (server/telegram.mjs).
 //   node server/index.mjs
 import http from 'node:http';
 import { gzipSync } from 'node:zlib';
@@ -14,6 +15,7 @@ import { readFileSync, statSync } from 'node:fs';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadServer } from './gas-node.mjs';
+import { startTelegram, loadStrings } from './telegram.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const MAX_BODY = 40 * 1024 * 1024;        // правка со сканом паспорта — несколько МБ в base64
@@ -41,7 +43,7 @@ export function nextBackup(now = Date.now()) {
   return d.getTime();
 }
 
-export async function startServer({ port = 8080, host = '0.0.0.0', dir, env = process.env, iter, log = console.log, fetch = globalThis.fetch } = {}) {
+export async function startServer({ port = 8080, host = '0.0.0.0', dir, env = process.env, iter, log = console.log, fetch = globalThis.fetch, tgPoll = true } = {}) {
   const g = loadServer({ dir, env, iter, log });
   const C = g.ctx;
   if (!g.ready()) {
@@ -53,6 +55,20 @@ export async function startServer({ port = 8080, host = '0.0.0.0', dir, env = pr
   if (na && g.props.NEW_ADMIN_DONE !== na) { C.newAdmin(); C.PropertiesService.getScriptProperties().setProperty('NEW_ADMIN_DONE', na); }
 
   const errJson = x => ({ ok: false, code: (x && x.code) || 'script', error: String((x && x.message) || x) });
+  // Telegram: бот из TELEGRAM_BOT_TOKEN; новые уведомления уходят после каждой записи данных
+  const site = env.SITE_HOST ? 'https://' + String(env.SITE_HOST).trim() : env.RAILWAY_PUBLIC_DOMAIN ? 'https://' + env.RAILWAY_PUBLIC_DOMAIN : '';
+  const tg = String(env.TELEGRAM_BOT_TOKEN || '').trim()
+    ? startTelegram({ token: String(env.TELEGRAM_BOT_TOKEN).trim(), C, strings: loadStrings(ROOT), fetch, log, siteUrl: site, poll: tgPoll }) : null;
+  if (tg) C.LMS_AFTER_WRITE = st => { try { tg.onState(st); } catch (e) { log('Telegram: ' + e.message); } };
+  function tgAction(req) {
+    try {
+      const s = C.session_(req.token), me = C.me_(C.readState_(), s);
+      if (!tg) return { ok: false, code: 'tg_off', error: 'Telegram не подключён: TELEGRAM_BOT_TOKEN' };
+      if (req.action === 'tgUnlink') { tg.unlinkUser(String(me.id)); return { ok: true }; }
+      const url = tg.linkUrl(me.id);
+      return url ? { ok: true, url } : { ok: false, code: 'tg_off', error: 'Бот ещё не готов — повторите через минуту' };
+    } catch (x) { return errJson(x); }
+  }
   const post = text => C.doPost({ postData: { contents: text } }).text;
   // ИИ: проверки и лимит — в коде сервера (aiRequest_), запрос к Claude API — не останавливая остальные запросы
   async function ai(req) {
@@ -108,7 +124,8 @@ export async function startServer({ port = 8080, host = '0.0.0.0', dir, env = pr
         for await (const c of req) { n += c.length; if (n > MAX_BODY) { json(res, 413, JSON.stringify({ ok: false, code: 'bad', error: 'Слишком большой запрос (файл больше 25 МБ?)' })); req.destroy(); return; } chunks.push(c); }
         const text = Buffer.concat(chunks).toString('utf8');
         let body = null; try { body = JSON.parse(text); } catch {}
-        json(res, 200, body && body.action === 'ai' ? JSON.stringify(await ai(body)) : post(text));
+        json(res, 200, body && body.action === 'ai' ? JSON.stringify(await ai(body))
+          : body && (body.action === 'tgLink' || body.action === 'tgUnlink') ? JSON.stringify(tgAction(body)) : post(text));
         return;
       }
       if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405); res.end(); return; }
@@ -133,8 +150,8 @@ export async function startServer({ port = 8080, host = '0.0.0.0', dir, env = pr
   const plan = () => { timer = setTimeout(() => { try { C.backup(); log('Ночная копия данных сохранена'); } catch (e) { log('Копия не удалась: ' + e.message); } plan(); }, nextBackup() - Date.now()); };
   plan();
 
-  return { server, g, url: 'http://127.0.0.1:' + server.address().port + '/',
-    close: () => new Promise(r => { clearTimeout(timer); server.close(r); server.closeAllConnections(); }) };
+  return { server, g, tg, url: 'http://127.0.0.1:' + server.address().port + '/',
+    close: () => new Promise(r => { clearTimeout(timer); if (tg) tg.stop(); server.close(r); server.closeAllConnections(); }) };
 }
 
 /* на Railway без тома платформа не запускается (данные пропадали бы при каждом обновлении), но и не падает:

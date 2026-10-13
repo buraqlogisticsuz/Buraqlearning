@@ -11,6 +11,7 @@
 - Логотип — только файлы из `buraq-brand/logo/` (на синем — `buraq-logo-white.svg`, на светлом — `buraq-logo.svg`).
 - Шрифт — Neue Montreal из `fonts/` (только латиница; кириллица — Inter), заголовки капсом обычной толщины.
 - Надписи — в `strings.js`, на четырёх языках: uz (основной, латиница), ru, en, zh. Новую надпись — сразу во все четыре.
+  Вычитка носителями — `node tools/strings-review.mjs export|import` (правки — блоком в конце strings.js).
 - Репозиторий открытый: тексты и тесты стандартов компании (4-bob) и персональные данные сюда не коммитить —
   они живут только на сервере (Railway или Google Apps Script).
 - Код сервера один — `tools/lms-gs/Server.gs`: на Railway его выполняет `server/gas-node.mjs` (сервисы Apps Script

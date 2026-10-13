@@ -3048,4 +3048,4 @@ button.mc-cell.at-cell:hover { outline: 2px solid var(--blue-text); outline-offs
 .imp-act { justify-content: flex-start; gap: 12px; }
 .imp-table tr.imp-bad td { background: var(--red-soft); }
 .imp-done { margin-top: 12px; }
-
+.pf-tg { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }

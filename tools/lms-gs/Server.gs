@@ -84,6 +84,8 @@ function route_(req) {
   if (a === 'resetPassword') return resetPassword_(s, req);
   if (a === 'file') return file_(s, req);
   if (a === 'export') return export_(s);
+  // Telegram — у сервера на Node (server/telegram.mjs перехватывает эти действия); в Apps Script его нет
+  if (a === 'tgLink' || a === 'tgUnlink') throw err_('tg_off', 'Telegram подключается только на сервере Railway');
   throw err_('bad', 'Неизвестное действие «' + a + '»');
 }
 
@@ -162,6 +164,8 @@ function readState_() {
 function writeState_(st) {
   DriveApp.getFileById(props_().getProperty('LMS_STATE')).setContent(JSON.stringify(st));
   props_().setProperty('LMS_REV', String(st.rev));
+  // сервер на Node (server/telegram.mjs): новые уведомления — в Telegram; в Apps Script этой функции нет
+  if (typeof LMS_AFTER_WRITE === 'function') LMS_AFTER_WRITE(st);
 }
 function userById_(st, uid) { return (st.users || []).filter(function (u) { return String(u.id) === String(uid); })[0] || null; }
 
@@ -360,7 +364,7 @@ function leaderView_(st, me) {
 /* ---------------- правки ---------------- */
 
 // поля своей карточки, которые сотрудник не меняет сам (их ставит SOP-менеджер)
-var LOCKED_USER = ['id', 'role', 'post', 'login', 'password', 'status', 'position', 'department', 'cohort', 'trackId', 'mentor', 'level', 'levelXpBase', 'levelAt', 'levelTasks', 'startedAt'];
+var LOCKED_USER = ['id', 'role', 'post', 'login', 'password', 'tg', 'status', 'position', 'department', 'cohort', 'trackId', 'mentor', 'level', 'levelXpBase', 'levelAt', 'levelTasks', 'startedAt'];
 // списки «своих» записей: поле владельца
 var OWN = { requests: 'userId', notifications: 'userId', assets: 'uid', surveys: 'uid', initiatives: 'uid', drills: 'uid', audit: 'userId', errors: 'uid', xtasks: 'uid' };
 // поля своих записей, которые ставит SOP-менеджер или наставник

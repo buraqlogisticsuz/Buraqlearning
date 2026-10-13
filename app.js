@@ -5281,7 +5281,28 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           admin ? h(Field, { name: 'pf-pw1', label: t('pf_pw_new'), type: 'password', value: p1[0], error: ae[0].p1, onChange: p1[1], autoComplete: 'new-password' }) : null,
           admin ? h(Field, { name: 'pf-pw2', label: t('pf_pw_rep'), type: 'password', value: p2[0], error: ae[0].p2, onChange: p2[1], autoComplete: 'new-password' }) : null,
           h(Field, { name: 'pf-cur', label: t('pf_pw_cur'), type: 'password', value: cur[0], error: ae[0].cur, onChange: cur[1], autoComplete: 'current-password' })),
-        h('div', { className: 'lor-modal-actions' }, h(Btn, { variant: 'secondary', size: 'sm', disabled: busy[0], onClick: saveAccount }, t('pf_acc_save')))));
+        h('div', { className: 'lor-modal-actions' }, h(Btn, { variant: 'secondary', size: 'sm', disabled: busy[0], onClick: saveAccount }, t('pf_acc_save')))),
+      h(TgBox, { t: t, user: u }));
+  }
+  /* Telegram: a link to the bot; after «Start» there the card gets tg: true (the server) */
+  function TgBox(p) {
+    var t = p.t, u = p.user, ls = useState(null), link = ls[0], er = useState(''), busy = useState(false);
+    useEffect(function () { if (!link || u.tg) return; var id = setInterval(function () { SV.sync().catch(function () {}); }, 4000); return function () { clearInterval(id); }; }, [link, u.tg]);
+    function connect() {
+      busy[1](true); er[1]('');
+      SV.tgLink().then(function (x) { busy[1](false); ls[1](x.url); window.open(x.url, '_blank', 'noopener'); },
+        function (e) { busy[1](false); er[1](t(e.code === 'net' ? 'srv_net' : 'tg_off')); });
+    }
+    function unlink() { busy[1](true); SV.tgUnlink().then(function () { busy[1](false); ls[1](null); SV.sync().catch(function () {}); }, function (e) { busy[1](false); er[1](t(e.code === 'net' ? 'srv_net' : 'tg_off')); }); }
+    return h('section', { className: 'pf-sec' },
+      h('h3', { className: 'lor-h pf-sub' }, t('tg_t')),
+      h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('tg_hint')),
+      u.tg ? h('div', { className: 'pf-tg' }, h('span', { className: 'made' }, t('tg_on')), h(Btn, { variant: 'ghost', size: 'sm', disabled: busy[0], onClick: unlink }, t('tg_unlink')))
+        : h('div', { className: 'pf-tg' },
+          h(Btn, { variant: 'secondary', size: 'sm', disabled: busy[0], onClick: connect }, t('tg_link')),
+          link ? h('a', { className: 'app-link', href: link, target: '_blank', rel: 'noopener' }, t('tg_open')) : null),
+      link && !u.tg ? h('p', { className: 'lor-sm', style: { margin: 0 } }, t('tg_wait')) : null,
+      er[0] ? h('p', { className: 'lor-field-error', style: { margin: 0 } }, er[0]) : null);
   }
   /* the SOP manager edits someone's card: name, login, photo, position and department, a new password */
   function UserEditModal(p) {
@@ -5401,6 +5422,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     { key: 'step_exp', fields: [['education', 'Ma’lumoti', 1, { options: ['', 'O‘rta maxsus', 'Oliy (bakalavr)', 'Oliy (magistr)'] }], ['prevJob', 'Oldingi ish joyi', 0], ['years', 'Logistikadagi tajriba (yil)', 1, { type: 'number' }], ['languages', 'Tillar', 1, { langs: true }], ['about', 'O‘zingiz haqingizda qisqacha', 0, { multiline: true, span: true }]] },
     { key: 'step_assets', assets: true }];
   var LAST_STEP = PROFILE_STEPS.length - 1;
+  /* the passport scan in the profile — the SOP manager can switch it off (settings.passportScan: false) */
+  function askPassport(db) { return !(db.settings && db.settings.passportScan === false); }
   /* «Tillar»: several at once + «Boshqa» with own text. Kept as one line («O‘zbek, Rus, Ingliz») — the profile view shows it as is */
   var LANG_OPTS = ['O‘zbek', 'Rus', 'Xitoy', 'Turk'];
   function langSplit(v) {
@@ -5475,7 +5498,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         return;
       }
       var e = {}; cur.fields.forEach(function (f) { if (f[2] && !String(vals[f[0]] || '').trim()) e[f[0]] = t('fill_required'); });
-      if (cur.passportFile && !vals.passportFile) e.passportFile = t('pp_file_req');
+      if (cur.passportFile && askPassport(p.db) && !vals.passportFile) e.passportFile = t('pp_file_req');
       se[1](e);
       if (Object.keys(e).length) { setTimeout(function () { var el = document.querySelector('.app-profile .lor-field-error'); if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, 30); return; }
       ss[1](step + 1); window.scrollTo(0, 0);
@@ -5487,7 +5510,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       cur.assets ? h(AssetsStep, { t: t, db: p.db, user: u, lang: p.lang, value: as[0], errors: errs, onChange: setAssets })
         : h('div', { className: 'lor-form-grid' },
           cur.fields.map(function (f) { var o = f[3] || {}; if (o.langs) return h(LangPick, { key: f[0], t: t, label: f[1], required: !!f[2], value: vals[f[0]], error: errs[f[0]], onChange: function (v) { set(f[0], v); } }); return h(Field, Object.assign({ key: f[0], name: f[0], label: f[1], required: !!f[2], value: vals[f[0]], error: errs[f[0]], onChange: function (v) { set(f[0], v); } }, o)); }),
-          cur.passportFile ? h(PassportBox, { key: 'pp', t: t, value: vals.passportFile, error: errs.passportFile, onChange: function (v) { set('passportFile', v); } }) : null),
+          cur.passportFile && askPassport(p.db) ? h(PassportBox, { key: 'pp', t: t, value: vals.passportFile, error: errs.passportFile, onChange: function (v) { set('passportFile', v); } }) : null),
       h('div', { className: 'lor-form-foot' },
         h('span', { className: 'lor-sm lor-muted' }, t('required_note')),
         h('div', { style: { display: 'flex', gap: 8, flexWrap: 'wrap' } },
@@ -6292,6 +6315,9 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         h('div', { className: 'box-row' },
           made[0] ? h('span', { className: 'lor-sm made' }, '✓ ' + t('created') + ': ', h('code', null, made[0].login + ' / ' + made[0].password)) : h('span'),
           h(Btn, { variant: 'primary', arrow: true, onClick: create }, t('create')))),
+      h('section', { className: 'box pp-ask' },
+        h('label', { className: 'check' }, h('input', { type: 'checkbox', checked: askPassport(db), onChange: function (e) { var v = e.target.checked; p.update(function (d) { d.settings = d.settings || {}; d.settings.passportScan = v; }); } }), t('pp_ask')),
+        h('p', { className: 'lor-sm lor-muted', style: { margin: '6px 0 0' } }, t('pp_ask_hint'))),
       h(StaffImport, p),
       h(LeadersBox, p),
       h('div', { className: 'seg sp-seg', role: 'tablist' }, [['all', t('all'), emps.length]].concat(L.map(function (lv, i) { return [String(i), lvlShort(lv, p.lang), emps.filter(function (u) { return Math.min(u.level || 0, L.length - 1) === i; }).length]; })).map(function (x) {
