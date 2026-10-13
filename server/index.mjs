@@ -5,7 +5,8 @@
 //   /healthz    — проверка для Railway
 // Данные — в папке DATA_DIR (на Railway — том, Volume; путь берётся сам из RAILWAY_VOLUME_MOUNT_PATH).
 // Первый запуск — в журнале (Railway → Deployments → View logs) логин и пароль SOP-менеджера.
-// Переменные окружения: PORT, DATA_DIR, ANTHROPIC_API_KEY и AI_* (см. README, «ИИ»), NEW_ADMIN — новый вход SOP-менеджера.
+// Переменные окружения: PORT, DATA_DIR, ANTHROPIC_API_KEY и AI_* (см. README, «ИИ»), NEW_ADMIN — новый вход SOP-менеджера,
+// SITE_HOST — свой домен (buraqbilim.com): с других адресов страницы перекидываются на него.
 //   node server/index.mjs
 import http from 'node:http';
 import { gzipSync } from 'node:zlib';
@@ -93,6 +94,12 @@ export async function startServer({ port = 8080, host = '0.0.0.0', dir, env = pr
     try {
       const url = new URL(req.url, 'http://x'), p = url.pathname;
       if (p === '/healthz') { res.writeHead(200, { 'content-type': 'text/plain' }); res.end('ok'); return; }
+      // свой домен (SITE_HOST, например buraqbilim.com): страницы с других адресов (…up.railway.app) — туда.
+      // /api не перекидывается: POST после перенаправления превратился бы в GET
+      const want = String(env.SITE_HOST || '').trim().toLowerCase(), got = String(req.headers.host || '').toLowerCase().replace(/:\d+$/, '');
+      if (want && got && got !== want && (req.method === 'GET' || req.method === 'HEAD') && p !== '/api' && p !== '/exec') {
+        res.writeHead(301, { location: 'https://' + want + req.url, 'cache-control': 'no-cache' }); res.end(); return;
+      }
       if (p === '/api' || p === '/exec') {
         // страница с другого адреса (GitHub Pages) тоже может работать с этим сервером
         if (req.method === 'OPTIONS') { res.writeHead(204, { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'GET, POST', 'access-control-allow-headers': 'content-type', 'access-control-max-age': '86400' }); res.end(); return; }

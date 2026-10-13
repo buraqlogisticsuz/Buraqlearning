@@ -161,3 +161,20 @@ test('на Railway без тома: сервер не падает — сайт 
     assert.match(logs.join(' '), /Нет тома для данных/);
   } finally { await s.close(); }
 });
+
+test('свой домен (SITE_HOST): страницы со старого адреса — туда, /api и /healthz — без перенаправления', async () => {
+  const dir = tmp(), s = await start(dir, { env: { SITE_HOST: 'buraqbilim.com' } });
+  const get = (path, host, method = 'GET', body) => new Promise((ok, no) => {
+    const r = http.request(s.url.slice(0, -1) + path, { method, headers: { host } }, res => { let b = ''; res.on('data', c => b += c); res.on('end', () => ok({ status: res.statusCode, location: res.headers.location, body: b })); });
+    r.on('error', no); r.end(body);
+  });
+  try {
+    const old = await get('/?x=1#y', 'buraqlearning-production.up.railway.app');
+    assert.equal(old.status, 301); assert.equal(old.location, 'https://buraqbilim.com/?x=1');
+    assert.equal((await get('/', 'buraqbilim.com')).status, 200);
+    assert.equal((await get('/', 'BuraqBilim.com:443')).status, 200);
+    assert.equal((await get('/healthz', 'healthcheck.railway.app')).status, 200);
+    const api = await get('/api', 'buraqlearning-production.up.railway.app', 'POST', '{"action":"ping"}');
+    assert.equal(api.status, 200); assert.equal(JSON.parse(api.body).ok, true);
+  } finally { await s.close(); rmSync(dir, { recursive: true, force: true }); }
+});
