@@ -493,6 +493,21 @@ try {
   assert.deepEqual(await rejected(A), [], 'сервер принял условия и решение');
   step('зарплата: условия SOP-менеджера, расчёт сотрудника с историей, проверка и подтверждение');
 
+  // ---------- подсказки «Tugmalar bo‘yicha izohlar» у новых кнопок: зарплата, Excel, меню ----------
+  await A.click('.help-btn'); await A.waitForTimeout(500); await A.locator('.hint-sw').first().click(); await settle(A);
+  // прокрутка закрывает подсказку — сначала прокрутить к кнопке, потом навести
+  const hintOf = async (p, sel) => { await p.mouse.move(0, 0); await p.locator(sel).first().scrollIntoViewIfNeeded(); await p.waitForTimeout(300); await p.locator(sel).first().hover(); await p.waitForSelector('.hint-pop', { timeout: 3000 }); return txt(p, '.hint-pop'); };
+  await nav(A, 'pay');
+  assert.match(await hintOf(A, '.pay-who'), /Kim qancha hisobladi/);
+  assert.match(await hintOf(A, '.pay-filters .lor-btn-secondary'), /Qo‘shimcha amal/, 'синяя кнопка — общая подсказка');
+  assert.match(await hintOf(A, 'a[href="#pay"]:visible'), /Belgilangan maosh \+ KPI/);
+  await nav(A, 'staff');
+  assert.match(await hintOf(A, '.imp-act .lor-btn-secondary'), /Xodimlar, natijalar va rahbarlar/);
+  assert.match(await hintOf(A, '.pp-ask'), /pasport fayli/);
+  await shot(A, '21-hint');
+  await A.click('.help-btn'); await A.waitForTimeout(500); await A.locator('.hint-sw').first().click(); await settle(A);
+  step('подсказки у новых кнопок: зарплата, Excel, скан паспорта, синие кнопки');
+
   // ---------- страница входа: маршрут, приветствие, «Kun hikmati»; свои цитаты SOP-менеджера — из «Kontent» ----------
   const R = await device('вход по-русски');
   assert.match(await R.innerText('.ir-pt.is-from'), /^(YIWU|ZHONGSHAN|ISTANBUL|MOSKVA)$/, 'маршрут — из списка городов');

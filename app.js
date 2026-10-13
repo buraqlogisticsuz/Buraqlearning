@@ -1832,7 +1832,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var t = p.t, db = p.db, u = p.user, mine = LmsPay.schemeFor(db.pay, u);
     var thisYm = ymOf(Date.now()), ymS = useState(thisYm), ym = ymS[0], inS = useState({}), noteS = useState(''), openS = useState(null);
     var head = h('div', { className: 'page-head' },
-      h('div', null, h('span', { className: 'lor-eyebrow' }, t('pay_eyebrow')), h('h1', { className: 'lor-title' }, t('pay_title'))),
+      h('div', null, h('span', { className: 'lor-eyebrow' }, t('pay_eyebrow')), h('h1', { className: 'lor-title' }, t('pay_title'), h(PageTip, { t: t, id: 'pay' }))),
       mine ? h('div', { className: 'seg pay-months', role: 'group', 'aria-label': t('pay_month') }, [ymShift(thisYm, -1), thisYm].map(function (m) {
         return h('button', { key: m, type: 'button', className: ym === m ? 'is-on' : '', 'aria-pressed': ym === m, onClick: function () { ymS[1](m); } }, ymLabel(m, p.lang));
       })) : null);
@@ -1960,7 +1960,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var t = p.t, db = p.db, tab = useState(p.tab || 'hist'), calcs = db.payCalcs || [], schemes = (db.pay && db.pay.schemes) || [];
     var wait = calcs.filter(function (c) { return c.status === 'saved'; }).length;
     return h('div', { className: 'app-wrap' },
-      h('div', { className: 'page-head' }, h('div', null, h('span', { className: 'lor-eyebrow' }, t('pay_eyebrow')), h('h1', { className: 'lor-title' }, t('pay_admin_title')))),
+      h('div', { className: 'page-head' }, h('div', null, h('span', { className: 'lor-eyebrow' }, t('pay_eyebrow')), h('h1', { className: 'lor-title' }, t('pay_admin_title'), h(PageTip, { t: t, id: 'apay' })))),
       h('div', { className: 'lor-tabs fb-tabs', role: 'tablist' }, [['hist', t('pay_tab_hist'), wait], ['schemes', t('pay_tab_schemes'), schemes.length], ['people', t('pay_tab_people'), null]].map(function (x) {
         return h('button', { key: x[0], type: 'button', role: 'tab', 'aria-selected': tab[0] === x[0], className: cx('lor-tab', tab[0] === x[0] && 'is-on'), onClick: function () { tab[1](x[0]); } }, x[1], x[2] != null ? h('span', { className: 'lor-count' }, x[2]) : null);
       })),
@@ -3531,7 +3531,9 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       { id: 'cases', ico: 'case', n: 4, go: { name: 'cases' } },
       { id: 'ask', ico: 'chat', n: 4, go: null },
       { id: 'path', ico: 'target', n: 4, go: { name: 'path' } },
-      { id: 'voice', ico: 'idea', n: 4, go: { name: 'ideas' } }
+      { id: 'voice', ico: 'idea', n: 4, go: { name: 'ideas' } },
+      { id: 'pay', ico: 'target', n: 4, go: { name: 'pay' } },
+      { id: 'profile', ico: 'team', n: 4, go: null }
     ],
     admin: [
       { id: 'astaff', ico: 'team', n: 4, go: { name: 'staff' } },
@@ -3541,7 +3543,12 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       { id: 'abase', ico: 'lock', n: 5, go: { name: 'cms' } },
       { id: 'aquality', ico: 'refresh', n: 4, go: { name: 'quality' } },
       { id: 'alevels', ico: 'target', n: 4, go: { name: 'levels' } },
-      { id: 'aassets', ico: 'truck', n: 4, go: { name: 'assets' } }
+      { id: 'aassets', ico: 'truck', n: 4, go: { name: 'assets' } },
+      { id: 'apay', ico: 'target', n: 5, go: { name: 'pay' } },
+      { id: 'aexcel', ico: 'doc', n: 4, go: { name: 'staff' } },
+      { id: 'aleaders', ico: 'idea', n: 3, go: { name: 'staff' } },
+      { id: 'awisdom', ico: 'bulb', n: 3, go: { name: 'cms', tab: 'wisdom' } },
+      { id: 'aexport', ico: 'lock', n: 3, go: null }
     ]
   };
 
@@ -4091,6 +4098,39 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
 
   /* selector → [title key, body key]; the first match wins, so the specific ones come first */
   var HINTS = [
+    /* salary (Maosh) — the employee */
+    ['.pay-months', 'hint_paym_t', 'hint_paym'],
+    ['.pay-input', 'hint_payin_t', 'hint_payin'],
+    ['.pay-autoval', 'hint_payauto_t', 'hint_payauto'],
+    ['.pay-bar', 'hint_paybar_t', 'hint_paybar'],
+    ['.pay-save .lor-btn-primary', 'hint_paysave_t', 'hint_paysave'],
+    ['.pay-result', 'hint_payres_t', 'hint_payres'],
+    ['.pay-hrow', 'hint_payhist_t', 'hint_payhist'],
+    /* salary — the SOP manager */
+    ['.pay-who', 'hint_paywho_t', 'hint_paywho'],
+    ['.pay-tlrow', 'hint_paytl_t', 'hint_paytl'],
+    ['.pay-decide', 'hint_paydec_t', 'hint_paydec'],
+    ['.pay-ed-kpi', 'hint_paykpi_t', 'hint_paykpi'],
+    ['.pay-example', 'hint_payex_t', 'hint_payex'],
+    ['.pay-people select, .pay-fix-in', 'hint_payppl_t', 'hint_payppl'],
+    /* staff: Excel, passport scan, initiative recipients; profile; ideas */
+    ['.imp-act label', 'hint_impin_t', 'hint_impin'],
+    ['.imp-act .lor-btn-secondary', 'hint_impout_t', 'hint_impout'],
+    ['.imp-table', 'hint_impprev_t', 'hint_impprev'],
+    ['.pp-ask', 'hint_ppask_t', 'hint_ppask'],
+    ['.pf-photo', 'hint_pfphoto_t', 'hint_pfphoto'],
+    ['.pf-tg', 'hint_pftg_t', 'hint_pftg'],
+    ['.ini-to-card', 'hint_inito_t', 'hint_inito'],
+    ['.sync-chip', 'hint_sync_t', 'hint_sync'],
+    ['.th-seg', 'hint_theme_t', 'hint_theme'],
+    /* the user menu */
+    ['.user-pop .profile', 'hint_mprofile_t', 'hint_mprofile'],
+    ['.user-pop .export', 'hint_mexport_t', 'hint_mexport'],
+    ['.user-pop .drill', 'tip_drill_t', 'tip_drill'],
+    ['.user-pop .assets', 'tip_assets_t', 'tip_assets'],
+    ['.user-pop .ideas', 'tip_ideas_t', 'tip_ideas'],
+    ['.user-pop .report', 'tip_report_t', 'tip_report'],
+    ['.user-pop .help', 'tr_help_t', 'tr_help'],
     ['.ini-btn', 'hint_ini_t', 'hint_ini'],
     ['.lr-bar, .lr-gate', 'hint_lr_t', 'hint_lr'],
     ['.at-drop', 'hint_atd_t', 'hint_atd'],
@@ -4121,6 +4161,11 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     ['a[href="#cms"]', 'tr_cms_t', 'tr_cms'],
     ['a[href="#staff"]', 'tr_staff_t', 'tr_staff'],
     ['a[href="#levels"]', 'tr_levels_t', 'tr_levels'],
+    ['a[href="#rating"]', 'hint_nrating_t', 'hint_nrating'],
+    ['a[href="#assets"]', 'tip_aassets_t', 'tip_aassets'],
+    ['a[href="#feedback"]', 'tip_feedback_t', 'tip_feedback'],
+    ['a[href="#pay"]', 'hint_npay_t', 'hint_npay'],
+    ['a[href="#mentor"]', 'hint_nmentor_t', 'hint_nmentor'],
     ['.plan-item', 'hint_plan_t', 'hint_plan'],
     ['.ladder-btn', 'hint_lvl_t', 'hint_lvl'],
     ['.jr-add-btn button', 'hint_addrow_t', 'hint_addrow'],
@@ -4135,8 +4180,15 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     ['.app-link.danger', 'hint_del_t', 'hint_del'],
     ['.cs-ai-bar button, .ini-ai button, .cms-ai button', 'hint_aifill_t', 'hint_aifill'],
     ['.lor-btn-primary', 'hint_save_t', 'hint_save'],
-    ['.lor-btn-outline, .lor-btn-ghost', 'hint_second_t', 'hint_second'],
-    ['.lor-input', 'hint_field_t', 'hint_field']
+    ['.lor-btn-outline, .lor-btn-ghost, .lor-btn-secondary', 'hint_second_t', 'hint_second'],
+    ['.lor-input', 'hint_field_t', 'hint_field'],
+    ['.seg button', 'hint_seg_t', 'hint_seg'],
+    ['.check', 'hint_check_t', 'hint_check'],
+    ['.ac-chip:not(.is-static)', 'hint_chip_t', 'hint_chip'],
+    ['.pay-card', 'hint_paycard_t', 'hint_paycard'],
+    ['.pay-filters', 'hint_payflt_t', 'hint_payflt'],
+    ['.ld-box', 'hint_ldr_t', 'hint_ldr'],
+    ['.wz-admin', 'hint_wz_t', 'hint_wz']
   ];
   var HINT_ALL = HINTS.map(function (x) { return x[0]; }).join(', ');
 
