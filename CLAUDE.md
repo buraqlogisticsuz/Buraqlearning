@@ -1,7 +1,7 @@
 # BURAQ o‘quv platformasi — учебная платформа для сотрудников
 
-Сайт: Railway (`server/index.mjs`, `npm start`) и https://buraqlogisticsuz.github.io/Buraqlearning/ · устройство,
-сервер и настройка — `README.md`.
+Сайт: https://buraqlearning-production.up.railway.app/ (Railway, `server/index.mjs`, `npm start`); GitHub Pages
+перекидывает туда · устройство, сервер и настройка — `README.md`.
 
 Фирменный стиль — обязателен для всего видимого (цвета, шрифт, логотип, кнопки, иконки):
 

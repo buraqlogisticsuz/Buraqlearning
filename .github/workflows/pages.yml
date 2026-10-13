@@ -13,6 +13,11 @@ concurrency:
   group: pages
   cancel-in-progress: true
 
+# рабочий сайт — на Railway: GitHub Pages только перекидывает туда. Пусто — Pages снова выкладывает сам сайт
+# (например, с сервером в Google Apps Script — адрес …/exec в config.js)
+env:
+  SITE_URL: https://buraqlearning-production.up.railway.app/
+
 jobs:
   deploy:
     # публикуется только основная ветка
@@ -27,7 +32,16 @@ jobs:
       - name: Tests
         run: node --test tests/*.test.mjs
 
+      - name: Redirect to the working site
+        if: env.SITE_URL != ''
+        run: |
+          mkdir _site
+          sed "s|__SITE_URL__|$SITE_URL|g" tools/pages-redirect.html > _site/index.html
+          cp _site/index.html _site/404.html
+          touch _site/.nojekyll
+
       - name: Collect site files
+        if: env.SITE_URL == ''
         run: |
           mkdir _site
           cp index.html config.js lms-sync.js lms-client.js lms-gs-script.js lor.css lor-ds.js demo-data.js strings.js app.js _site/

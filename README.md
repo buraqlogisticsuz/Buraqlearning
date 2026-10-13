@@ -5,10 +5,11 @@
 Роли: **SOP-менеджер** (admin), **сотрудник** и **адресаты идей** — CEO, Project Manager, руководитель компании (leader);
 наставник — сотрудник с отметкой «наставник».
 
-Рабочий сайт — на **Railway** (свой сервер: страница, сервер и данные по одному адресу, см. «Railway»).
-GitHub Pages: **https://buraqlogisticsuz.github.io/Buraqlearning/** (демо — `…/Buraqlearning/?demo=1`).
+Сайт: **https://buraqlearning-production.up.railway.app/** — Railway: страница, сервер и данные по одному адресу
+(см. «Railway»); демо — `…/?demo=1`. GitHub Pages (`https://buraqlogisticsuz.github.io/Buraqlearning/`) перекидывает туда —
+адрес в `SITE_URL` в `.github/workflows/pages.yml`.
 Репозиторий: [buraqlogisticsuz/Buraqlearning](https://github.com/buraqlogisticsuz/Buraqlearning).
-Старый адрес `…/xeeds/learn/` перекидывает сюда.
+Старый адрес `…/xeeds/learn/` перекидывает на GitHub Pages, а оттуда — на Railway.
 
 ## Что где лежит
 
@@ -52,7 +53,8 @@ GitHub Pages: **https://buraqlogisticsuz.github.io/Buraqlearning/** (демо �
 
 1. Один раз: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
 2. Каждый пуш в основную ветку: `.github/workflows/pages.yml` прогоняет тесты (`node --test tests/*.test.mjs`) и
-   выкладывает сайт. Запустить вручную: **Actions → Deploy to GitHub Pages → Run workflow**.
+   выкладывает страницу-перенаправление на Railway (`SITE_URL`; пусто — сам сайт). Запустить вручную:
+   **Actions → Deploy to GitHub Pages → Run workflow**.
 
 ## Два режима
 
@@ -256,7 +258,6 @@ python3 -m http.server 8000          # http://localhost:8000/ — демо, бе
 ## Дальше
 
 - **Запуск:** сервис на Railway с томом, ключ Claude API, загрузка 4-bob, сотрудники, видео, настоящий вводный раздел.
-  Когда у Railway будет постоянный адрес — GitHub Pages и `…/xeeds/learn/` перекинуть на него.
 
 ## Известные ограничения
 
