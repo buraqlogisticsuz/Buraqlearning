@@ -270,7 +270,8 @@ try {
   await click(E, 'Yuborish', { wait: 300 });                   // без адресата не уходит
   assert.ok((await E.innerText('.ini-modal')).includes('Kamida bitta rahbarni tanlang'), 'нужно выбрать, кому');
   await E.locator('.ini-to-card').nth(0).click(); await E.locator('.ini-to-card').nth(1).click();   // сразу двум
-  assert.ok((await E.innerText('.ini-to-card >> nth=0')).includes('Sherzod Aliyev'), 'в карточке — имя CEO');
+  try { await E.locator('.ini-to-card').nth(0).filter({ hasText: 'Sherzod Aliyev' }).waitFor({ timeout: 10000 }); }   // в карточке — имя CEO (после перерисовки)
+  catch (e) { console.log('карточка CEO:', await E.innerText('.ini-to-card >> nth=0'), await E.evaluate(() => JSON.stringify(LmsClient.initial().users.filter(u => u.role === 'leader')))); throw e; }
   assert.equal(await E.locator('.ini-to-card[aria-checked="true"]').count(), 2, 'выбраны оба');
   await E.locator('.ini-types:not(.ini-to) .ini-type-card').first().click();
   await E.fill('#f-ini-title', 'Yorliqlarni oldindan chop etish'); await E.fill('#f-ini-text', 'Ertalab navbat kamayadi');
@@ -445,8 +446,12 @@ try {
   const sch = srv.g.state().pay.schemes[0];
   assert.equal(sch.title, 'Ombor mudiri'); assert.equal(sch.kpis.length, 3); assert.equal(sch.kpis[1].less, true);
   // сотрудник: «Maosh» в меню, своя схема, факт — и итог считается сразу
-  // пароль сотруднику сменил SOP-менеджер (шаг профиля) — его входы закрыты, входит заново
-  await E.reload({ waitUntil: 'networkidle' }); await signIn(E, 'dilnoza.k', 'yangi-parol-77'); await skipTour(E);
+  // пароль сотруднику сменил SOP-менеджер (шаг профиля): если вход на устройстве закрыт — входит заново
+  const eTok = await E.evaluate(() => localStorage.getItem('lor-lms-token'));
+  await E.reload({ waitUntil: 'networkidle' });
+  if (!eTok || srv.g.post({ action: 'since', token: eTok, rev: 0 }).code === 'auth') { await E.waitForSelector('#f-login'); await signIn(E, 'dilnoza.k', 'yangi-parol-77'); }
+  else await watchSync(E);
+  await skipTour(E);
   await nav(E, 'pay');
   await E.locator('.pay-input input').first().fill('9');
   await E.waitForTimeout(700);
@@ -460,16 +465,27 @@ try {
   assert.equal(pc[0].total, 4000000 + pc[0].kpi, 'итог — фикса + KPI'); assert.equal(pc[0].note, 'Oktyabr, 9 ta shartnoma');
   assert.ok(await E.locator('.pay-hist .pay-st', { hasText: 'Tekshiruvda' }).count(), 'в своей истории — «на проверке»');
   assert.deepEqual(await rejected(E), [], 'сервер принял расчёт');
+  // посчитал и ушёл, не отправив: попытки всё равно в истории — «Yuborilmagan»
+  await E.locator('.pay-input input').first().fill('12'); await E.waitForTimeout(1800);
+  await E.locator('.pay-input input').first().fill('7'); await E.waitForTimeout(1800);
+  await nav(E, 'home'); await settle(E);
+  const dr = srv.g.state().payCalcs.find(c => c.status === 'draft');
+  assert.ok(dr, 'несохранённый расчёт записан'); assert.deepEqual(dr.tries.map(y => y.inputs[sch.kpis[0].id]), [12, 7], 'обе попытки');
+  assert.equal(dr.inputs[sch.kpis[0].id], 7, 'итог — последняя попытка');
+  assert.deepEqual(await rejected(E), [], 'сервер принял несохранённый расчёт');
   // SOP-менеджер: история — кто, когда, как посчитал; подтверждает с комментарием
   await A.reload({ waitUntil: 'networkidle' }); await watchSync(A);
   await nav(A, 'pay');
-  await A.locator('.pay-tlrow', { hasText: 'Dilnoza Karimova-Aliyeva' }).click(); await A.waitForTimeout(300);
+  assert.match(await txt(A, '.pay-who'), /Dilnoza Karimova-Aliyeva\s+Ombor mudiri\s+3\s+1\b/, 'кто сколько считал: 3 расчёта (9 — отправлен, 12 и 7 — нет), отправлен 1');
+  assert.ok(await A.locator('.pay-tlrow', { hasText: 'Yuborilmagan' }).count(), 'несохранённый — в истории');
+  await A.locator('.pay-tlrow', { hasText: 'Tekshiruvda' }).click(); await A.waitForTimeout(300);
   assert.match(await txt(A, '.pay-hbody'), /9 \/ 10 ta → 90% × 60% × 2 000 000 so‘m = 1 080 000 so‘m/, 'видно, как посчитано');
   await A.fill('#f-pay-rep', 'Hammasi to‘g‘ri');
   await shot(A, '20-pay-history');
   await A.locator('.pay-decide').getByRole('button', { name: 'Tasdiqlash' }).click();
   await settle(A);
-  assert.equal(srv.g.state().payCalcs[0].status, 'approved'); assert.equal(srv.g.state().payCalcs[0].reply, 'Hammasi to‘g‘ri');
+  const sent = srv.g.state().payCalcs.find(c => c.id === pc[0].id);
+  assert.equal(sent.status, 'approved'); assert.equal(sent.reply, 'Hammasi to‘g‘ri');
   assert.ok(srv.g.state().notifications.some(n => n.kind === 'pay' && n.userId === emp.id && n.pay.s === 'approved'), 'сотруднику — уведомление');
   await E.reload({ waitUntil: 'networkidle' }); await watchSync(E);
   await nav(E, 'pay');

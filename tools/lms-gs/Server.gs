@@ -46,7 +46,8 @@ var AI_MAX_CHARS = 200000;        // длина запроса (текст ст�
 var AI_FALLBACK = ['claude-opus-5-5', 'claude-opus-5', 'claude-fable-5-1', 'claude-sonnet-5-5'];
 var DAY_MS = 864e5;
 var WISDOM_MAX = 60, WISDOM_TEXT = 240, WISDOM_BY = 80;   // «Kun hikmati»: цитат SOP-менеджера и их длина
-var PAY_MONTH_MAX = 20, PAY_NOTE = 300;   // зарплата: расчётов в истории у сотрудника за месяц, длина комментария
+var PAY_MONTH_MAX = 20, PAY_DRAFT_MAX = 40, PAY_TRIES = 40, PAY_NOTE = 300;   // зарплата за месяц у сотрудника: сохранённых
+                                          // расчётов, несохранённых, попыток в одном расчёте; длина комментария
 // идею сотрудник отправляет одному или нескольким адресатам (to — список); у адресата свой вход (role 'leader',
 // post — кто он) и только эти идеи; ответ общий, repliedBy — кто из адресатов ответил последним
 var INI_TO = ['ceo', 'pm', 'boss'];
@@ -487,24 +488,32 @@ function checkEmployee_(st, me, op) {
   return 'нет прав на «' + top + '»';
 }
 
-/* новый расчёт зарплаты сотрудника: свой, по его нынешним условиям, сумма — как у формулы lms-pay.js */
+/* новый расчёт зарплаты сотрудника: свой, по его нынешним условиям, суммы — как у формулы lms-pay.js.
+   status 'saved' — отправлен SOP-менеджеру на проверку; 'draft' — считал, но не сохранил (страница записывает сама,
+   когда он уходит со страницы). tries — все его попытки за этот заход: { at, inputs, total }, каждая тоже пересчитывается */
+function payNums_(o) { return !!o && typeof o === 'object' && !Array.isArray(o) && Object.keys(o).every(function (k) { return typeof o[k] === 'number' && isFinite(o[k]) && Math.abs(o[k]) <= 1e9; }); }
 function checkPayCalc_(st, me, x) {
   var uid = String(me.id);
   if (!x || typeof x !== 'object' || String(x.uid) !== uid) return 'расчёт — только свой';
-  if (x.status !== 'saved' || x.reply != null || x.by != null || x.repliedAt != null) return 'итог расчёта ставит SOP-менеджер';
+  if (['saved', 'draft'].indexOf(x.status) < 0 || x.reply != null || x.by != null || x.repliedAt != null) return 'итог расчёта ставит SOP-менеджер';
   if (!/^\d{4}-\d{2}$/.test(String(x.ym || ''))) return 'неверный месяц расчёта';
   if (x.note != null && (typeof x.note !== 'string' || x.note.length > PAY_NOTE)) return 'комментарий — до ' + PAY_NOTE + ' символов';
-  if (JSON.stringify(x).length > 16000) return 'слишком большой расчёт';
+  if (JSON.stringify(x).length > 24000) return 'слишком большой расчёт';
   var mine = LmsPay.schemeFor(st.pay, me);
   if (!mine) return 'условия зарплаты вам ещё не заданы';
   var snap = LmsPay.snapshot(mine.scheme);
   if (!LmsSync.equal(x.scheme, snap) || x.fixed !== Math.round(mine.fixed)) return 'условия зарплаты изменились — обновите страницу';
-  var inp = x.inputs;
-  if (!inp || typeof inp !== 'object' || Object.keys(inp).some(function (k) { return typeof inp[k] !== 'number' || !isFinite(inp[k]) || Math.abs(inp[k]) > 1e9; })) return 'неверные факты';
-  var r = LmsPay.calc(snap, mine.fixed, inp);
+  if (!payNums_(x.inputs)) return 'неверные факты';
+  var r = LmsPay.calc(snap, mine.fixed, x.inputs);
   if (!['kpi', 'total', 'pct', 'lines'].every(function (k) { return LmsSync.equal(r[k], x[k]); })) return 'сумма не сходится с условиями';
-  var n = own_(st.payCalcs, 'uid', uid).filter(function (c) { return c.ym === x.ym; }).length;
-  return n >= PAY_MONTH_MAX ? 'за месяц — не больше ' + PAY_MONTH_MAX + ' расчётов' : null;
+  if (x.tries != null) {
+    if (!Array.isArray(x.tries) || x.tries.length > PAY_TRIES) return 'попыток в расчёте — не больше ' + PAY_TRIES;
+    var bad = x.tries.some(function (y) { return !y || typeof y.at !== 'number' || !payNums_(y.inputs) || LmsPay.calc(snap, mine.fixed, y.inputs).total !== y.total; });
+    if (bad) return 'попытка расчёта не сходится с условиями';
+  }
+  var draft = x.status === 'draft', max = draft ? PAY_DRAFT_MAX : PAY_MONTH_MAX;
+  var n = own_(st.payCalcs, 'uid', uid).filter(function (c) { return c.ym === x.ym && (c.status === 'draft') === draft; }).length;
+  return n >= max ? 'за месяц — не больше ' + max + (draft ? ' несохранённых расчётов' : ' расчётов') : null;
 }
 
 /* правка адресата идей: ответ (статус, текст, даты, кто ответил) на идею, где он среди адресатов; саму идею меняет автор */

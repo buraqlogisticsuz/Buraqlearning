@@ -3252,3 +3252,16 @@ button.mc-cell.at-cell:hover { outline: 2px solid var(--blue-text); outline-offs
   .pay-ed-grid, .pay-ed-row, .pay-ed-row.is-params { grid-template-columns: minmax(0, 1fr); }
   .pay-total b { font-size: 36px; line-height: 42px; }
 }
+/* not sent: the employee calculated but did not send — a dashed badge; the tries of one visit; who calculated how much */
+.pay-st.is-draft { border-style: dashed; }
+.pay-tries { display: flex; flex-direction: column; gap: 6px; }
+.pay-tries ol { margin: 0; padding: 0; list-style: none; border: var(--hairline) solid var(--line); border-radius: var(--radius-md); }
+.pay-tries li { display: grid; grid-template-columns: 56px minmax(0, 1fr) auto; gap: var(--space-3); padding: 8px var(--space-4); border-top: var(--hairline) solid var(--line); font-size: 13px; }
+.pay-tries li:first-child { border-top: 0; }
+.pay-tries li b { font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pay-who-h { padding: var(--space-4) var(--space-6) 0; }
+.pay-who td { font-variant-numeric: tabular-nums; }
+.pay-who tr.is-on td { background: var(--blue-soft); }
+.pay-who-b { display: flex; align-items: center; gap: 10px; background: none; border: 0; padding: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.pay-who-b small { display: block; font-size: 12px; color: var(--ink-muted); }
+.pay-who-b:hover span { color: var(--blue-text); }

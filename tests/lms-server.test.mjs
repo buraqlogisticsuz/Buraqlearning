@@ -575,6 +575,12 @@ test('зарплата: сотрудник видит только свои ус
   bad(calc({ k1: 9 }, { uid: 10391 }), /только свой/);
   bad(calc({ k1: 9 }, { status: 'approved' }), /SOP-менеджер/);
   bad(calc({ k1: '9' }), /факты/);
+  // «считал, но не сохранил»: черновик с попытками; каждая попытка пересчитывается
+  const tries = [{ at: 1, inputs: { k1: 5 }, total: 4500000 + 1000000 }, { at: 2, inputs: { k1: 9 }, total: 4500000 + 1800000 }];
+  assert.deepEqual(D({ action: 'patch', ops: [{ op: 'set', path: ['payCalcs', { id: 'd1' }], value: { ...calc({ k1: 9 }), id: 'd1', status: 'draft', tries } }] }).rejected, []);
+  bad({ ...calc({ k1: 9 }), id: 'd2', status: 'draft', tries: [{ at: 1, inputs: { k1: 5 }, total: 99 }] }, /попытка/);
+  bad({ ...calc({ k1: 9 }), id: 'd3', status: 'draft', tries: Array(41).fill(tries[0]) }, /попыток/);
+  bad({ ...calc({ k1: 9 }), id: 'd4', status: 'nonsense' }, /SOP-менеджер/);
   assert.match(D({ action: 'patch', ops: [{ op: 'set', path: ['payCalcs', { id: c1.id }, 'total'], value: 1 }] }).rejected[0].reason, /не меняется/);
   assert.match(D({ action: 'patch', ops: [{ op: 'del', path: ['payCalcs', { id: c1.id }] }] }).rejected[0].reason, /не меняется/);
   assert.match(D({ action: 'patch', ops: [{ op: 'set', path: ['pay', 'people', '10427'], value: { fixed: 1e8 } }] }).rejected[0].reason, /SOP-менеджер/);
@@ -582,9 +588,9 @@ test('зарплата: сотрудник видит только свои ус
   assert.deepEqual(Z({ action: 'load' }).state.payCalcs, []);
   assert.deepEqual(Z({ action: 'load' }).state.pay.schemes, []);
   // SOP-менеджер видит всё и ставит итог
-  assert.equal(A({ action: 'load' }).state.payCalcs.length, 1);
+  assert.equal(A({ action: 'load' }).state.payCalcs.length, 2, 'SOP-менеджер видит и сохранённый, и несохранённый');
   assert.equal(A({ action: 'patch', ops: [{ op: 'set', path: ['payCalcs', { id: c1.id }, 'status'], value: 'approved' }] }).rejected.length, 0);
-  assert.equal(D({ action: 'load' }).state.payCalcs[0].status, 'approved');
+  assert.equal(D({ action: 'load' }).state.payCalcs.find(c => c.id === c1.id).status, 'approved');
   // не больше 20 расчётов за месяц
   for (let i = 0; i < 19; i++) D({ action: 'patch', ops: [{ op: 'set', path: ['payCalcs', { id: 'm' + i }], value: { ...calc({ k1: i }), id: 'm' + i } }] });
   bad({ ...calc({ k1: 1 }), id: 'm20' }, /не больше 20/);

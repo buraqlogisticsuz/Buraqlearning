@@ -47,7 +47,12 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   function useDB() {
     var s = useState(function () { return SV.initial(); }), db = s[0], set = s[1];
     var cur = useRef(db);
-    useEffect(function () { return SV.subscribe(function (d) { cur.current = d; set(d); }); }, []);
+    useEffect(function () {
+      var off = SV.subscribe(function (d) { cur.current = d; set(d); });
+      // the server may have answered between the first render and this subscription — take what is there now
+      var d = SV.initial(); cur.current = d; set(d);
+      return off;
+    }, []);
     /* the “before → after” difference goes to the server queue (computed here, once — not inside set) */
     function update(fn) {
       var prev = cur.current, d = clone(prev); fn(d);
@@ -1747,7 +1752,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
      calculated what, with which figures and how, checks the platform figures against today's data and approves or
      returns it. */
   var PAY_SRC = ['manual', 'att_late', 'att_absent', 'att_ontime', 'study_h', 'lessons', 'xp', 'xtasks', 'errors'];
-  var PAY_MAX = 20;   // saved calculations a month per employee — as on the server
+  var PAY_MAX = 20, PAY_DRAFT_MAX = 40, PAY_TRIES = 30;   // a month per employee: sent, not sent (as on the server); tries kept in one
+  function payId() { return 'pc' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
   function money(n) { return String(Math.round(+n || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0'); }
   function sumTxt(n, t) { return money(n) + ' ' + t('pay_cur'); }
   function payNum(v) { var n = parseFloat(String(v == null ? '' : v).replace(/\s/g, '').replace(',', '.')); return isFinite(n) ? n : 0; }
@@ -1782,6 +1788,17 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     return ratio + ' → ' + numTxt(ln.s) + '%' + (below ? ' (' + tpl(t('pay_below'), { n: numTxt(k.min) }) + ')' : '') + ' × ' + numTxt(k.w) + '% × ' + sumTxt(base, t) + ' = ' + sumTxt(ln.a, t);
   }
   function PayStatus(p) { return h('span', { className: 'pay-st is-' + p.s }, p.t('pay_st_' + p.s)); }
+  /* the tries of one visit: when, the typed figures, the total */
+  function PayTries(p) {
+    var t = p.t, c = p.c, man = (c.scheme.kpis || []).filter(function (k) { return k.src === 'manual'; });
+    if (!(c.tries || []).length) return null;
+    return h('div', { className: 'pay-tries' }, h('span', { className: 'lor-eyebrow' }, tpl(t('pay_tries'), { n: c.tries.length })),
+      h('ol', null, c.tries.map(function (y, i) {
+        return h('li', { key: i }, h('span', { className: 'pay-hwhen' }, fmtDT(y.at).slice(11)),
+          h('span', null, man.map(function (k) { return k.name + ': ' + numTxt((y.inputs || {})[k.id] || 0) + (k.unit ? ' ' + k.unit : ''); }).join(' · ') || '—'),
+          h('b', null, sumTxt(y.total, t)));
+      })));
+  }
   /* a saved calculation, line by line; check — the SOP manager: platform figures against today's data */
   function PayLines(p) {
     var t = p.t, c = p.c, kp = {};
@@ -1820,17 +1837,52 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         return h('button', { key: m, type: 'button', className: ym === m ? 'is-on' : '', 'aria-pressed': ym === m, onClick: function () { ymS[1](m); } }, ymLabel(m, p.lang));
       })) : null);
     var hist = (db.payCalcs || []).filter(function (c) { return c.uid === u.id; }).sort(function (a, b) { return b.at - a.at; });
+    var snap = mine ? LmsPay.snapshot(mine.scheme) : null, vals = {};
+    if (mine) snap.kpis.forEach(function (k) { vals[k.id] = k.src === 'manual' ? payNum(inS[0][ym + '|' + k.id]) : paySrcVal(db, u, ym, k.src); });
+    var r = mine ? LmsPay.calc(snap, mine.fixed, vals) : null;
+    var typed = mine ? snap.kpis.some(function (k) { return k.src === 'manual' && String(inS[0][ym + '|' + k.id] || '').trim() !== ''; }) : false;
+
+    /* every calculation is recorded: a pause in typing makes a «try»; leaving the page, the tab or the month sends
+       the tries to the history as «not sent» unless they were sent with «Hisobni saqlash» (the SOP manager sees both) */
+    var live = useRef(null), sess = useRef({ ym: ym, tries: [] });
+    live.current = { snap: snap, fixed: r ? r.fixed : 0, vals: vals, total: r ? r.total : 0, ym: ym, typed: typed, db: db, update: p.update, uid: u.id };
+    function addTry() {
+      var L = live.current, x = sess.current;
+      if (!L.snap || !L.typed || x.ym !== L.ym) return;
+      var last = x.tries[x.tries.length - 1] || (x.base ? { inputs: x.base } : null);   // base — the figures just sent
+      if (last && LmsSync.equal(last.inputs, L.vals)) return;
+      x.tries = x.tries.concat([{ at: Date.now(), inputs: L.vals, total: L.total }]).slice(-PAY_TRIES);
+    }
+    function flushDraft() {
+      var L = live.current, x = sess.current;
+      sess.current = { ym: L.ym, tries: [] };
+      if (!x.tries.length || !L.snap) return;
+      if ((L.db.payCalcs || []).filter(function (c) { return c.uid === L.uid && c.ym === x.ym && c.status === 'draft'; }).length >= PAY_DRAFT_MAX) return;
+      var last = x.tries[x.tries.length - 1], rr = LmsPay.calc(L.snap, L.fixed, last.inputs);
+      var rec = { id: payId(), uid: L.uid, at: x.tries[0].at, ym: x.ym, scheme: L.snap, fixed: rr.fixed, inputs: last.inputs, kpi: rr.kpi, total: rr.total, pct: rr.pct, lines: rr.lines, tries: x.tries, status: 'draft' };
+      L.update(function (d) { d.payCalcs = d.payCalcs || []; d.payCalcs.unshift(rec); });
+    }
+    var key = JSON.stringify(vals);
+    useEffect(function () { var id = setTimeout(addTry, 1500); return function () { clearTimeout(id); }; }, [key]);
+    useEffect(function () { if (sess.current.ym !== ym) flushDraft(); }, [ym]);
+    useEffect(function () {
+      function hide() { if (document.visibilityState === 'hidden') { addTry(); flushDraft(); } }
+      document.addEventListener('visibilitychange', hide);
+      return function () { document.removeEventListener('visibilitychange', hide); addTry(); flushDraft(); };
+    }, []);
+
     if (!mine) return h('div', { className: 'app-wrap' }, head,
       h('section', { className: 'box pay-empty' }, h('span', { className: 'ini-card-ico', 'aria-hidden': true }, h(Ico, { name: 'target', size: 26, w: 1.8 })), h('p', { style: { margin: 0 } }, t('pay_none'))),
       hist.length ? h(PayHistory, { t: t, lang: p.lang, list: hist, open: openS }) : null);
-    var snap = LmsPay.snapshot(mine.scheme), vals = {};
-    snap.kpis.forEach(function (k) { vals[k.id] = k.src === 'manual' ? payNum(inS[0][ym + '|' + k.id]) : paySrcVal(db, u, ym, k.src); });
-    var r = LmsPay.calc(snap, mine.fixed, vals), lineOf = {};
+    var lineOf = {};
     r.lines.forEach(function (ln) { lineOf[ln.k] = ln; });
-    var n = hist.filter(function (c) { return c.ym === ym; }).length;
+    var n = hist.filter(function (c) { return c.ym === ym && c.status !== 'draft'; }).length;
     function setIn(k, v) { var o = Object.assign({}, inS[0]); o[ym + '|' + k] = v; inS[1](o); }
     function save() {
-      var rec = { id: 'pc' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), uid: u.id, at: Date.now(), ym: ym, scheme: snap, fixed: r.fixed, inputs: vals, kpi: r.kpi, total: r.total, pct: r.pct, lines: r.lines, status: 'saved' };
+      addTry();   // the figures on the screen are the last try
+      var rec = { id: payId(), uid: u.id, at: Date.now(), ym: ym, scheme: snap, fixed: r.fixed, inputs: vals, kpi: r.kpi, total: r.total, pct: r.pct, lines: r.lines, status: 'saved' };
+      if (sess.current.tries.length) rec.tries = sess.current.tries;
+      sess.current = { ym: ym, tries: [], base: vals };
       if (noteS[0].trim()) rec.note = noteS[0].trim().slice(0, 300);
       p.update(function (d) { d.payCalcs = d.payCalcs || []; d.payCalcs.unshift(rec); });
       noteS[1](''); openS[1](rec.id); p.say(t('pay_saved'));
@@ -1893,9 +1945,10 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         return h('li', { key: c.id, className: cx('pay-hitem', on && 'is-open') },
           h('button', { type: 'button', className: 'pay-hrow', 'aria-expanded': on, onClick: function () { open[1](on ? null : c.id); } },
             h('span', { className: 'pay-hwhen' }, fmtDT(c.at)), h('span', null, ymLabel(c.ym, p.lang)),
-            h('b', null, sumTxt(c.total, t)), h('span', { className: 'lor-muted' }, c.pct != null ? 'KPI ' + c.pct + '%' : ''), h(PayStatus, { s: c.status, t: t })),
+            h('b', null, sumTxt(c.total, t)), h('span', { className: 'lor-muted' }, (c.tries || []).length > 1 ? tpl(t('pay_tries_n'), { n: c.tries.length }) : c.pct != null ? 'KPI ' + c.pct + '%' : ''), h(PayStatus, { s: c.status, t: t })),
           on ? h('div', { className: 'pay-hbody' },
             h(PayLines, { t: t, c: c }),
+            h(PayTries, { t: t, c: c }),
             c.note ? h('p', { className: 'lor-sm', style: { margin: 0 } }, h('b', null, t('pay_note_l') + ': '), c.note) : null,
             c.reply ? h('p', { className: 'lor-sm pay-reply', style: { margin: 0 } }, h('b', null, t('pay_reply') + ': '), c.reply) : null) : null);
       })) : h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('pay_hist_none')));
@@ -1923,6 +1976,15 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var months = all.map(function (c) { return c.ym; }).filter(function (m, i, a) { return a.indexOf(m) === i; });
     var people = all.map(function (c) { return c.uid; }).filter(function (m, i, a) { return a.indexOf(m) === i; });
     var list = all.filter(function (c) { return (!fu[0] || String(c.uid) === fu[0]) && (!fm[0] || c.ym === fm[0]) && (!fs[0] || c.status === fs[0]); });
+    var tries = function (c) { return Math.max(1, (c.tries || []).length); };
+    /* who calculated how much — for the chosen month: calculations (every try), sent, the last one */
+    var who = {};
+    all.filter(function (c) { return !fm[0] || c.ym === fm[0]; }).forEach(function (c) {
+      var w = who[c.uid] = who[c.uid] || { uid: c.uid, n: 0, sent: 0, last: 0, total: 0 }, at = Math.max(c.at, ((c.tries || [])[(c.tries || []).length - 1] || {}).at || 0);
+      w.n += tries(c); if (c.status !== 'draft') w.sent++;
+      if (at > w.last) { w.last = at; w.total = c.total; }
+    });
+    var whoList = Object.keys(who).map(function (k) { return who[k]; }).sort(function (a, b) { return b.last - a.last; });
     var days = [];
     list.forEach(function (c) { var k = dayKey(c.at); if (!days.length || days[days.length - 1].k !== k) days.push({ k: k, items: [] }); days[days.length - 1].items.push(c); });
     function decide(c, s) {
@@ -1931,28 +1993,39 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       rep[1](''); p.say(t(s === 'approved' ? 'pay_ok_done' : 'pay_back_done'));
     }
     function excel() {
-      var a = [['Sana', 'Xodim', 'Lavozim', 'Oy', 'Belgilangan maosh', 'KPI', 'Jami', 'KPI, %', 'Holat', 'Izoh', 'SOP menejeri javobi']], b = [['Sana', 'Xodim', 'Oy', 'Ko‘rsatkich', 'Manba', 'Fakt', 'Bajarilish, %', 'Summa']], tu = T('uz');
+      var a = [['Sana', 'Xodim', 'Lavozim', 'Oy', 'Belgilangan maosh', 'KPI', 'Jami', 'KPI, %', 'Holat', 'Hisob-kitoblar', 'Izoh', 'SOP menejeri javobi']], b = [['Sana', 'Xodim', 'Oy', 'Ko‘rsatkich', 'Manba', 'Fakt', 'Bajarilish, %', 'Summa']], tr = [['Vaqt', 'Xodim', 'Oy', 'Holat', 'Faktlar', 'Jami']], tu = T('uz');
       list.forEach(function (c) {
         var w = userOf(db, c.uid), kp = {};
         (c.scheme.kpis || []).forEach(function (k) { kp[k.id] = k; });
-        a.push([fmtDT(c.at), w.name, w.position || '', c.ym, c.fixed, c.kpi, c.total, c.pct != null ? c.pct : '', tu('pay_st_' + c.status), c.note || '', c.reply || '']);
+        a.push([fmtDT(c.at), w.name, w.position || '', c.ym, c.fixed, c.kpi, c.total, c.pct != null ? c.pct : '', tu('pay_st_' + c.status), tries(c), c.note || '', c.reply || '']);
+        (c.tries || []).forEach(function (y) { tr.push([fmtDT(y.at), w.name, c.ym, tu('pay_st_' + c.status), (c.scheme.kpis || []).filter(function (k) { return k.src === 'manual'; }).map(function (k) { return k.name + ': ' + ((y.inputs || {})[k.id] || 0); }).join('; '), y.total]); });
         (c.lines || []).forEach(function (ln) { var k = kp[ln.k] || {}; b.push([fmtDT(c.at), w.name, c.ym, k.name || ln.k, tu('pay_src_' + (k.src || 'manual')), ln.f, ln.s != null ? ln.s : '', ln.a]); });
       });
-      downloadBlob('buraq-maosh-' + dayKey(Date.now()) + '.xlsx', makeXlsx([{ name: 'Hisoblar', rows: a }, { name: 'Qatorlar', rows: b }]));
+      downloadBlob('buraq-maosh-' + dayKey(Date.now()) + '.xlsx', makeXlsx([{ name: 'Hisoblar', rows: a }, { name: 'Qatorlar', rows: b }, { name: 'Hisob-kitoblar', rows: tr }]));
     }
     var sel = function (v, set, opts, label) { return h('label', { className: 'pay-filter' }, h('span', { className: 'lor-eyebrow' }, label), h('select', { className: 'lor-input slim', value: v, onChange: function (e) { set(e.target.value); } }, h('option', { value: '' }, t('pay_f_all')), opts)); };
     return h(F, null,
       h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('pay_hist_hint')),
       h('div', { className: 'tiles' },
-        [[t('pay_tile_n'), list.length], [t('pay_tile_people'), list.map(function (c) { return c.uid; }).filter(function (m, i, a) { return a.indexOf(m) === i; }).length],
+        [[t('pay_tile_n'), list.reduce(function (s, c) { return s + tries(c); }, 0)], [t('pay_tile_people'), list.map(function (c) { return c.uid; }).filter(function (m, i, a) { return a.indexOf(m) === i; }).length],
           [t('pay_tile_wait'), list.filter(function (c) { return c.status === 'saved'; }).length], [t('pay_tile_ok'), list.filter(function (c) { return c.status === 'approved'; }).length]]
           .map(function (x) { return h('div', { key: x[0], className: 'tile' }, h('span', { className: 'lor-eyebrow' }, x[0]), h('b', null, x[1])); })),
       h('div', { className: 'pay-filters' },
         sel(fu[0], fu[1], people.map(function (id) { return h('option', { key: id, value: String(id) }, userOf(db, id).name); }), t('pay_f_emp')),
         sel(fm[0], fm[1], months.map(function (m) { return h('option', { key: m, value: m }, ymLabel(m, p.lang)); }), t('pay_month')),
-        sel(fs[0], fs[1], ['saved', 'approved', 'rejected'].map(function (s) { return h('option', { key: s, value: s }, t('pay_st_' + s)); }), t('pay_f_status')),
+        sel(fs[0], fs[1], ['saved', 'approved', 'rejected', 'draft'].map(function (s) { return h('option', { key: s, value: s }, t('pay_st_' + s)); }), t('pay_f_status')),
         h('span', { style: { flex: 1 } }),
         list.length ? h(Btn, { variant: 'secondary', size: 'sm', onClick: excel }, t('imp_x_export')) : null),
+      whoList.length ? h('section', { className: 'box', style: { padding: 0 } },
+        h('h2', { className: 'lor-h pay-who-h' }, t('pay_who_t') + (fm[0] ? ' · ' + ymLabel(fm[0], p.lang) : '')),
+        h('div', { className: 'lor-table-wrap' }, h('table', { className: 'lor-table pay-who' },
+          h('thead', null, h('tr', null, [t('fio'), t('pay_col_tries'), t('pay_col_saved'), t('pay_col_last'), t('pay_col_sum')].map(function (x, i) { return h('th', { key: i }, x); }))),
+          h('tbody', null, whoList.map(function (w) {
+            var x = userOf(db, w.uid);
+            return h('tr', { key: w.uid, className: cx(String(w.uid) === fu[0] && 'is-on') },
+              h('td', null, h('button', { type: 'button', className: 'pay-who-b', onClick: function () { fu[1](String(w.uid) === fu[0] ? '' : String(w.uid)); } }, h(Av, { name: x.name, src: x.avatar, size: 28 }), h('span', null, x.name, h('small', null, x.position || '')))),
+              h('td', null, h('b', null, w.n)), h('td', null, w.sent), h('td', null, fmtDT(w.last)), h('td', null, sumTxt(w.total, t)));
+          }))))) : null,
       days.length ? days.map(function (g) {
         return h('section', { key: g.k, className: 'box pay-day' },
           h('span', { className: 'lor-eyebrow' }, fmtDT(keyDate(g.k).getTime()).slice(0, 10)),
@@ -1962,12 +2035,14 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
               h('button', { type: 'button', className: 'pay-tlrow', 'aria-expanded': on, onClick: function () { open[1](on ? null : c.id); rep[1](''); } },
                 h(Av, { name: w.name, src: w.avatar, size: 34 }),
                 h('span', { className: 'pay-tlwho' }, h('b', null, w.name), ' ', h('span', { className: 'lor-muted' }, tpl(t('pay_calced'), { m: ymLabel(c.ym, p.lang, true) })),
-                  h('small', null, (w.position || '') + ' · ' + fmtDT(c.at).slice(11) + (c.note ? ' · «' + c.note + '»' : ''))),
+                  h('small', null, (w.position || '') + ' · ' + fmtDT(c.at).slice(11) + ((c.tries || []).length > 1 ? ' · ' + tpl(t('pay_tries_n'), { n: c.tries.length }) : '') + (c.note ? ' · «' + c.note + '»' : ''))),
                 h('span', { className: 'pay-tlsum' }, h('b', null, sumTxt(c.total, t)), c.pct != null ? h('small', null, 'KPI ' + c.pct + '%') : null),
                 h(PayStatus, { s: c.status, t: t })),
               on ? h('div', { className: 'pay-hbody' },
                 h(PayLines, { t: t, c: c, db: db, u: w, check: true }),
-                c.status === 'saved' ? h('div', { className: 'pay-decide' },
+                h(PayTries, { t: t, c: c }),
+                c.status === 'draft' ? h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('pay_draft_note'))
+                : c.status === 'saved' ? h('div', { className: 'pay-decide' },
                   h(Field, { name: 'pay-rep', label: t('pay_reply'), multiline: true, rows: 2, placeholder: t('pay_reply_ph'), value: rep[0], onChange: rep[1] }),
                   h('div', { className: 'box-row' },
                     h(Btn, { variant: 'ghost', size: 'sm', onClick: function () { decide(c, 'rejected'); } }, t('pay_reject')),
