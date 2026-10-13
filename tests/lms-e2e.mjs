@@ -6,7 +6,8 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { execSync } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { crc32, inflateRawSync } from 'node:zlib';
 import { startDevServer } from './lms-dev-server.mjs';
 
 const require = createRequire(import.meta.url);
@@ -46,6 +47,45 @@ async function signIn(p, login, password) {
 }
 const click = async (p, name, opts = {}) => { await p.getByRole('button', { name, exact: !!opts.exact }).first().click(); await p.waitForTimeout(opts.wait || 400); };
 const nav = async (p, hash) => { await p.locator('a[href="#' + hash + '"]:visible').first().click(); await p.waitForTimeout(600); };
+// .xlsx в тесте — zip: прочитать (как есть или deflate) и собрать заново без сжатия, как сохраняет Excel или Google Sheets
+function unzip(buf) {
+  const out = {};
+  for (let o = 0; buf.readUInt32LE(o) === 0x04034b50;) {
+    const m = buf.readUInt16LE(o + 8), cs = buf.readUInt32LE(o + 18), nl = buf.readUInt16LE(o + 26), xl = buf.readUInt16LE(o + 28);
+    const d = buf.subarray(o + 30 + nl + xl, o + 30 + nl + xl + cs);
+    out[buf.toString('utf8', o + 30, o + 30 + nl)] = m ? inflateRawSync(d) : d;
+    o += 30 + nl + xl + cs;
+  }
+  return out;
+}
+function zip(files) {
+  const parts = [], cen = []; let off = 0;
+  for (const [name, data] of Object.entries(files)) {
+    const n = Buffer.from(name), d = Buffer.from(data), c = crc32(d), lh = Buffer.alloc(30), ch = Buffer.alloc(46);
+    lh.writeUInt32LE(0x04034b50, 0); lh.writeUInt16LE(20, 4); lh.writeUInt32LE(c, 14); lh.writeUInt32LE(d.length, 18); lh.writeUInt32LE(d.length, 22); lh.writeUInt16LE(n.length, 26);
+    ch.writeUInt32LE(0x02014b50, 0); ch.writeUInt16LE(20, 4); ch.writeUInt16LE(20, 6); ch.writeUInt32LE(c, 16); ch.writeUInt32LE(d.length, 20); ch.writeUInt32LE(d.length, 24); ch.writeUInt16LE(n.length, 28); ch.writeUInt32LE(off, 42);
+    parts.push(lh, n, d); cen.push(ch, n); off += 30 + n.length + d.length;
+  }
+  const cs = Buffer.concat(cen), end = Buffer.alloc(22), k = Object.keys(files).length;
+  end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(k, 8); end.writeUInt16LE(k, 10); end.writeUInt32LE(cs.length, 12); end.writeUInt32LE(off, 16);
+  return Buffer.concat([...parts, cs, end]);
+}
+const unxml = s => s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+const xml = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+// лист → строки (ячейки числом или текстом) и обратно — с общими строками (sharedStrings), как у Excel
+const sheetRows = x => [...x.matchAll(/<row [^>]*>(.*?)<\/row>/g)].map(m => {
+  const r = [];
+  for (const c of m[1].matchAll(/<c r="([A-Z])\d+"[^>]*>(?:<v>([^<]*)<\/v>|<is><t[^>]*>([^<]*)<\/t><\/is>)<\/c>/g)) r[c[1].charCodeAt(0) - 65] = c[2] != null ? c[2] : unxml(c[3]);
+  return r;
+});
+function sheetXml(rows) {
+  const ss = [], si = v => { let i = ss.indexOf(v); if (i < 0) { i = ss.length; ss.push(v); } return i; };
+  const body = rows.map((r, ri) => '<row r="' + (ri + 1) + '">' + Array.from(r, (v, ci) => v == null || v === '' ? ''
+    : '<c r="' + String.fromCharCode(65 + ci) + (ri + 1) + '"' + (/^\d+$/.test(v) ? '><v>' + v : ' t="s"><v>' + si(String(v))) + '</v></c>').join('') + '</row>').join('');
+  const NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
+  return { sheet: '<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="' + NS + '"><sheetData>' + body + '</sheetData></worksheet>',
+    shared: '<?xml version="1.0" encoding="UTF-8"?><sst xmlns="' + NS + '" count="' + ss.length + '">' + ss.map(v => '<si><t>' + xml(v) + '</t></si>').join('') + '</sst>' };
+}
 const skipTour = async p => { const s = p.getByRole('button', { name: 'O‘tkazib yuborish' }); if (await s.count()) { await s.first().click(); await p.waitForTimeout(300); } };
 
 try {
@@ -337,7 +377,7 @@ try {
   assert.equal(await A.locator('.imp-table tbody tr').count(), 3);
   assert.equal(await A.locator('.imp-table tr.imp-bad').count(), 1, 'занятый логин — отказ');
   await shot(A, '14-import');
-  await click(A, 'Qo‘shish: 2 ta xodim', { wait: 400 });
+  await click(A, 'Saqlash: 2 ta yangi, 0 ta yangilanadi', { wait: 400 });
   await settle(A);
   const sher = srv.g.state().users.find(u => u.name === 'Шерзод Алиев'), mal = srv.g.state().users.find(u => u.login === 'm.ergasheva');
   assert.ok(sher && sher.login === 's.aliev' && sher.department === 'Ombor (Yiwu)' && srv.g.props['cred:' + sher.id], 'логин из кириллицы, вход на сервере');
@@ -345,6 +385,42 @@ try {
   assert.ok(await A.locator('.imp-done').count(), 'можно скачать логины и пароли');
   assert.deepEqual(await rejected(A), [], 'сервер не отклонил импорт');
   step('сотрудники из Excel: 2 добавлены, занятый логин отклонён, логины из кириллицы');
+
+  // ---------- Excel туда и обратно: скачать таблицу, поправить (как в Excel / Google Sheets), загрузить — по ID обновление ----------
+  const [xdl] = await Promise.all([A.waitForEvent('download'), click(A, 'Excelga yuklab olish')]);
+  assert.match(xdl.suggestedFilename(), /^buraq-xodimlar-\d{4}-\d{2}-\d{2}\.xlsx$/);
+  const xbuf = readFileSync(await xdl.path()), xf = unzip(xbuf);
+  if (shots) writeFileSync(shots + '/15-xodimlar.xlsx', xbuf);
+  assert.match(xf['xl/workbook.xml'].toString(), /name="Xodimlar".*name="Natijalar".*name="Rahbarlar"/, 'три листа');
+  const xr = sheetRows(xf['xl/worksheets/sheet1.xml'].toString('utf8'));
+  assert.deepEqual(xr[0].slice(0, 7), ['ID', 'F.I.Sh.', 'Login', 'Lavozim', 'Bo‘lim', 'Telefon', 'Telegram']);
+  const nEmp = srv.g.state().users.filter(u => u.role === 'employee').length;
+  assert.equal(xr.length, nEmp + 1, 'в листе — все сотрудники');
+  const rowOf = id => xr.find(r => r[0] === String(id));
+  assert.equal(rowOf(sher.id)[1], 'Шерзод Алиев');
+  assert.equal(rowOf(emp.id)[6], srv.g.state().users.find(u => u.id === emp.id).profile.telegram, 'анкета — в таблице');
+  assert.ok(sheetRows(xf['xl/worksheets/sheet2.xml'].toString('utf8')).some(r => r[0] === String(emp.id) && r[3] === 'O‘tdi'), 'итоги уроков — на листе «Natijalar»');
+  rowOf(sher.id)[3] = 'Ombor mudiri'; rowOf(sher.id)[5] = '+998 90 111 22 33';
+  rowOf(emp.id)[2] = 'm.ergasheva';                                  // чужой логин — отказ в этой строке
+  xr.push(['', 'Jasur Toshmatov', '', 'Omborchi', 'Ombor (Yiwu)']);   // без ID — новый сотрудник
+  const xs = sheetXml(xr);
+  const xback = zip({ ...Object.fromEntries(Object.entries(xf).filter(([k]) => k !== 'xl/worksheets/sheet1.xml')), 'xl/worksheets/sheet1.xml': xs.sheet, 'xl/sharedStrings.xml': xs.shared });
+  await A.setInputFiles('#staff-import', { name: 'buraq-xodimlar.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', buffer: xback });
+  await A.waitForSelector('.imp-table');
+  assert.equal(await A.locator('.imp-table tbody tr').count(), nEmp + 1);
+  assert.equal(await A.locator('.imp-table tr.imp-bad').count(), 1, 'занятый логин — отказ');
+  assert.ok(await A.locator('.imp-table tr', { hasText: 'Шерзод Алиев' }).filter({ hasText: '2 ta o‘zgarish' }).count(), 'видно, что изменится');
+  await shot(A, '15-import-update');
+  await click(A, 'Saqlash: 1 ta yangi, 1 ta yangilanadi', { wait: 400 });
+  await settle(A);
+  const sher2 = srv.g.state().users.find(u => u.id === sher.id), jas = srv.g.state().users.find(u => u.name === 'Jasur Toshmatov');
+  assert.equal(sher2.position, 'Ombor mudiri'); assert.equal(sher2.profile.phone, '+998 90 111 22 33');
+  assert.equal(sher2.login, 's.aliev', 'пустой пароль и тот же логин — вход как был');
+  assert.equal(srv.g.state().users.find(u => u.id === emp.id).login, 'dilnoza.k', 'строка с отказом не применилась');
+  assert.ok(jas && jas.department === 'Ombor (Yiwu)' && srv.g.props['cred:' + jas.id], 'новый — с входом');
+  assert.equal(srv.g.state().users.filter(u => u.role === 'employee').length, nEmp + 1);
+  assert.deepEqual(await rejected(A), [], 'сервер не отклонил обновление');
+  step('Excel туда и обратно: таблица скачана, по ID обновлён 1, добавлен 1, занятый логин отклонён');
 
   // ---------- демо больше нет: ?demo=1 — тот же вход на сервер; без адреса сервера — «Server ulanmagan» ----------
   const D = await device('бывшее демо', '?demo=1');

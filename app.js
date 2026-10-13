@@ -6161,24 +6161,113 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   function latin(s) { return String(s || '').toLowerCase().split('').map(function (c) { return TRANSLIT[c] != null ? TRANSLIT[c] : c; }).join('').replace(/[‘’'`ʻʼ]/g, '').replace(/[^a-z0-9]/g, ''); }
   /* «Dilnoza Karimova» → d.karimova (as the logins made by hand) */
   function autoLogin(name) { var w = String(name || '').trim().split(/\s+/).map(latin).filter(Boolean); return w.length > 1 ? w[0][0] + '.' + w[w.length - 1] : (w[0] || 'xodim'); }
-  var IMP_COLS = { name: /f\.?\s*i\.?\s*sh|^ism|familiya|фио|имя|^name|full\s*name/i, position: /lavozim|должност|position/i, department: /bo.?lim|отдел|department/i, login: /login|логин/i, password: /parol|пароль|password/i };
+  var IMP_COLS = { id: /^id$/i, name: /f\.?\s*i\.?\s*sh|^ism|familiya|фио|имя|^name|full\s*name/i, position: /lavozim|должност|position/i, department: /bo.?lim|отдел|department/i, login: /login|логин/i, password: /parol|пароль|password/i, phone: /^telefon|^телефон|^phone/i, telegram: /telegram|телеграм/i };
   function importRows(rows, db) {
     var head = (rows[0] || []).map(function (x) { return String(x || ''); }), col = {};
     Object.keys(IMP_COLS).forEach(function (k) { head.forEach(function (hv, i) { if (col[k] == null && IMP_COLS[k].test(hv.trim())) col[k] = i; }); });
     var body = rows;
     if (col.name != null) body = rows.slice(1); else col = { name: 0, position: 1, department: 2, login: 3, password: 4 };
-    var taken = {}; db.users.forEach(function (u) { if (u.login) taken[String(u.login).toLowerCase()] = 1; });
+    var owner = {}; db.users.forEach(function (u) { if (u.login) owner[String(u.login).toLowerCase()] = u.id; });
+    var used = {};
     return body.map(function (r) {
       var g = function (k) { return col[k] == null ? '' : String(r[col[k]] == null ? '' : r[col[k]]).trim(); };
-      var x = { name: g('name').replace(/\s+/g, ' '), position: g('position') || STAFF_POS[0], department: g('department') || STAFF_DEP[0], login: g('login').toLowerCase(), password: g('password'), err: '' };
+      var id = +g('id'), cur = id ? db.users.filter(function (u) { return u.id === id && u.role === 'employee'; })[0] : null;
+      var x = { name: g('name').replace(/\s+/g, ' '), position: g('position'), department: g('department'), login: g('login').toLowerCase(), password: g('password'), phone: g('phone'), telegram: g('telegram'), err: '' };
       if (!x.name) return null;
       if (x.name.length < 2) x.err = 'imp_x_err_name';
-      if (x.login) { if (!LOGIN_RE.test(x.login)) x.err = x.err || 'imp_x_err_login'; else if (taken[x.login]) x.err = x.err || 'imp_x_err_taken'; }
-      else { var base = autoLogin(x.name), l = base, n = 2; while (taken[l] || !LOGIN_RE.test(l)) { l = (LOGIN_RE.test(base) ? base : 'xodim') + n; n++; } x.login = l; x.auto = true; }
-      if (!x.password) x.password = genPw();
-      if (!x.err) taken[x.login] = 1;
+      var free = function (l) { return !used[l] && (owner[l] == null || (cur && owner[l] === cur.id)); };
+      if (cur) {
+        /* an existing employee (by ID): only what changed; an empty cell keeps the old value */
+        x.id = cur.id; x.login = x.login || cur.login;
+        if (!LOGIN_RE.test(x.login)) x.err = x.err || 'imp_x_err_login'; else if (!free(x.login)) x.err = x.err || 'imp_x_err_taken';
+        var pf = cur.profile || {}, ch = [];
+        [['name', cur.name, 'fio'], ['login', cur.login, 'login'], ['position', cur.position, 'position'], ['department', cur.department, 'department'], ['phone', pf.phone, 'imp_x_phone'], ['telegram', pf.telegram, 'imp_x_tg']].forEach(function (f) {
+          if (x[f[0]] && x[f[0]] !== (f[1] || '')) ch.push(f[2]);
+        });
+        if (x.password) ch.push('password');
+        x.changes = ch;
+      } else {
+        x.position = x.position || STAFF_POS[0]; x.department = x.department || STAFF_DEP[0];
+        if (x.login) { if (!LOGIN_RE.test(x.login)) x.err = x.err || 'imp_x_err_login'; else if (!free(x.login)) x.err = x.err || 'imp_x_err_taken'; }
+        else { var base = autoLogin(x.name), l = base, n = 2; while (!free(l) || !LOGIN_RE.test(l)) { l = (LOGIN_RE.test(base) ? base : 'xodim') + n; n++; } x.login = l; x.auto = true; }
+        if (!x.password) x.password = genPw();
+      }
+      if (!x.err) used[x.login] = 1;
       return x;
     }).filter(Boolean);
+  }
+  /* ---------- a small .xlsx writer: sheets of rows, the first row bold and frozen — opens in Excel and Google Sheets ---------- */
+  var CRC_T = (function () { var t = []; for (var n = 0; n < 256; n++) { var c = n; for (var k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+  function crc32(b) { var c = 0xFFFFFFFF; for (var i = 0; i < b.length; i++) c = CRC_T[(c ^ b[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+  function zipStore(files) {
+    var enc = new TextEncoder(), parts = [], central = [], off = 0, d0 = new Date();
+    var dosDate = ((d0.getFullYear() - 1980) << 9) | ((d0.getMonth() + 1) << 5) | d0.getDate();
+    files.forEach(function (f) {
+      var nm = enc.encode(f.name), d = f.data, crc = crc32(d), lh = new Uint8Array(30 + nm.length), v = new DataView(lh.buffer);
+      v.setUint32(0, 0x04034b50, true); v.setUint16(4, 20, true); v.setUint16(6, 0x0800, true); v.setUint16(12, dosDate, true);
+      v.setUint32(14, crc, true); v.setUint32(18, d.length, true); v.setUint32(22, d.length, true); v.setUint16(26, nm.length, true); lh.set(nm, 30);
+      var ch = new Uint8Array(46 + nm.length), w = new DataView(ch.buffer);
+      w.setUint32(0, 0x02014b50, true); w.setUint16(4, 20, true); w.setUint16(6, 20, true); w.setUint16(8, 0x0800, true); w.setUint16(14, dosDate, true);
+      w.setUint32(16, crc, true); w.setUint32(20, d.length, true); w.setUint32(24, d.length, true); w.setUint16(28, nm.length, true); w.setUint32(42, off, true); ch.set(nm, 46);
+      parts.push(lh, d); central.push(ch); off += lh.length + d.length;
+    });
+    var cs = central.reduce(function (a, c) { return a + c.length; }, 0), end = new Uint8Array(22), e = new DataView(end.buffer);
+    e.setUint32(0, 0x06054b50, true); e.setUint16(8, files.length, true); e.setUint16(10, files.length, true); e.setUint32(12, cs, true); e.setUint32(16, off, true);
+    return new Blob(parts.concat(central, [end]), { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  }
+  function xmlEsc(v) { return String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, ''); }
+  function colName(i) { var s = ''; i++; while (i) { var m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; }
+  function makeXlsx(sheets) {
+    var enc = new TextEncoder(), f = [], NS = 'http://schemas.openxmlformats.org/', REL = NS + 'officeDocument/2006/relationships/';
+    function add(name, xml) { f.push({ name: name, data: enc.encode('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' + xml) }); }
+    add('[Content_Types].xml', '<Types xmlns="' + NS + 'package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>'
+      + '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'
+      + sheets.map(function (x, i) { return '<Override PartName="/xl/worksheets/sheet' + (i + 1) + '.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'; }).join('') + '</Types>');
+    add('_rels/.rels', '<Relationships xmlns="' + NS + 'package/2006/relationships"><Relationship Id="rId1" Type="' + REL + 'officeDocument" Target="xl/workbook.xml"/></Relationships>');
+    add('xl/workbook.xml', '<workbook xmlns="' + NS + 'spreadsheetml/2006/main" xmlns:r="' + NS + 'officeDocument/2006/relationships"><sheets>'
+      + sheets.map(function (x, i) { return '<sheet name="' + xmlEsc(x.name.slice(0, 31)) + '" sheetId="' + (i + 1) + '" r:id="rId' + (i + 1) + '"/>'; }).join('') + '</sheets></workbook>');
+    add('xl/_rels/workbook.xml.rels', '<Relationships xmlns="' + NS + 'package/2006/relationships">'
+      + sheets.map(function (x, i) { return '<Relationship Id="rId' + (i + 1) + '" Type="' + REL + 'worksheet" Target="worksheets/sheet' + (i + 1) + '.xml"/>'; }).join('')
+      + '<Relationship Id="rId' + (sheets.length + 1) + '" Type="' + REL + 'styles" Target="styles.xml"/></Relationships>');
+    add('xl/styles.xml', '<styleSheet xmlns="' + NS + 'spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>'
+      + '<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>'
+      + '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>');
+    sheets.forEach(function (x, i) {
+      var wid = [];
+      x.rows.forEach(function (r) { r.forEach(function (v, c) { wid[c] = Math.min(50, Math.max(wid[c] || 6, String(v == null ? '' : v).length + 2)); }); });
+      add('xl/worksheets/sheet' + (i + 1) + '.xml', '<worksheet xmlns="' + NS + 'spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>'
+        + '<cols>' + wid.map(function (w, c) { return '<col min="' + (c + 1) + '" max="' + (c + 1) + '" width="' + w + '" customWidth="1"/>'; }).join('') + '</cols><sheetData>'
+        + x.rows.map(function (r, ri) {
+          return '<row r="' + (ri + 1) + '">' + r.map(function (v, ci) {
+            if (v == null || v === '') return '';
+            var ref = colName(ci) + (ri + 1), st = ri === 0 ? ' s="1"' : '';
+            return typeof v === 'number' && isFinite(v) ? '<c r="' + ref + '"' + st + '><v>' + v + '</v></c>' : '<c r="' + ref + '"' + st + ' t="inlineStr"><is><t xml:space="preserve">' + xmlEsc(v) + '</t></is></c>';
+          }).join('') + '</row>';
+        }).join('') + '</sheetData></worksheet>');
+    });
+    return zipStore(f);
+  }
+  function downloadBlob(name, blob) {
+    var url = URL.createObjectURL(blob), a = document.createElement('a');
+    a.href = url; a.download = name; document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(url); a.remove(); }, 400);
+  }
+  /* the staff table: «Xodimlar» (back in through the import — by ID), «Natijalar» (lessons), «Rahbarlar» */
+  function staffWorkbook(db) {
+    var tu = T('uz'), L = levelsOf(db), emps = db.users.filter(function (u) { return u.role === 'employee'; });
+    var xod = [['ID', 'F.I.Sh.', 'Login', 'Lavozim', 'Bo‘lim', 'Telefon', 'Telegram', 'Status', 'Daraja', 'Dastur', 'XP', 'Topshirilgan darslar', 'Ishga kirgan', 'E-mail', 'Tug‘ilgan sana', 'Pasport', 'Manzil', 'Ma’lumoti', 'Tajriba (yil)', 'Tillar', 'Anketa']];
+    var nat = [['ID', 'F.I.Sh.', 'Dars', 'Holat', 'Ball', 'Sana']];
+    emps.forEach(function (u) {
+      var pf = u.profile || {}, pr = prog(db, u.id), passed = Object.keys(pr).filter(function (k) { return pr[k] && pr[k].status === 'passed'; }).length;
+      xod.push([u.id, u.name, u.login || '', u.position || '', u.department || '', pf.phone || '', pf.telegram || '', tu('s_' + u.status), lvlName(L[Math.min(u.level || 0, L.length - 1)], 'uz'), trackTitle(trackOf(db, u), 'uz'),
+        rankOf(db, u).xp, passed, u.startedAt ? dayKey(u.startedAt) : '', pf.email || '', pf.birth || '', pf.passport || '', pf.address || '', pf.education || '', pf.years || '', pf.languages || '', u.profileComplete ? '✓' : '']);
+      Object.keys(pr).forEach(function (lid) {
+        var x = pr[lid] || {}, l = findLesson(db.course, lid);
+        if (!x.status) return;
+        nat.push([u.id, u.name, l ? l.title : lid, tu('s_' + x.status.replace(/-/g, '_')) !== 's_' + x.status.replace(/-/g, '_') ? tu('s_' + x.status.replace(/-/g, '_')) : x.status, x.score != null ? x.score : '', x.at ? dayKey(x.at) : '']);
+      });
+    });
+    var rah = [['ID', 'F.I.Sh.', 'Login', 'Kim']].concat(db.users.filter(function (u) { return u.role === 'leader'; }).map(function (u) { return [u.id, u.name, u.login || '', tu('ini_to_' + u.post)]; }));
+    return makeXlsx([{ name: 'Xodimlar', rows: xod }, { name: 'Natijalar', rows: nat }, { name: 'Rahbarlar', rows: rah }]);
   }
   function csvLine(a) { return a.map(function (v) { v = String(v == null ? '' : v); return /[;"\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }).join(';'); }
   function StaffImport(p) {
@@ -6192,40 +6281,49 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         .then(function (r) { var x = importRows(r || [], p.db); if (!x.length) { er[1](t('imp_x_none')); rs[1](null); } else rs[1](x); }, function () { er[1](t('imp_x_bad')); rs[1](null); });
     }
     function add() {
-      var ok = rows.filter(function (x) { return !x.err; });
+      var ok = rows.filter(function (x) { return !x.err && !x.id; }), upd = rows.filter(function (x) { return !x.err && x.id && x.changes.length; });
       p.update(function (d) {
+        upd.forEach(function (x) { d.users.forEach(function (u) {
+          if (u.id !== x.id) return;
+          ['name', 'login', 'position', 'department'].forEach(function (k) { if (x[k]) u[k] = x[k]; });
+          if (x.phone || x.telegram) { u.profile = u.profile || {}; if (x.phone) u.profile.phone = x.phone; if (x.telegram) u.profile.telegram = x.telegram; }
+          if (x.password) u.password = x.password;   // the server moves it into the account
+        }); });
         var nid = Math.max.apply(null, d.users.map(function (u) { return u.id; }).concat([10000])) + 1;
         ok.forEach(function (x) {
           d.users.push({ id: nid++, role: 'employee', login: x.login, password: x.password, name: x.name, position: x.position, department: x.department, trackId: (tracksOf(d).filter(function (tr) { return (tr.positions || []).indexOf(x.position) >= 0; })[0] || {}).id, status: 'probation', profileComplete: false, createdAt: Date.now(), startedAt: Date.now(), cohort: dayKey(Date.now()).slice(0, 7), reminderTime: '19:00' });
         });
       });
-      done[1](ok); rs[1](null);
+      done[1]({ list: ok.concat(upd.filter(function (x) { return x.password; })), a: ok.length, b: upd.length }); rs[1](null);
     }
-    function dl() { downloadText('xodimlar-loginlar.csv', '\ufeff' + [csvLine(['F.I.Sh.', 'Lavozim', 'Bo‘lim', 'Login', 'Parol'])].concat(done[0].map(function (x) { return csvLine([x.name, x.position, x.department, x.login, x.password]); })).join('\r\n'), 'text/csv;charset=utf-8'); }
-    var okN = rows ? rows.filter(function (x) { return !x.err; }).length : 0;
+    function dl() { downloadText('xodimlar-loginlar.csv', '\ufeff' + [csvLine(['F.I.Sh.', 'Lavozim', 'Bo‘lim', 'Login', 'Parol'])].concat(done[0].list.map(function (x) { return csvLine([x.name, x.position, x.department, x.login, x.password]); })).join('\r\n'), 'text/csv;charset=utf-8'); }
+    var nA = rows ? rows.filter(function (x) { return !x.err && !x.id; }).length : 0, nB = rows ? rows.filter(function (x) { return !x.err && x.id && x.changes.length; }).length : 0;
     return h('section', { className: 'box imp-box' },
       h('h2', { className: 'lor-h' }, t('imp_x_t')),
       h('p', { className: 'lor-sm lor-muted', style: { margin: '0 0 12px' } }, t('imp_x_hint')),
       h('div', { className: 'box-row imp-act' },
         h('input', { ref: inp, id: 'staff-import', type: 'file', accept: '.xlsx,.csv,.txt,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', className: 'sr-only', onChange: pick }),
         h('label', { className: 'lor-btn lor-btn-outline lor-btn-sm', htmlFor: 'staff-import' }, t('imp_x_pick')),
-        h('button', { type: 'button', className: 'app-link', onClick: tpl_ }, t('imp_x_tpl'))),
+        h('button', { type: 'button', className: 'app-link', onClick: tpl_ }, t('imp_x_tpl')),
+        h(Btn, { variant: 'secondary', size: 'sm', onClick: function () { downloadBlob('buraq-xodimlar-' + dayKey(Date.now()) + '.xlsx', staffWorkbook(p.db)); } }, t('imp_x_export'))),
+      h('p', { className: 'lor-sm lor-muted', style: { margin: '8px 0 0' } }, t('imp_x_gs_hint')),
       er[0] ? h('p', { className: 'lor-field-error' }, er[0]) : null,
       rows ? h(F, null,
         h('div', { className: 'lor-table-wrap' }, h('table', { className: 'lor-table imp-table' },
           h('thead', null, h('tr', null, [t('fio'), t('position'), t('department'), t('login'), t('password'), t('imp_x_col_status')].map(function (x, i) { return h('th', { key: i }, x); }))),
           h('tbody', null, rows.map(function (x, i) {
             return h('tr', { key: i, className: x.err ? 'imp-bad' : '' }, h('td', null, x.name), h('td', null, x.position), h('td', null, x.department),
-              h('td', null, h('code', null, x.login), x.auto ? h('small', { className: 'lor-muted' }, ' · ' + t('imp_x_auto')) : null), h('td', null, h('code', null, x.password)),
-              h('td', null, x.err ? h('span', { className: 'lor-field-error' }, t(x.err)) : '✓'));
+              h('td', null, h('code', null, x.login), x.auto ? h('small', { className: 'lor-muted' }, ' · ' + t('imp_x_auto')) : null), h('td', null, x.password ? h('code', null, x.password) : '—'),
+              h('td', null, x.err ? h('span', { className: 'lor-field-error' }, t(x.err)) : !x.id ? '✓ ' + t('imp_x_new')
+                : x.changes.length ? h('span', { title: x.changes.map(function (k) { return t(k); }).join(', ') }, '✎ ' + tpl(t('imp_x_upd'), { n: x.changes.length }) + ': ' + x.changes.map(function (k) { return t(k); }).join(', ')) : h('span', { className: 'lor-muted' }, t('imp_x_same'))));
           })))),
         h('div', { className: 'box-row' },
           h(Btn, { variant: 'ghost', size: 'sm', onClick: function () { rs[1](null); } }, t('cancel')),
-          h(Btn, { variant: 'primary', arrow: true, disabled: !okN, onClick: add }, tpl(t('imp_x_add'), { n: okN })))) : null,
+          h(Btn, { variant: 'primary', arrow: true, disabled: !nA && !nB, onClick: add }, tpl(t('imp_x_apply'), { a: nA, b: nB })))) : null,
       done[0] ? h('div', { className: 'lor-notice imp-done' }, h('div', { className: 'lor-notice-body' },
-        h('b', null, '✓ ' + tpl(t('imp_x_done'), { n: done[0].length })),
-        h('p', { className: 'lor-sm', style: { margin: '4px 0 8px' } }, t('imp_x_dl_hint')),
-        h(Btn, { variant: 'secondary', size: 'sm', onClick: dl }, t('imp_x_dl')))) : null);
+        h('b', null, '✓ ' + tpl(t('imp_x_done2'), { a: done[0].a, b: done[0].b })),
+        done[0].list.length ? h('p', { className: 'lor-sm', style: { margin: '4px 0 8px' } }, t('imp_x_dl_hint')) : null,
+        done[0].list.length ? h(Btn, { variant: 'secondary', size: 'sm', onClick: dl }, t('imp_x_dl')) : null)) : null);
   }
 
   function Staff(p) {
