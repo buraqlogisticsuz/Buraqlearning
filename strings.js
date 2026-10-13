@@ -2627,3 +2627,9 @@ Object.assign(APP_T.uz, { pp_ask: 'Anketada pasport skanini so‘rash', pp_ask_h
 Object.assign(APP_T.ru, { pp_ask: 'Запрашивать скан паспорта в анкете', pp_ask_hint: 'Если выключить, сотрудники заполняют анкету без скана; уже загруженные остаются. По закону о персональных данных посоветуйтесь с юристом.' });
 Object.assign(APP_T.en, { pp_ask: 'Ask for a passport scan in the profile', pp_ask_hint: 'When off, employees fill in the profile without a scan; scans already uploaded stay. Check the personal data law with a lawyer.' });
 Object.assign(APP_T.zh, { pp_ask: '在个人信息表中要求上传护照扫描件', pp_ask_hint: '关闭后，员工填写信息表时无需上传扫描件；已上传的仍会保留。关于个人数据法，请咨询律师。' });
+
+/* новая версия сайта — обновить открытую вкладку */
+Object.assign(APP_T.uz, { srv_update: 'Saytning yangi versiyasi chiqdi.', srv_reload: 'Yangilash' });
+Object.assign(APP_T.ru, { srv_update: 'Вышла новая версия сайта.', srv_reload: 'Обновить' });
+Object.assign(APP_T.en, { srv_update: 'A new version of the site is out.', srv_reload: 'Reload' });
+Object.assign(APP_T.zh, { srv_update: '网站有新版本。', srv_reload: '刷新' });

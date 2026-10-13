@@ -54,6 +54,8 @@ export async function startServer({ port = 8080, host = '0.0.0.0', dir, env = pr
   const na = String(env.NEW_ADMIN || '').trim();
   if (na && g.props.NEW_ADMIN_DONE !== na) { C.newAdmin(); C.PropertiesService.getScriptProperties().setProperty('NEW_ADMIN_DONE', na); }
 
+  // версия сайта: коммит, из которого Railway собрал сервис (иначе — время запуска)
+  const BUILD = String(env.RAILWAY_GIT_COMMIT_SHA || '').slice(0, 7) || Date.now().toString(36);
   const errJson = x => ({ ok: false, code: (x && x.code) || 'script', error: String((x && x.message) || x) });
   // Telegram: бот из TELEGRAM_BOT_TOKEN; новые уведомления уходят после каждой записи данных
   const site = env.SITE_HOST ? 'https://' + String(env.SITE_HOST).trim() : env.RAILWAY_PUBLIC_DOMAIN ? 'https://' + env.RAILWAY_PUBLIC_DOMAIN : '';
@@ -119,7 +121,7 @@ export async function startServer({ port = 8080, host = '0.0.0.0', dir, env = pr
       if (p === '/api' || p === '/exec') {
         // страница с другого адреса (GitHub Pages) тоже может работать с этим сервером
         if (req.method === 'OPTIONS') { res.writeHead(204, { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'GET, POST', 'access-control-allow-headers': 'content-type', 'access-control-max-age': '86400' }); res.end(); return; }
-        if (req.method !== 'POST') { json(res, 200, C.doGet().text); return; }
+        if (req.method !== 'POST') { json(res, 200, JSON.stringify(Object.assign(JSON.parse(C.doGet().text), { build: BUILD }))); return; }
         const chunks = []; let n = 0;
         for await (const c of req) { n += c.length; if (n > MAX_BODY) { json(res, 413, JSON.stringify({ ok: false, code: 'bad', error: 'Слишком большой запрос (файл больше 25 МБ?)' })); req.destroy(); return; } chunks.push(c); }
         const text = Buffer.concat(chunks).toString('utf8');
@@ -131,7 +133,7 @@ export async function startServer({ port = 8080, host = '0.0.0.0', dir, env = pr
       if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405); res.end(); return; }
       if (p === '/config.js') {
         res.writeHead(200, { 'content-type': TYPES['.js'], 'cache-control': 'no-cache' });
-        res.end("/* адрес сервера — этот же сайт (server/index.mjs) */\nwindow.LMS_SERVER = '/api';\n"); return;
+        res.end("/* адрес сервера — этот же сайт (server/index.mjs); версия сайта — чтобы открытая вкладка узнала о новой */\nwindow.LMS_SERVER = '/api';\nwindow.LMS_BUILD = '" + BUILD + "';\n"); return;
       }
       let rel; try { rel = decodeURIComponent(p).replace(/^\/+/, ''); } catch { rel = null; }
       if (rel === '') rel = 'index.html';

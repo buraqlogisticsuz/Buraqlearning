@@ -182,9 +182,19 @@
   };
   root.LmsClient = api;
 
+  /* новая версия сайта (Railway пересобрал сервис): открытая вкладка узнаёт об этом и предлагает обновиться */
+  function checkBuild() {
+    if (!root.LMS_BUILD || status.update) return;
+    fetch(URL_, { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (x) {
+      if (x && x.build && x.build !== root.LMS_BUILD) setStatus({ update: true });
+    }).catch(function () {});
+  }
+  api.build = root.LMS_BUILD || '';
+
   if (!DEMO) {
     setInterval(function () { if (token && document.visibilityState !== 'hidden') api.sync().catch(function () {}); }, POLL_MS);
-    document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible' && token) api.sync().catch(function () {}); });
+    document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') { checkBuild(); if (token) api.sync().catch(function () {}); } });
+    setInterval(checkBuild, 5 * 60e3);
     root.addEventListener('online', function () { retryMs = 0; if (token) api.sync().catch(function () {}); });
     // при открытии: правки, оставшиеся с прошлого раза, — на сервер; затем «что нового»
     if (token) setTimeout(function () { if (!cache) load().catch(function () {}); else { flush(); sync().catch(function () {}); } }, 0);

@@ -5351,7 +5351,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var t = p.t;
     useEffect(function () { if (GS && p.admin) loadServerCode(); }, []);
     return h('footer', { className: 'app-foot' },
-      h('span', null, t('srv_note'), p.onTerms ? ' · ' : null, p.onTerms ? h('button', { type: 'button', className: 'app-link', onClick: p.onTerms }, t('terms_link')) : null),
+      h('span', null, t('srv_note'), p.admin && SV.build ? ' · v' + SV.SERVER_V + ' · ' + SV.build : '', p.onTerms ? ' · ' : null, p.onTerms ? h('button', { type: 'button', className: 'app-link', onClick: p.onTerms }, t('terms_link')) : null),
       GS && p.admin ? h('button', { type: 'button', className: 'app-link', onClick: function () { copyServerCode(p.say, t); } }, t('srv_code')) : null);
   }
 
@@ -6451,8 +6451,9 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       : st.error ? t('srv_error') + ': ' + st.error
       : st.net === 'off' ? t('srv_offline') + (st.pending ? ' (' + st.pending + ')' : '')
       : st.net === 'busy' ? t('srv_busy') : null;
-    if (!msg && !old) return null;
+    if (!msg && !old && !st.update) return null;
     return h('div', { className: 'sync-chip', role: 'status' },
+      st.update ? h('span', null, t('srv_update'), ' ', h('button', { type: 'button', className: 'app-link', onClick: function () { location.reload(); } }, t('srv_reload'))) : null,
       old ? h('span', null, tpl(t('srv_old'), { v: st.v, need: SV.SERVER_V }), ' ', h('button', { type: 'button', className: 'app-link', onClick: function () { copyServerCode(p.say, t); } }, t('srv_code'))) : null,
       msg ? h('span', null, msg) : null,
       st.rejected || st.error ? h('button', { type: 'button', className: 'app-link', onClick: SV.clearNotice }, t('srv_ok')) : null);

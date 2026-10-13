@@ -231,3 +231,12 @@ test('Telegram: привязка по ссылке, новое уведомле�
     assert.equal((await s.api({ action: 'tgLink', token: d.token })).code, 'tg_off');
   } finally { await s.close(); rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('версия сайта: коммит Railway — в config.js и в GET /api (открытая вкладка узнаёт о новой)', async () => {
+  const dir = tmp(), s = await start(dir, { env: { RAILWAY_GIT_COMMIT_SHA: 'abcdef1234567' } });
+  try {
+    assert.match(await (await fetch(s.url + 'config.js')).text(), /window\.LMS_BUILD = 'abcdef1';/);
+    const ping = await (await fetch(s.url + 'api')).json();
+    assert.equal(ping.build, 'abcdef1'); assert.equal(ping.ok, true);
+  } finally { await s.close(); rmSync(dir, { recursive: true, force: true }); }
+});
