@@ -100,7 +100,12 @@ try {
   await click(E, 'Saqlash va davom etish');
   await E.fill('#f-phone', '+998 90 123 45 67'); await E.fill('#f-telegram', '@dilnoza'); await E.fill('#f-emgName', 'Ona'); await E.fill('#f-emgPhone', '+998 90 765 43 21');
   await click(E, 'Saqlash va davom etish');
-  await E.selectOption('#f-education', 'Oliy (bakalavr)'); await E.fill('#f-years', '2'); await E.fill('#f-languages', 'O‘zbek, rus');
+  await E.selectOption('#f-education', 'Oliy (bakalavr)'); await E.fill('#f-years', '2');
+  await click(E, 'Saqlash va davom etish', { wait: 300 });            // «Tillar» обязателен
+  assert.equal(await E.locator('.ac-chip').count(), 5, 'Tillar: O‘zbek, Rus, Xitoy, Turk, Boshqa');
+  await E.locator('.ac-chip', { hasText: 'Rus' }).click(); await E.locator('.ac-chip', { hasText: 'O‘zbek' }).click();
+  await E.locator('.ac-chip', { hasText: 'Boshqa' }).click(); await E.fill('#f-languages-other', 'ingliz');
+  await shot(E, '3-langs');
   await click(E, 'Saqlash va davom etish');
   await shot(E, '4-assets');
   await E.getByText('Menga hozircha kompaniya mol-mulki berilmagan').click();
@@ -109,6 +114,7 @@ try {
   await settle(E);
   const me1 = srv.g.state().users.find(u => u.id === emp.id);
   assert.equal(me1.profileComplete, true, 'анкета заполнена — на сервере');
+  assert.equal(me1.profile.languages, 'O‘zbek, Rus, ingliz', 'языки — по порядку вариантов, свой — в конце');
   const pp = me1.profile.passportFile;
   assert.match(pp.data, /^lmsfile:/, 'скан паспорта — файлом на Диске, в данных ссылка');
   assert.ok(!srv.g.files[srv.g.props.LMS_STATE].content.includes('%PDF'));
@@ -217,6 +223,7 @@ try {
 
   // ---------- идея (tashabbus) → CEO, уведомления, план адаптации ----------
   await E.reload({ waitUntil: 'networkidle' }); await watchSync(E); await skipTour(E);   // свежие данные: вход CEO уже есть
+  await E.waitForFunction(() => LmsClient.initial().users.some(u => u.role === 'leader'), null, { timeout: 15000 });
   await click(E, 'Tashabbus', { wait: 500 });
   await click(E, 'Yuborish', { wait: 300 });                   // без адресата не уходит
   assert.ok((await E.innerText('.ini-modal')).includes('Kamida bitta rahbarni tanlang'), 'нужно выбрать, кому');

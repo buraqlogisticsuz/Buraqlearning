@@ -5398,9 +5398,31 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   var PROFILE_STEPS = [
     { key: 'step_personal', passportFile: true, fields: [['lastName', 'Familiya', 1], ['firstName', 'Ism', 1], ['middleName', 'Otasining ismi', 0], ['birth', 'Tug‘ilgan sana', 1, { type: 'date' }], ['passport', 'Pasport seriyasi va raqami', 1, { placeholder: 'AA 1234567' }], ['address', 'Yashash manzili', 1, { placeholder: 'Toshkent sh., …' }]] },
     { key: 'step_contact', fields: [['phone', 'Telefon', 1, { placeholder: '+998 __ ___ __ __', type: 'tel' }], ['phone2', 'Qo‘shimcha telefon', 0, { type: 'tel' }], ['telegram', 'Telegram', 1, { placeholder: '@username' }], ['email', 'E-mail', 0, { type: 'email' }], ['emgName', 'Favqulodda aloqa: ism', 1], ['emgPhone', 'Favqulodda aloqa: telefon', 1, { type: 'tel' }]] },
-    { key: 'step_exp', fields: [['education', 'Ma’lumoti', 1, { options: ['', 'O‘rta maxsus', 'Oliy (bakalavr)', 'Oliy (magistr)'] }], ['prevJob', 'Oldingi ish joyi', 0], ['years', 'Logistikadagi tajriba (yil)', 1, { type: 'number' }], ['languages', 'Tillar', 1, { placeholder: 'O‘zbek, rus, xitoy…' }], ['about', 'O‘zingiz haqingizda qisqacha', 0, { multiline: true, span: true }]] },
+    { key: 'step_exp', fields: [['education', 'Ma’lumoti', 1, { options: ['', 'O‘rta maxsus', 'Oliy (bakalavr)', 'Oliy (magistr)'] }], ['prevJob', 'Oldingi ish joyi', 0], ['years', 'Logistikadagi tajriba (yil)', 1, { type: 'number' }], ['languages', 'Tillar', 1, { langs: true }], ['about', 'O‘zingiz haqingizda qisqacha', 0, { multiline: true, span: true }]] },
     { key: 'step_assets', assets: true }];
   var LAST_STEP = PROFILE_STEPS.length - 1;
+  /* «Tillar»: several at once + «Boshqa» with own text. Kept as one line («O‘zbek, Rus, Ingliz») — the profile view shows it as is */
+  var LANG_OPTS = ['O‘zbek', 'Rus', 'Xitoy', 'Turk'];
+  function langSplit(v) {
+    var known = [], other = [];
+    String(v || '').split(/\s*[,;]\s*/).filter(Boolean).forEach(function (x) {
+      var k = LANG_OPTS.filter(function (o) { return o.toLowerCase().replace(/[‘’']/g, '') === x.toLowerCase().replace(/[‘’']/g, ''); })[0];
+      if (k) { if (known.indexOf(k) < 0) known.push(k); } else other.push(x);
+    });
+    return { known: known, other: other.join(', ') };
+  }
+  function LangPick(p) {
+    var t = p.t, cur = langSplit(p.value), oo = useState(!!cur.other), otherOn = oo[0] || !!cur.other;
+    function emit(known, other, on) { p.onChange(LANG_OPTS.filter(function (o) { return known.indexOf(o) >= 0; }).concat(on && other.trim() ? [other.trim()] : []).join(', ')); }
+    function tog(o) { var k = cur.known.indexOf(o) >= 0 ? cur.known.filter(function (x) { return x !== o; }) : cur.known.concat([o]); emit(k, cur.other, otherOn); }
+    return h('div', { className: 'lor-field lor-span' },
+      h('span', { className: 'lor-field-label', id: 'f-languages-l' }, p.label, p.required ? h('span', { className: 'lor-req', 'aria-hidden': true }, '*') : null),
+      h('div', { className: 'ac-chips', role: 'group', 'aria-labelledby': 'f-languages-l' },
+        LANG_OPTS.map(function (o) { var on = cur.known.indexOf(o) >= 0; return h('label', { key: o, className: cx('ac-chip', on && 'is-on') }, h('input', { type: 'checkbox', checked: on, onChange: function () { tog(o); } }), o); }),
+        h('label', { className: cx('ac-chip', otherOn && 'is-on') }, h('input', { type: 'checkbox', checked: otherOn, onChange: function () { oo[1](!otherOn); emit(cur.known, cur.other, !otherOn); } }), t('lang_other'))),
+      otherOn ? h('input', { id: 'f-languages-other', className: 'lor-input', value: cur.other, placeholder: t('lang_other_ph'), 'aria-label': t('lang_other'), onChange: function (e) { emit(cur.known, e.target.value, true); } }) : null,
+      p.error ? h('span', { className: 'lor-field-error' }, p.error) : null);
+  }
   var PP_MAX = 4000000;   /* a passport PDF from My.gov.uz is small; a phone photo can be bigger */
   /* the passport file the employee downloads from My.gov.uz — attached in the personal step */
   function PassportBox(p) {
@@ -5464,7 +5486,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       h('ol', { className: 'lor-stepper' }, PROFILE_STEPS.map(function (s, i) { return h('li', { key: i, className: i < step ? 'is-done' : i === step ? 'is-on' : '' }, t(s.key)); })),
       cur.assets ? h(AssetsStep, { t: t, db: p.db, user: u, lang: p.lang, value: as[0], errors: errs, onChange: setAssets })
         : h('div', { className: 'lor-form-grid' },
-          cur.fields.map(function (f) { var o = f[3] || {}; return h(Field, Object.assign({ key: f[0], name: f[0], label: f[1], required: !!f[2], value: vals[f[0]], error: errs[f[0]], onChange: function (v) { set(f[0], v); } }, o)); }),
+          cur.fields.map(function (f) { var o = f[3] || {}; if (o.langs) return h(LangPick, { key: f[0], t: t, label: f[1], required: !!f[2], value: vals[f[0]], error: errs[f[0]], onChange: function (v) { set(f[0], v); } }); return h(Field, Object.assign({ key: f[0], name: f[0], label: f[1], required: !!f[2], value: vals[f[0]], error: errs[f[0]], onChange: function (v) { set(f[0], v); } }, o)); }),
           cur.passportFile ? h(PassportBox, { key: 'pp', t: t, value: vals.passportFile, error: errs.passportFile, onChange: function (v) { set('passportFile', v); } }) : null),
       h('div', { className: 'lor-form-foot' },
         h('span', { className: 'lor-sm lor-muted' }, t('required_note')),
