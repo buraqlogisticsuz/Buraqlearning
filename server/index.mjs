@@ -130,15 +130,51 @@ export async function startServer({ port = 8080, host = '0.0.0.0', dir, env = pr
     close: () => new Promise(r => { clearTimeout(timer); server.close(r); server.closeAllConnections(); }) };
 }
 
+/* на Railway без тома платформа не запускается (данные пропадали бы при каждом обновлении), но и не падает:
+   сайт показывает, что сделать, /api отвечает кодом setup, проверка /healthz проходит */
+const NO_VOLUME = 'Нет тома для данных. Railway → этот сервис → правой кнопкой «Attach Volume» (или Ctrl+K → Volume) → '
+  + 'Mount path: /data → Deploy. Без тома данные пропадали бы при каждом обновлении сайта.';
+const NO_VOLUME_PAGE = `<!doctype html>
+<html lang="uz"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BURAQ o‘quv platformasi</title>
+<style>
+:root { --navy: #0E2E54; --white: #FFFFFF; --red: #DE0441; --gray: #BFBFBF; }
+body { margin: 0; min-height: 100vh; background: var(--navy); color: var(--white); font: 16px/1.55 "Neue Montreal", Inter, Arial, sans-serif; }
+main { max-width: 720px; margin: 0 auto; padding: 32px 16px; }
+img { width: 140px; height: auto; margin: 0 0 24px; }
+hr { border: 0; border-top: 1px solid var(--red); margin: 0 0 32px; }
+h1 { font-weight: 400; text-transform: uppercase; font-size: 32px; line-height: 1.15; margin: 0 0 16px; }
+p { margin: 0 0 12px; } code { background: rgba(255,255,255,.12); padding: 1px 6px; border-radius: 4px; }
+.ru { color: var(--gray); margin-top: 28px; }
+</style></head>
+<body><main>
+<img src="/buraq-brand/logo/buraq-logo-white.svg" alt="BURAQ logistics" width="140" height="48"><hr>
+<h1>Server sozlanmagan</h1>
+<p>Ma’lumotlar uchun disk (Volume) ulanmagan — platforma ishga tushmadi.</p>
+<p>Railway → servis → o‘ng tugma <b>«Attach Volume»</b> → Mount path: <code>/data</code> → <b>Deploy</b>. Bir daqiqadan keyin sahifani yangilang.</p>
+<div class="ru"><p><b>Сервер не настроен.</b> Не подключён диск для данных (Volume), поэтому платформа не запущена.</p>
+<p>Railway → сервис → правой кнопкой <b>«Attach Volume»</b> → Mount path: <code>/data</code> → <b>Deploy</b>. Через минуту обновите страницу.</p></div>
+</main></body></html>`;
+export async function startNoVolume({ port = 8080, host = '0.0.0.0', log = console.error } = {}) {
+  const server = http.createServer((req, res) => {
+    const p = new URL(req.url, 'http://x').pathname;
+    if (p === '/healthz') { res.writeHead(200, { 'content-type': 'text/plain' }); res.end('ok'); return; }
+    if (p === '/buraq-brand/logo/buraq-logo-white.svg') { res.writeHead(200, { 'content-type': TYPES['.svg'] }); res.end(readFileSync(join(ROOT, p))); return; }
+    if (p === '/api' || p === '/exec') {
+      res.writeHead(503, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'access-control-allow-origin': '*' });
+      res.end(JSON.stringify({ ok: false, code: 'setup', error: NO_VOLUME })); return;
+    }
+    res.writeHead(503, { 'content-type': TYPES['.html'], 'cache-control': 'no-store', 'retry-after': '60' }); res.end(NO_VOLUME_PAGE);
+  });
+  await new Promise(r => server.listen(port, host, r));
+  log(NO_VOLUME);
+  return { server, url: 'http://127.0.0.1:' + server.address().port + '/', close: () => new Promise(r => server.close(r)) };
+}
+
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const dir = dataDir();
-  if (!dir) {
-    console.error('Нет тома для данных. Railway → этот сервис → правой кнопкой «Attach Volume» (или Ctrl+K → Volume) → '
-      + 'Mount path: /data. Без тома данные пропадали бы при каждом обновлении сайта.');
-    process.exit(1);
-  }
-  const s = await startServer({ port: +process.env.PORT || 8080, dir });
-  console.log('BURAQ o‘quv platformasi: порт ' + s.server.address().port + ', данные: ' + dir);
+  const dir = dataDir(), port = +process.env.PORT || 8080;
+  const s = dir ? await startServer({ port, dir }) : await startNoVolume({ port });
+  if (dir) console.log('BURAQ o‘quv platformasi: порт ' + s.server.address().port + ', данные: ' + dir);
   const stop = () => { s.close().then(() => process.exit(0)); setTimeout(() => process.exit(0), 5000).unref(); };
   process.on('SIGTERM', stop); process.on('SIGINT', stop);
 }

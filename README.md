@@ -79,7 +79,8 @@ GitHub Pages: **https://buraqlogisticsuz.github.io/Buraqlearning/** (демо �
 1. [railway.com](https://railway.com) → **New Project → Deploy from GitHub repo** → `buraqlogisticsuz/Buraqlearning`.
    Если репозитория нет в списке — **Configure GitHub App** → дать доступ организации `buraqlogisticsuz`.
 2. **Том для данных:** на схеме проекта правой кнопкой по сервису → **Attach Volume** → Mount path: **`/data`**.
-   Без тома сервер не запускается (в журнале — «Нет тома для данных»): иначе данные пропадали бы при каждом обновлении.
+   Без тома платформа не запускается: на сайте — «Server sozlanmagan» с этой подсказкой, в журнале — «Нет тома для данных»
+   (иначе данные пропадали бы при каждом обновлении). После подключения тома нажмите **Deploy**.
 3. Сервис → **Settings → Networking → Generate Domain** — адрес сайта вида `…up.railway.app` (можно подключить свой домен).
    Там же, в **Settings**, регион поближе к Ташкенту — Европа (EU West).
 4. **Deployments → View logs** — при первом запуске там **логин и пароль SOP-менеджера**. Запишите: больше нигде не показываются.

@@ -6,7 +6,7 @@ import http from 'node:http';
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { startServer, dataDir, nextBackup } from '../server/index.mjs';
+import { startServer, startNoVolume, dataDir, nextBackup } from '../server/index.mjs';
 
 const tmp = () => mkdtempSync(join(tmpdir(), 'lms-node-'));
 async function start(dir, opts = {}) {
@@ -145,4 +145,19 @@ test('папка данных: DATA_DIR, том Railway; на Railway без т�
   assert.match(dataDir({}), /data$/);
   assert.equal(new Date(nextBackup(Date.UTC(2026, 9, 12, 10))).toISOString(), '2026-10-12T22:00:00.000Z');
   assert.equal(new Date(nextBackup(Date.UTC(2026, 9, 12, 23))).toISOString(), '2026-10-13T22:00:00.000Z');
+});
+
+test('на Railway без тома: сервер не падает — сайт объясняет, что подключить, /api отвечает кодом setup', async () => {
+  const logs = [], s = await startNoVolume({ port: 0, host: '127.0.0.1', log: m => logs.push(m) });
+  try {
+    assert.equal((await fetch(s.url + 'healthz')).status, 200);
+    const page = await fetch(s.url);
+    assert.equal(page.status, 503);
+    const html = await page.text();
+    assert.match(html, /Attach Volume/); assert.match(html, /\/data/); assert.match(html, /Server sozlanmagan/);
+    assert.equal((await fetch(s.url + 'buraq-brand/logo/buraq-logo-white.svg')).status, 200);
+    const api = await fetch(s.url + 'api', { method: 'POST', body: '{"action":"ping"}' });
+    assert.equal(api.status, 503); assert.equal((await api.json()).code, 'setup');
+    assert.match(logs.join(' '), /Нет тома для данных/);
+  } finally { await s.close(); }
 });
