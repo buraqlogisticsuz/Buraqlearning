@@ -295,6 +295,33 @@ try {
   assert.deepEqual(await rejected(A), [], 'сервер не отклонил ни одной правки SOP-менеджера');
   step('сервер не отклонил ни одной правки');
 
+  // ---------- профиль: сотрудник — фото, имя, логин; пароль — только SOP-менеджер ----------
+  const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFklEQVR42mNkYPhfz8DAwMDEwMDAAAAhJAKBc6tHfgAAAABJRU5ErkJggg==', 'base64');
+  await E.reload({ waitUntil: 'networkidle' }); await skipTour(E);   // без открытых панелей (ИИ-наставник)
+  await E.locator('.user-btn').first().click(); await E.locator('.user-pop-links .profile').click(); await E.waitForTimeout(300);
+  assert.equal(await E.locator('#f-pf-pw1').count(), 0, 'сотрудник пароль не меняет');
+  await E.setInputFiles('#pf-photo', { name: 'men.png', mimeType: 'image/png', buffer: PNG }); await E.waitForTimeout(500);
+  await E.fill('#f-pf-name', 'Dilnoza Karimova-Aliyeva');
+  await E.getByRole('button', { name: 'Saqlash', exact: true }).click(); await E.waitForTimeout(300);
+  await E.fill('#f-pf-login', 'dilnoza.k'); await E.fill('#f-pf-cur', 'parol-12345');
+  await click(E, 'Kirish ma’lumotlarini saqlash', { wait: 800 });
+  await shot(E, '13-profile');
+  await E.keyboard.press('Escape');
+  await settle(E);
+  let me2 = srv.g.state().users.find(u => u.id === emp.id);
+  assert.equal(me2.name, 'Dilnoza Karimova-Aliyeva'); assert.match(me2.avatar, /^data:image\/jpeg;base64,/); assert.equal(me2.login, 'dilnoza.k');
+  assert.ok(srv.g.post({ action: 'login', login: 'dilnoza.k', password: 'parol-12345' }).ok, 'новый логин работает');
+  await nav(A, 'staff');
+  await A.locator('tr', { hasText: 'Dilnoza Karimova-Aliyeva' }).getByRole('button', { name: 'Tahrirlash' }).click(); await A.waitForTimeout(300);
+  await A.selectOption('#f-ue-pos', 'Ombor mudiri'); await A.fill('#f-ue-pw', 'yangi-parol-77');
+  await A.locator('.pf-modal').getByRole('button', { name: 'Saqlash' }).click();
+  await settle(A);
+  me2 = srv.g.state().users.find(u => u.id === emp.id);
+  assert.equal(me2.position, 'Ombor mudiri'); assert.ok(!('password' in me2), 'пароль — не в данных');
+  assert.ok(srv.g.post({ action: 'login', login: 'dilnoza.k', password: 'yangi-parol-77' }).ok, 'пароль от SOP-менеджера работает');
+  step('профиль: сотрудник сменил фото, имя и логин; пароль задал SOP-менеджер');
+
+
   // ---------- демо больше нет: ?demo=1 — тот же вход на сервер; без адреса сервера — «Server ulanmagan» ----------
   const D = await device('бывшее демо', '?demo=1');
   assert.equal(await D.locator('.demo-box').count(), 0, 'демо-входов нет');

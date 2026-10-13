@@ -20,9 +20,10 @@
  *
  * Запрос — POST с JSON { action, token, … }, ответ — JSON { ok, … } или { ok: false, code, error }.
  */
-var LMS_VERSION = 5;           // 2: файлы — отдельно на Диске, действие file; 3: ИИ через Claude API (действие ai);
+var LMS_VERSION = 6;           // 2: файлы — отдельно на Диске, действие file; 3: ИИ через Claude API (действие ai);
                                // 4: адресаты идей — CEO, Project Manager, руководитель компании (свой вход, role 'leader');
-                               // 5: у идеи несколько адресатов (to — список), repliedBy — кто ответил
+                               // 5: у идеи несколько адресатов (to — список), repliedBy — кто ответил;
+                               // 6: свой профиль — имя и фото, смена логина и пароля (действие account)
 var PBKDF2_ITER = 10000;          // пароль хранится только как PBKDF2-SHA256 с солью
 var SESSION_DAYS = 30;            // вход на устройстве живёт 30 дней с последнего запроса
 var FAIL_MAX = 5, FAIL_LOCK_MIN = 15;  // 5 неверных паролей подряд — логин закрыт на 15 минут
@@ -31,6 +32,8 @@ var BACKUP_KEEP_DAYS = 30;
 var PASS_MARK = 80;
 var MAX_OPS = 500;
 var FILE_MIN = 2048;              // data:-строки короче (значки) остаются в данных, длиннее — файлом на Диске
+var AVATAR_MAX = 16000;           // фото профиля (128×128 JPEG) — в данных, не файлом: его показывают везде, где имя
+var LOGIN_RE = /^[a-z0-9][a-z0-9._-]{2,31}$/;   // логин: 3–32 символа, латиница, цифры, точка, дефис, подчёркивание
 var AUDIT_KEEP = 500;             // журнал нарушений защиты урока — последние 500 записей
 var AI_MODEL = 'claude-opus-5-5';  // свойство AI_MODEL меняет модель без правки кода
 var AI_LIMIT = 30, AI_LIMIT_ADMIN = 200;  // запросов к ИИ в день на сотрудника / SOP-менеджера
@@ -76,6 +79,7 @@ function route_(req) {
   if (a === 'retest') return retest_(s, req);
   if (a === 'ai') return ai_(s, req);
   if (a === 'password') return password_(s, req);
+  if (a === 'account') return account_(s, req);
   if (a === 'resetPassword') return resetPassword_(s, req);
   if (a === 'file') return file_(s, req);
   throw err_('bad', 'Неизвестное действие «' + a + '»');
@@ -214,15 +218,38 @@ function load_(s) {
   return { ok: true, v: LMS_VERSION, ai: !!aiKey_(), rev: st.rev, me: me.id, state: viewFor_(st, me) };
 }
 
-function password_(s, req) {
-  var old = String(req.old || ''), nw = String(req.password || '');
-  if (nw.length < 8) throw err_('weak', 'Новый пароль — не короче 8 символов');
+/* смена своего пароля — только у SOP-менеджера (решение владельца 13.10.2026); сотрудникам пароль задаёт он */
+function password_(s, req) { return account_(s, { old: req.old, password: String(req.password || '') }); }
+
+/* фото профиля: data:-картинка до AVATAR_MAX символов (страница уменьшает её до 128×128) */
+function avatarOk_(v) {
+  return v == null || (typeof v === 'string' && v.length <= AVATAR_MAX && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+\/=]+$/.test(v));
+}
+
+/* свой логин и (или) пароль: { old, login?, password? } — с текущим паролем. Логин меняет каждый сам, пароль —
+   только SOP-менеджер (свой здесь, сотрудникам — в их карточке). Новый пароль закрывает другие входы */
+function account_(s, req) {
+  var old = String(req.old || ''), nl = req.login == null || req.login === '' ? null : normLogin_(req.login);
+  var np = req.password == null || req.password === '' ? null : String(req.password);
+  if (nl == null && np == null) throw err_('bad', 'Нечего менять');
+  if (np != null && me_(readState_(), s).role !== 'admin') throw err_('forbidden', 'Пароль меняет SOP-менеджер');
+  if (np != null && np.length < 8) throw err_('weak', 'Новый пароль — не короче 8 символов');
+  if (nl != null && !LOGIN_RE.test(nl)) throw err_('login_format', 'Логин: 3–32 символа — латиница, цифры, точка, дефис, подчёркивание');
   return withLock_(function () {
     var c = creds_()[String(s.uid)];
-    if (!c || pbkdf2_(old, c.salt, c.iter) !== c.hash) throw err_('login', 'Старый пароль неверный');
-    setCred_(makeCred_(c.uid, c.login, nw));
-    dropSessions_(c.uid, s.key);
-    return { ok: true };
+    if (!c || pbkdf2_(old, c.salt, c.iter) !== c.hash) throw err_('login', 'Текущий пароль неверный');
+    var st = readState_(), me = me_(st, s), all = creds_(), uid = String(s.uid);
+    if (nl != null && nl !== c.login) {
+      var taken = Object.keys(all).some(function (k) { return k !== uid && all[k].login === nl; })
+        || (st.users || []).some(function (u) { return String(u.id) !== uid && normLogin_(u.login) === nl; });
+      if (taken) throw err_('taken', 'Логин «' + nl + '» уже занят');
+      c.login = nl; me.login = nl;
+      st.rev = (+st.rev || 0) + 1;
+      writeState_(st);
+    }
+    if (np != null) { setCred_(makeCred_(c.uid, c.login, np)); dropSessions_(c.uid, s.key); }
+    else setCred_(c);
+    return { ok: true, rev: st.rev, login: c.login };
   });
 }
 
@@ -241,7 +268,7 @@ function resetPassword_(s, req) {
 
 /* ---------------- что видит пользователь ---------------- */
 
-var PUBLIC_USER = ['id', 'role', 'post', 'name', 'position', 'department', 'status', 'cohort', 'level', 'levelXpBase', 'levelAt', 'mentor', 'trackId', 'startedAt'];
+var PUBLIC_USER = ['id', 'role', 'post', 'name', 'avatar', 'position', 'department', 'status', 'cohort', 'level', 'levelXpBase', 'levelAt', 'mentor', 'trackId', 'startedAt'];
 function pick_(o, keys) { var r = {}; keys.forEach(function (k) { if (o[k] !== undefined) r[k] = o[k]; }); return r; }
 function own_(list, field, uid) { return (list || []).filter(function (x) { return x && String(x[field]) === String(uid); }); }
 
@@ -331,7 +358,7 @@ function leaderView_(st, me) {
 /* ---------------- правки ---------------- */
 
 // поля своей карточки, которые сотрудник не меняет сам (их ставит SOP-менеджер)
-var LOCKED_USER = ['id', 'role', 'post', 'login', 'password', 'name', 'status', 'position', 'department', 'cohort', 'trackId', 'mentor', 'level', 'levelXpBase', 'levelAt', 'levelTasks', 'startedAt'];
+var LOCKED_USER = ['id', 'role', 'post', 'login', 'password', 'status', 'position', 'department', 'cohort', 'trackId', 'mentor', 'level', 'levelXpBase', 'levelAt', 'levelTasks', 'startedAt'];
 // списки «своих» записей: поле владельца
 var OWN = { requests: 'userId', notifications: 'userId', assets: 'uid', surveys: 'uid', initiatives: 'uid', drills: 'uid', audit: 'userId', errors: 'uid', xtasks: 'uid' };
 // поля своих записей, которые ставит SOP-менеджер или наставник
@@ -359,6 +386,9 @@ function checkEmployee_(st, me, op) {
   if (top === 'users') {
     if (!isId_(p[1]) || String(p[1].id) !== uid) return 'чужая карточка';
     if (p.length < 3) return 'карточку целиком меняет SOP-менеджер';
+    // своё имя и фото — сам; логин и пароль — действие account (с текущим паролем)
+    if (p[2] === 'name') return p.length === 3 && op.op === 'set' && typeof op.value === 'string' && op.value.trim().length >= 2 && op.value.length <= 60 ? null : 'имя — от 2 до 60 символов';
+    if (p[2] === 'avatar') return p.length === 3 && (op.op === 'del' || avatarOk_(op.value)) ? null : 'фото — картинка JPG, PNG или WebP до 12 КБ';
     if (LOCKED_USER.indexOf(p[2]) >= 0) return 'поле «' + p[2] + '» меняет SOP-менеджер';
     return null;
   }
@@ -504,7 +534,7 @@ function patch_(s, ops) {
       if (!why && !admin && top === 'notifications' && op.path.length === 2 && op.op === 'set' && !LmsSync.get(st, op.path)) op = Object.assign({}, op, { value: Object.assign({}, op.value, { from: me.id }) });
       if (why) { rejected.push({ i: i, reason: why }); return; }
       try {
-        if (op.op === 'set') op = Object.assign({}, op, { value: storeFiles_(op.value, me.id) });
+        if (op.op === 'set' && !(op.path[op.path.length - 1] === 'avatar' && avatarOk_(op.value))) op = Object.assign({}, op, { value: storeFiles_(op.value, me.id) });
         if (LmsSync.applyOne(st, op)) applied++;
       } catch (e) { rejected.push({ i: i, reason: e.message }); }
     });
@@ -561,7 +591,7 @@ function storeFiles_(v, uid, name) {
   if (Array.isArray(v)) return v.map(function (x) { return storeFiles_(x, uid); });
   if (v && typeof v === 'object') {
     var o = {};
-    Object.keys(v).forEach(function (k) { o[k] = storeFiles_(v[k], uid, k === 'data' ? v.name : null); });
+    Object.keys(v).forEach(function (k) { o[k] = k === 'avatar' && avatarOk_(v[k]) ? v[k] : storeFiles_(v[k], uid, k === 'data' ? v.name : null); });
     return o;
   }
   return v;

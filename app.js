@@ -378,7 +378,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           var mine = r.id === u.id;
           return h('tr', { key: r.id, className: cx(mine && 'is-me') },
             h('td', { className: 'rank' }, h('span', { className: cx('rank-n', r.rank <= 3 && 'top') }, r.rank)),
-            h('td', null, h('div', { className: 'lor-emp' }, h(Av, { name: r.name, size: 32 }), h('span', null, r.name, mine ? h('em', { className: 'you-tag' }, t('r_you')) : null, h('small', null, r.position)))),
+            h('td', null, h('div', { className: 'lor-emp' }, h(Av, { name: r.name, src: userOf(db, r.id).avatar, size: 32 }), h('span', null, r.name, mine ? h('em', { className: 'you-tag' }, t('r_you')) : null, h('small', null, r.position)))),
             h('td', null, h(LevelBadge, { t: t, small: true, name: lvlShort(levelsOf(db)[Math.min(r.lvl || 0, levelsOf(db).length - 1)], p.lang), n: r.lvl || 0 })),
             h('td', null, cohortLabel(r.cohort, p.lang)),
             h('td', null, r.current ? h(Badge, { status: 'in-progress', lang: p.lang }, t('r_active')) : h(Badge, { status: 'passed', lang: p.lang }, t('r_grad'))),
@@ -1036,12 +1036,12 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var lv = r && r.level, pct = r && r.need ? Math.min(100, r.inLevel * 100 / r.need) : 100;
     return h('div', { className: 'user-wrap', ref: ref },
       h('button', { type: 'button', className: 'lor-user user-btn', 'aria-expanded': open, 'aria-haspopup': 'menu', onClick: function () { o[1](!open); if (p.isNew && p.onSeen) p.onSeen(); } },
-        h('span', { className: cx('av-wrap', p.isNew && 'is-new') }, h('span', { className: 'lor-user-av' }, initials(u.name)), r ? h(LevelEmblem, { n: r.li + 1, size: 22, uid: 'avh', className: 'av-medal lvl-mini' }) : null),
+        h('span', { className: cx('av-wrap', p.isNew && 'is-new') }, u.avatar ? h('img', { className: 'lor-user-av av-img', src: u.avatar, alt: '' }) : h('span', { className: 'lor-user-av' }, initials(u.name)), r ? h(LevelEmblem, { n: r.li + 1, size: 22, uid: 'avh', className: 'av-medal lvl-mini' }) : null),
         h('span', { className: 'app-user-txt' }, u.name, h('small', null, r ? rankLabel(r, p.lang, t) : p.subtitle)),
         h('span', { className: 'caret', 'aria-hidden': true }, '▾')),
       open ? h('div', { className: 'user-pop', role: 'menu' },
         h('div', { className: 'user-pop-h' },
-          h('span', { className: 'av-wrap big' }, h('span', { className: 'lor-user-av' }, initials(u.name)), r ? h(LevelEmblem, { n: r.li + 1, size: 30, uid: 'avp', className: 'av-medal lvl-mini' }) : null),
+          h('span', { className: 'av-wrap big' }, u.avatar ? h('img', { className: 'lor-user-av av-img', src: u.avatar, alt: '' }) : h('span', { className: 'lor-user-av' }, initials(u.name)), r ? h(LevelEmblem, { n: r.li + 1, size: 30, uid: 'avp', className: 'av-medal lvl-mini' }) : null),
           h('div', null, h('b', null, u.name), h('span', { className: 'lor-sm lor-muted' }, u.position + (u.department ? ' · ' + u.department : '')))),
         r ? h('div', { className: 'user-pop-lvl' },
           h('div', { className: 'user-pop-row' }, h(LevelBadge, { t: t, name: lvlShort(lv, p.lang), n: r.li }), h('span', { className: 'lor-sm lor-muted num' }, r.inLevel + ' XP')),
@@ -1051,6 +1051,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         p.theme ? h(ThemeBlock, { t: t, value: p.theme.v, onChange: p.theme.set }) : null,
         p.hint ? h(HintSwitch, { t: t, on: p.hint.on, onToggle: p.hint.toggle }) : null,
         h('div', { className: 'user-pop-links' },
+          p.onProfile ? h('button', { type: 'button', role: 'menuitem', className: 'profile', onClick: function () { o[1](false); p.onProfile(); } }, t('nav_profile')) : null,
           p.onPath ? h('button', { type: 'button', role: 'menuitem', onClick: function () { o[1](false); p.onPath(); } }, t('nav_path')) : null,
           (p.links || []).map(function (l) { return h('button', { key: l.key, type: 'button', role: 'menuitem', className: l.key, onClick: function () { o[1](false); l.onClick(); } }, h('span', null, l.label), l.count ? h('span', { className: 'app-navcount' }, l.count) : null); }),
           p.onTerms ? h('button', { type: 'button', role: 'menuitem', onClick: function () { o[1](false); p.onTerms(); } }, t('terms_link')) : null,
@@ -1324,7 +1325,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         h('tbody', null, rows.length ? rows.map(function (a) {
           var u = userOf(db, a.uid);
           return h('tr', { key: a.id, className: cx(assetAttn(a) && 'is-attn') },
-            h('td', null, h('div', { className: 'lor-emp' }, h(Av, { name: u.name, size: 32 }), h('span', null, u.name, h('small', null, u.position)))),
+            h('td', null, h('div', { className: 'lor-emp' }, h(Av, { name: u.name, src: u.avatar, size: 32 }), h('span', null, u.name, h('small', null, u.position)))),
             h('td', null, h('div', { className: 'as-cell' }, h('span', { className: 'as-ico' }, h(Ico, { name: a.type, size: 18 })), h('span', null, h('b', null, a.name), h('small', null, t('at_' + a.type) + (a.src === 'self' ? ' · ' + t('as_src_self') : ' · ' + t('as_src_hr'))))),
               a.status === 'issue' && a.issue ? h('p', { className: 'as-alert sm' }, h('b', null, t('as_st_issue_' + a.issue.kind) + ' · ' + fmt(a.issue.at, t) + ': '), a.issue.text) : null,
               a.status === 'mismatch' && a.mismatch ? h('p', { className: 'as-alert sm' }, h('b', null, t('as_emp_says') + ': '), a.mismatch) : null,
@@ -1341,7 +1342,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         h('ul', { className: 'as-decl-list' }, emps.map(function (u) {
           var mine = assetsOf(db, u.id), live = mine.filter(function (a) { return a.status !== 'returned'; }).length, attn = mine.filter(assetAttn).length;
           return h('li', { key: u.id }, h('button', { type: 'button', className: 'as-decl-btn', onClick: function () { fu[1](String(u.id)); f[1]('all'); } },
-            h(Av, { name: u.name, size: 28 }), h('span', { className: 'as-decl-n' }, u.name, h('small', null, u.assetsDeclaredAt ? '✓ ' + fmtDate(u.assetsDeclaredAt) + (u.assetsNone ? ' · ' + t('as_none_short') : '') : '○ ' + t('not_filled'))),
+            h(Av, { name: u.name, src: u.avatar, size: 28 }), h('span', { className: 'as-decl-n' }, u.name, h('small', null, u.assetsDeclaredAt ? '✓ ' + fmtDate(u.assetsDeclaredAt) + (u.assetsNone ? ' · ' + t('as_none_short') : '') : '○ ' + t('not_filled'))),
             h('span', { className: 'as-decl-c' }, live + ' ' + t('pcs'), attn ? h('span', { className: 'app-navcount' }, attn) : null)));
         }))));
   }
@@ -1724,7 +1725,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     return h('article', { className: cx('box ini-item', 'st-' + x.status) },
       h('div', { className: 'ini-item-h' }, h(IniType, { type: x.type, t: t }), h('span', { className: 'ini-area' }, t('ia_' + x.area)), iniTo(x).length ? h('span', { className: 'ini-area ini-to-chip' }, '→ ' + iniToLabel(x, t)) : null, h('span', { className: 'lor-sm lor-muted' }, fmt(x.at, t)), h('span', { className: 'ini-sp' }), h(IniStatus, { s: x.status, t: t, lang: p.lang })),
       h('h3', { className: 'ini-title' }, x.title),
-      admin ? h('div', { className: 'ini-author' }, h(Av, { name: author, size: 26 }), h('span', null, author, h('small', null, au.position + ' · ' + au.department))) : null,
+      admin ? h('div', { className: 'ini-author' }, h(Av, { name: author, src: au.avatar, size: 26 }), h('span', null, author, h('small', null, au.position + ' · ' + au.department))) : null,
       h('p', { className: 'ini-pre' }, x.text),
       x.benefit ? h('div', { className: 'ini-benefit' }, h('span', { className: 'lor-eyebrow' }, t('ini_benefit_' + x.type)), h('p', { className: 'ini-pre' }, x.benefit)) : null,
       !admin && x.reply ? h('div', { className: 'ini-reply' }, h('span', { className: 'lor-eyebrow' }, t('ini_reply') + (x.repliedBy ? ' · ' + t('ini_to_s_' + x.repliedBy) : '') + (x.repliedAt ? ' · ' + fmt(x.repliedAt, t) : '')), h('p', null, x.reply)) : null,
@@ -2252,7 +2253,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         h('ul', { className: 'sv-list' }, all.slice(0, 12).map(function (x) {
           var u = userOf(db, x.uid);
           return h('li', { key: x.id, className: 'sv-item' },
-            h('div', { className: 'sv-item-h' }, h(Av, { name: u.name, size: 30 }),
+            h('div', { className: 'sv-item-h' }, h(Av, { name: u.name, src: u.avatar, size: 30 }),
               h('div', null, h('b', null, u.name), h('span', { className: 'lor-sm lor-muted' }, t('sc_' + x.scen + '_t') + ' · ' + fmt(x.at, t) + (x.lessonId ? ' · ' + lessonTitle(db, x.lessonId) : ''))),
               h('span', { className: cx('dr-score', x.score >= 4 ? 'hi' : x.score < 3 ? 'low' : '') }, x.score.toFixed(1))),
             h('ul', { className: 'sv-ans' }, DRILL_CRIT.map(function (k) { return h('li', { key: k }, h('span', { className: 'sv-ans-q' }, t('dc_' + k)), h('span', { className: cx('sv-score', (x.criteria || {})[k] >= 4 ? 'hi' : (x.criteria || {})[k] < 3 ? 'low' : '') }, ((x.criteria || {})[k] || '—') + ' / 5')); })),
@@ -2281,7 +2282,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
             h('span', { className: 'lor-sm' }, tpl(t('sop_progress'), { k: pr.ok, n: pr.req }))),
           pend.length ? h('div', { className: 'sop-pend' },
             h('span', { className: 'lor-eyebrow' }, t('sop_pending')),
-            pend.map(function (uid) { return h('span', { key: uid, className: 'lvl-person' }, h(Av, { name: userOf(db, uid).name, size: 24 }), userOf(db, uid).name); }),
+            pend.map(function (uid) { return h('span', { key: uid, className: 'lvl-person' }, h(Av, { name: userOf(db, uid).name, src: userOf(db, uid).avatar, size: 24 }), userOf(db, uid).name); }),
             h(Btn, { variant: 'outline', size: 'sm', onClick: function () { remind(x); } }, t('sop_remind'))) : null);
       }) : h('section', { className: 'box' }, h('p', { className: 'lor-muted', style: { margin: 0 } }, t('sop_none'))));
   }
@@ -4334,7 +4335,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           h('ul', null, risk.map(function (r) {
             return h('li', { key: r.u.id },
               h('button', { type: 'button', className: 'mr-risk-p', onClick: function () { openP(r.u.id); } },
-                h(Av, { name: r.u.name, size: 30 }),
+                h(Av, { name: r.u.name, src: r.u.avatar, size: 30 }),
                 h('span', null, h('b', null, r.u.name), h('small', null, (r.v === 'risk' || r.v === 'behind' ? verdictNotes(r.ms, r.fc, t) : []).concat(r.at.flag ? [attNote(r.at, t)] : []).join(' '))),
                 r.v === 'risk' || r.v === 'behind' ? h(VerdictChip, { t: t, v: r.v }) : h('span', { className: 'at-chip a-late' }, t('at_disc'))));
           }))) : null,
@@ -4360,7 +4361,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
               var open = ex[0] === r.u.id;
               return h(F, { key: r.u.id },
                 h('tr', { id: 'mr-row-' + r.u.id, className: cx('row-click', open && 'is-open'), 'aria-expanded': open, tabIndex: 0, onClick: function () { if (open) ex[1](null); else openP(r.u.id); }, onKeyDown: function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (open) ex[1](null); else openP(r.u.id); } } },
-                  h('td', null, h('div', { className: 'lor-emp' }, h(Av, { name: r.u.name, size: 32 }), h('span', null, r.u.name, h('small', null, r.u.position)))),
+                  h('td', null, h('div', { className: 'lor-emp' }, h(Av, { name: r.u.name, src: r.u.avatar, size: 32 }), h('span', null, r.u.name, h('small', null, r.u.position)))),
                   h('td', { className: 'num' }, h('b', { className: r.ms.att != null && r.ms.att < 80 ? 'warn-txt' : '' }, r.ms.att == null ? '—' : r.ms.att + '%'), h('div', { className: 'lor-sm lor-muted' }, r.ms.activeWork + '/' + r.ms.expected), r.pv.empty ? null : h(Delta, { t: t, cur: r.ms.att, prev: r.pv.att, unit: '%' })),
                   h('td', { className: 'num' }, fmtH(r.ms.minutes, t), h('div', { className: 'lor-sm lor-muted' }, r.ms.active ? fmtMin(r.ms.perActive, t) + ' / ' + t('mr_day') : '—')),
                   h('td', { className: 'num' }, r.ms.goal, h('div', { className: 'lor-sm lor-muted' }, r.ms.goalPct + '%')),
@@ -4371,7 +4372,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
                 null);
             }))))),
         pick ? h('section', { className: 'mr-person', id: 'mr-person' },
-          h('div', { className: 'mr-person-h' }, h(Av, { name: pick.u.name, size: 40 }), h('div', null, h('span', { className: 'lor-eyebrow' }, t('mr_eyebrow') + ' · ' + ymLabel(ym, lang)), h('h2', { className: 'lor-h' }, pick.u.name), h('span', { className: 'lor-sm lor-muted' }, pick.u.position + ' · ' + pick.u.department)),
+          h('div', { className: 'mr-person-h' }, h(Av, { name: pick.u.name, src: pick.u.avatar, size: 40 }), h('div', null, h('span', { className: 'lor-eyebrow' }, t('mr_eyebrow') + ' · ' + ymLabel(ym, lang)), h('h2', { className: 'lor-h' }, pick.u.name), h('span', { className: 'lor-sm lor-muted' }, pick.u.position + ' · ' + pick.u.department)),
             h('button', { type: 'button', className: 'lor-modal-x mr-person-x no-print', 'aria-label': t('close'), onClick: function () { ex[1](null); } }, '×')),
           h(MonthBody, Object.assign({}, p, { u: pick.u, ym: ym, admin: true }))) : null,
         h('section', { className: 'box ai-box no-print' },
@@ -4959,7 +4960,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         h('ul', { className: 'at-list' }, onDay.map(function (x) {
           var o = x.o;
           return h('li', { key: x.u.id, className: 'a-' + o.st },
-            h(Av, { name: x.u.name, size: 34 }),
+            h(Av, { name: x.u.name, src: x.u.avatar, size: 34 }),
             h('span', { className: 'at-who' }, h('b', null, x.u.name), h('small', null, x.u.department + ' · ' + o.sc.start + '–' + o.sc.end)),
             h('span', { className: 'at-in' }, h('b', null, o.in != null ? m2hm(o.in) : '—'), h('small', null, t('at_in'))),
             h(AttChip, { t: t, o: o }),
@@ -4994,7 +4995,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           h('tbody', null, rows.filter(function (r) { return r.c.has; }).map(function (r) {
             var c = r.c, sc = schedOf(db, r.u);
             return h('tr', { key: r.u.id },
-              h('td', null, h('div', { className: 'lor-emp' }, h(Av, { name: r.u.name, size: 32 }), h('span', null, r.u.name, h('small', null, r.u.department + ' · ' + sc.start)))),
+              h('td', null, h('div', { className: 'lor-emp' }, h(Av, { name: r.u.name, src: r.u.avatar, size: 32 }), h('span', null, r.u.name, h('small', null, r.u.department + ' · ' + sc.start)))),
               h('td', { className: 'num' }, h('b', { className: c.onTimePct != null && c.onTimePct < 80 ? 'warn-txt' : '' }, c.onTimePct == null ? '—' : c.onTimePct + '%'), h('div', { className: 'lor-sm lor-muted' }, c.onTime + '/' + c.present)),
               h('td', { className: 'num' }, h('b', { className: c.late >= 3 ? 'warn-txt' : '' }, c.late), c.late ? h('div', { className: 'lor-sm lor-muted' }, tpl(t('at_min_total'), { m: c.lateMin })) : null),
               h('td', { className: 'num' }, m2hm(c.avgIn)),
@@ -5127,7 +5128,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       list.length ? h('ul', { className: 'lor-inbox-list' }, list.map(function (x) {
         var u = userOf(db, x.uid);
         return h('li', { key: x.id, className: 'lor-req-item inbox-item' },
-          h(Av, { name: u.name }),
+          h(Av, { name: u.name, src: u.avatar }),
           h('div', { className: 'lor-req-main' },
             h('div', { className: 'lor-req-top' }, h('b', null, u.name), h('span', { className: 'lor-sm lor-muted' }, u.position)),
             h('ul', { className: 'xt-list' }, h(XtItem, Object.assign({}, p, { x: x, admin: true })))));
@@ -5186,7 +5187,138 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       p.label ? h('label', { className: 'lor-field-label', htmlFor: id }, p.label, p.required ? h('span', { className: 'lor-req', 'aria-hidden': true }, '*') : null) : null,
       control, p.error ? h('span', { className: 'lor-field-error' }, p.error) : p.hint ? h('span', { className: 'lor-field-hint' }, p.hint) : null);
   }
-  function Av(p) { return h('span', { className: 'lor-req-av', style: p.size ? { width: p.size, height: p.size, fontSize: p.size < 36 ? 12 : 13 } : null }, initials(p.name)); }
+  function Av(p) {
+    var st = p.size ? { width: p.size, height: p.size, fontSize: p.size < 36 ? 12 : 13 } : null;
+    return p.src ? h('img', { className: 'lor-req-av av-img', src: p.src, alt: '', style: st }) : h('span', { className: 'lor-req-av', style: st }, initials(p.name));
+  }
+
+  /* ---------------- profile: photo, name, login; the password — the SOP manager only ---------------- */
+  var AVATAR_MAX = 16000;   /* the server keeps a photo of up to this many characters in the data (tools/lms-gs/Server.gs) */
+  var STAFF_POS = ['Omborchi', 'Mijozlar menejeri', 'Logistika menejeri', 'Bojxona deklaranti', 'Ombor mudiri'];
+  var STAFF_DEP = ['Logistika bo‘limi', 'Bojxona bo‘limi', 'Savdo bo‘limi', 'Ombor (Yiwu)', 'Ombor (Zhongshan)'];
+  var LOGIN_RE = /^[a-z0-9][a-z0-9._-]{2,31}$/;
+  function withCur(list, v) { return v && list.indexOf(v) < 0 ? [v].concat(list) : list; }
+  /* a photo file → a square 128×128 JPEG (data: URL) small enough for the data */
+  function pickAvatar(file, ok, fail) {
+    if (!file || !/^image\//.test(file.type)) { fail(); return; }
+    var fr = new FileReader();
+    fr.onerror = fail;
+    fr.onload = function () {
+      var img = new Image();
+      img.onerror = fail;
+      img.onload = function () {
+        var S = 128, c = document.createElement('canvas'), g = c.getContext('2d'), m = Math.min(img.width, img.height);
+        c.width = c.height = S;
+        g.fillStyle = '#ffffff'; g.fillRect(0, 0, S, S);
+        g.drawImage(img, (img.width - m) / 2, (img.height - m) / 2, m, m, 0, 0, S, S);
+        var q = 0.86, url = c.toDataURL('image/jpeg', q);
+        while (url.length > AVATAR_MAX && q > 0.4) { q -= 0.12; url = c.toDataURL('image/jpeg', q); }
+        if (url.length > AVATAR_MAX) fail(); else ok(url);
+      };
+      img.src = fr.result;
+    };
+    fr.readAsDataURL(file);
+  }
+  function PhotoPicker(p) {
+    var t = p.t, er = useState(false);
+    function pick(e) { var f = e.target.files && e.target.files[0]; e.target.value = ''; if (!f) return; er[1](false); pickAvatar(f, function (u) { p.onChange(u); }, function () { er[1](true); }); }
+    return h('div', { className: 'pf-photo' },
+      h(Av, { name: p.name, src: p.value, size: 88 }),
+      h('div', { className: 'pf-photo-act' },
+        h('input', { id: p.id, type: 'file', accept: 'image/jpeg,image/png,image/webp', className: 'sr-only', onChange: pick }),
+        h('label', { className: 'lor-btn lor-btn-outline lor-btn-sm', htmlFor: p.id }, t('pf_photo_up')),
+        p.value ? h('button', { type: 'button', className: 'app-link danger', onClick: function () { p.onChange(null); } }, t('pf_photo_del')) : null,
+        er[0] ? h('span', { className: 'lor-field-error' }, t('pf_photo_bad')) : h('span', { className: 'lor-sm lor-muted' }, t('pf_photo_hint'))));
+  }
+  function Modal(p) {
+    useEffect(function () { function k(e) { if (e.key === 'Escape') p.onClose(); } window.addEventListener('keydown', k); return function () { window.removeEventListener('keydown', k); }; }, []);
+    return h('div', { className: 'lor-scrim', onMouseDown: function (e) { if (e.target === e.currentTarget) p.onClose(); } },
+      h('div', { className: cx('lor-modal pf-modal', p.className), role: 'dialog', 'aria-modal': true, 'aria-labelledby': p.hid },
+        h('button', { type: 'button', className: 'lor-modal-x', 'aria-label': p.t('close'), onClick: p.onClose }, '×'),
+        p.children));
+  }
+  /* «Mening profilim»: everyone — photo, name, login (with the current password); the SOP manager also the own password */
+  function ProfileModal(p) {
+    var t = p.t, u = p.user, admin = u.role === 'admin';
+    var nm = useState(u.name || ''), av = useState(u.avatar || null), ne = useState('');
+    var lg = useState(u.login || ''), cur = useState(''), p1 = useState(''), p2 = useState(''), ae = useState({}), busy = useState(false);
+    function savePersonal() {
+      var n = nm[0].trim();
+      if (n.length < 2 || n.length > 60) { ne[1](t('pf_name_bad')); return; }
+      ne[1]('');
+      p.update(function (d) { d.users.forEach(function (x) { if (x.id === u.id) { x.name = n; if (av[0]) x.avatar = av[0]; else delete x.avatar; } }); });
+      p.say(t('pf_saved'));
+    }
+    function saveAccount() {
+      var l = lg[0].trim().toLowerCase(), e = {}, body = { old: cur[0] };
+      if (l !== (u.login || '')) { if (!LOGIN_RE.test(l)) e.login = t('pf_login_bad'); else body.login = l; }
+      if (admin && (p1[0] || p2[0])) { if (p1[0].length < 8) e.p1 = t('pf_pw_short'); else if (p1[0] !== p2[0]) e.p2 = t('pf_pw_mismatch'); else body.password = p1[0]; }
+      if (!e.login && !e.p1 && !e.p2 && !body.login && !body.password) e.cur = t('pf_nothing');
+      else if (!cur[0]) e.cur = t('fill_required');
+      ae[1](e); if (Object.keys(e).length) return;
+      busy[1](true);
+      SV.account(body).then(function () {
+        busy[1](false); cur[1](''); p1[1](''); p2[1](''); p.say(t('pf_acc_saved')); SV.sync().catch(function () {});
+      }, function (x) {
+        busy[1](false);
+        var m = { login: ['cur', 'pf_cur_bad'], taken: ['login', 'login_taken'], login_format: ['login', 'pf_login_bad'], weak: ['p1', 'pf_pw_short'], forbidden: ['p1', 'pf_pw_admin'] }[x.code] || ['cur', x.code === 'net' ? 'srv_net' : 'srv_script'];
+        var o = {}; o[m[0]] = t(m[1]); ae[1](o);
+      });
+    }
+    return h(Modal, { t: t, hid: 'pf-h', onClose: p.onClose },
+      h('span', { className: 'lor-eyebrow' }, t('app_full')),
+      h('h2', { className: 'lor-h', id: 'pf-h' }, t('nav_profile')),
+      h('section', { className: 'pf-sec' },
+        h(PhotoPicker, { t: t, id: 'pf-photo', name: nm[0] || u.name, value: av[0], onChange: av[1] }),
+        h(Field, { name: 'pf-name', label: t('pf_name'), required: true, value: nm[0], error: ne[0], onChange: nm[1], autoComplete: 'name' }),
+        u.role === 'employee' ? h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, [u.position, u.department].filter(Boolean).join(' · ') + ' — ' + t('pf_pos_hint')) : null,
+        h('div', { className: 'lor-modal-actions' }, h(Btn, { variant: 'primary', size: 'sm', onClick: savePersonal }, t('save')))),
+      h('section', { className: 'pf-sec' },
+        h('h3', { className: 'lor-h pf-sub' }, t('pf_acc_t')),
+        h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t(admin ? 'pf_acc_hint_admin' : 'pf_acc_hint')),
+        h('div', { className: 'lor-form-grid' },
+          h(Field, { name: 'pf-login', label: t('login'), value: lg[0], error: ae[0].login, onChange: lg[1], autoComplete: 'username' }),
+          admin ? h(Field, { name: 'pf-pw1', label: t('pf_pw_new'), type: 'password', value: p1[0], error: ae[0].p1, onChange: p1[1], autoComplete: 'new-password' }) : null,
+          admin ? h(Field, { name: 'pf-pw2', label: t('pf_pw_rep'), type: 'password', value: p2[0], error: ae[0].p2, onChange: p2[1], autoComplete: 'new-password' }) : null,
+          h(Field, { name: 'pf-cur', label: t('pf_pw_cur'), type: 'password', value: cur[0], error: ae[0].cur, onChange: cur[1], autoComplete: 'current-password' })),
+        h('div', { className: 'lor-modal-actions' }, h(Btn, { variant: 'secondary', size: 'sm', disabled: busy[0], onClick: saveAccount }, t('pf_acc_save')))));
+  }
+  /* the SOP manager edits someone's card: name, login, photo, position and department, a new password */
+  function UserEditModal(p) {
+    var t = p.t, u = p.u, emp = u.role === 'employee';
+    var f = useState({ name: u.name || '', login: u.login || '', position: u.position || '', department: u.department || '', avatar: u.avatar || null, password: '' }), v = f[0], er = useState({});
+    function set(k, x) { var o = Object.assign({}, f[0]); o[k] = x; f[1](o); }
+    function save() {
+      var e = {}, l = v.login.trim().toLowerCase(), n = v.name.trim();
+      if (n.length < 2 || n.length > 60) e.name = t('pf_name_bad');
+      if (!LOGIN_RE.test(l)) e.login = t('pf_login_bad');
+      else if (p.db.users.some(function (x) { return x.id !== u.id && String(x.login || '').toLowerCase() === l; })) e.login = t('login_taken');
+      if (v.password && v.password.length < 8) e.password = t('pf_pw_short');
+      er[1](e); if (Object.keys(e).length) return;
+      p.update(function (d) { d.users.forEach(function (x) {
+        if (x.id !== u.id) return;
+        x.name = n; x.login = l;
+        if (v.avatar) x.avatar = v.avatar; else delete x.avatar;
+        if (emp) { x.position = v.position; x.department = v.department; }
+        if (v.password) x.password = v.password;   // the server moves it into the account and drops it from the data
+      }); });
+      p.say(v.password ? tpl(t('ue_saved_pw'), { pw: v.password }) : t('saved'));
+      p.onClose();
+    }
+    return h(Modal, { t: t, hid: 'ue-h', onClose: p.onClose },
+      h('span', { className: 'lor-eyebrow' }, t('ue_eyebrow')),
+      h('h2', { className: 'lor-h', id: 'ue-h' }, u.name),
+      h(PhotoPicker, { t: t, id: 'ue-photo', name: v.name || u.name, value: v.avatar, onChange: function (x) { set('avatar', x); } }),
+      h('div', { className: 'lor-form-grid' },
+        h(Field, { name: 'ue-name', label: t('pf_name'), required: true, value: v.name, error: er[0].name, onChange: function (x) { set('name', x); } }),
+        h(Field, { name: 'ue-login', label: t('login'), required: true, value: v.login, error: er[0].login, onChange: function (x) { set('login', x); } }),
+        emp ? h(Field, { name: 'ue-pos', label: t('position'), value: v.position, options: withCur(STAFF_POS, u.position), onChange: function (x) { set('position', x); } }) : null,
+        emp ? h(Field, { name: 'ue-dep', label: t('department'), value: v.department, options: withCur(STAFF_DEP, u.department), onChange: function (x) { set('department', x); } }) : null,
+        h(Field, { name: 'ue-pw', label: t('ue_pw'), value: v.password, error: er[0].password, hint: t('ue_pw_hint'), onChange: function (x) { set('password', x); } })),
+      h('div', { className: 'lor-modal-actions' },
+        h(Btn, { variant: 'ghost', onClick: p.onClose }, t('cancel')),
+        h(Btn, { variant: 'primary', arrow: true, onClick: save }, t('save'))));
+  }
   function Burger() { return h('svg', { width: 20, height: 20, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round', 'aria-hidden': true }, h('path', { d: 'M4 7h16M4 12h16M4 17h16' })); }
 
   function Toast(p) {
@@ -5228,7 +5360,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
               return h('li', { key: n.id }, h('button', { type: 'button', className: cx('notif-item', !n.read && 'is-new'), onClick: function () { setOpen(false); p.onNotif(n); } },
                 h('span', { className: 'notif-dot' }), h('span', null, p.fmtNotif ? p.fmtNotif(n) : n.text, h('small', null, fmt(n.at, t)))));
             })) : h('p', { className: 'notif-empty' }, t('no_notif'))) : null) : null,
-        h(UserMenu, { t: t, lang: p.lang, user: u, rank: p.rank, isNew: p.medalNew, onSeen: p.onMedalSeen, hint: p.hint, theme: p.theme, subtitle: p.subtitle || (u.role === 'admin' ? u.position : t('s_' + u.status)), onPath: p.onPath, links: p.links, onTerms: p.onTerms, onLogout: p.onLogout })),
+        h(UserMenu, { t: t, lang: p.lang, user: u, rank: p.rank, isNew: p.medalNew, onSeen: p.onMedalSeen, hint: p.hint, theme: p.theme, subtitle: p.subtitle || (u.role === 'admin' ? u.position : t('s_' + u.status)), onPath: p.onPath, links: p.links, onTerms: p.onTerms, onLogout: p.onLogout, onProfile: p.onProfile })),
       navLinks('app-subnav'));
   }
 
@@ -5695,7 +5827,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var issuedN = assetsOf(db, u.id).filter(function (a) { return a.status === 'issued'; }).length;
     var links = filled ? [{ key: 'drill', label: t('dr_title'), onClick: function () { go({ name: 'drill' }); } }, { key: 'assets', label: t('as_my_title'), count: issuedN, onClick: function () { go({ name: 'assets' }); } }, { key: 'ideas', label: t('ini_my'), onClick: function () { go({ name: 'ideas' }); } }, { key: 'report', label: t('mr_nav'), onClick: function () { go({ name: 'report' }); } }, { key: 'help', label: t('nav_help'), onClick: function () { go({ name: 'help' }); } }] : null;
     return h(F, null,
-      h(Header, { t: t, lang: p.lang, setLang: p.setLang, user: u, notifs: mine, onNotif: openNotif, onReadAll: function () { p.update(function (d) { d.notifications.forEach(function (n) { if (n.userId === u.id) n.read = true; }); }); }, onLogout: p.logout, onMenu: filled ? function () { dr[1](!dr[0]); } : null,
+      h(Header, { t: t, lang: p.lang, setLang: p.setLang, onProfile: p.openProfile, user: u, notifs: mine, onNotif: openNotif, onReadAll: function () { p.update(function (d) { d.notifications.forEach(function (n) { if (n.userId === u.id) n.read = true; }); }); }, onLogout: p.logout, onMenu: filled ? function () { dr[1](!dr[0]); } : null,
         nav: nav, links: links, hint: filled ? hint : null, theme: theme, onSearch: filled ? function () { pal[1](true); } : null, onHelp: filled ? function () { go({ name: 'help' }); } : null, medalNew: !!u.medalNew, onMedalSeen: function () { p.update(function (d) { d.users.forEach(function (x) { if (x.id === u.id) x.medalNew = false; }); }); }, rank: filled ? rankOf(db, u) : null, fmtNotif: function (n) { return notifText(n, db, p.lang, t); }, onPath: filled ? function () { go({ name: 'path' }); } : null, onTerms: p.showTerms,
         extra: filled ? h(F, null, h(TodayChip, { db: db, user: u, t: t, onClick: function () { go({ name: 'path' }); } }), h(IniButton, { t: t, onClick: function () { ini[1](true); } })) : null }),
       h('div', { className: cx('app-body', !filled && 'no-side') },
@@ -5759,7 +5891,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       h(Btn, { variant: 'ghost', size: 'sm', onClick: function () { p.update(function (d) { var x = close(d); x.verdict = 'declined'; notify(d, u.id, t('n_access_no')); }); } }, t('decline')),
       h(Btn, { variant: 'secondary', size: 'sm', onClick: function () { p.update(function (d) { var x = close(d); x.verdict = 'approved'; d.users.forEach(function (y) { if (y.id === u.id) y.status = 'official'; }); notify(d, u.id, t('n_access_ok')); }); p.say(t('approve') + ' ✓'); } }, t('approve')));
     return h('li', { className: 'lor-req-item inbox-item' },
-      h(Av, { name: u.name }),
+      h(Av, { name: u.name, src: u.avatar }),
       h('div', { className: 'lor-req-main' },
         h('div', { className: 'lor-req-top' }, r.unread ? h('span', { className: 'lor-unread', 'aria-label': 'new' }) : null, h('b', null, u.name), (function () { if (r.type === 'level') { var k = rankOf(db, u); return h(LevelBadge, { t: t, small: true, name: lvlShort(k.level, p.lang), n: k.li }); } return h(Badge, { status: r.type === 'exam' ? 'exam-ready' : u.status, lang: p.lang }); })()),
         h('span', { className: 'lor-sm lor-muted' }, u.position + (l ? ' · ' + l.sectionTitle + ' · ' + l.title : '') + ' · ' + fmt(r.at, t)),
@@ -5817,7 +5949,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           var dots = all.filter(function (l) { return !l.officialOnly || u.status === 'official'; }).map(function (l) { var s = lessonStatus(db, u, l.id); return s === 'passed' ? 'p' : s === 'failed' ? 'f' : s === 'exam-ready' ? 'r' : ''; });
           return h(F, { key: u.id },
             h('tr', { className: 'row-click', onClick: function () { ex[1](open ? null : u.id); }, 'aria-expanded': open },
-              h('td', null, h('div', { className: 'lor-emp' }, h(Av, { name: u.name, size: 32 }), h('span', null, u.name, h('small', null, u.position + ' · ID ' + u.id)))),
+              h('td', null, h('div', { className: 'lor-emp' }, h(Av, { name: u.name, src: u.avatar, size: 32 }), h('span', null, u.name, h('small', null, u.position + ' · ID ' + u.id)))),
               (function () { var k = rankOf(db, u); return h('td', null, h(LevelBadge, { t: t, small: true, name: lvlShort(k.level, p.lang), n: k.li }), h('div', { className: 'lor-sm lor-muted', style: { marginTop: 4 } }, k.xp + ' XP')); })(),
               h('td', null, h(Badge, { status: u.status, lang: p.lang }), !u.profileComplete ? h('div', { className: 'lor-sm lor-muted', style: { marginTop: 4 } }, t('profile') + ': ' + t('not_filled')) : null),
               h('td', null, cur ? h(F, null, cur.title, h('div', { style: { marginTop: 4 } }, h(Badge, { status: cur.status, lang: p.lang }))) : '—'),
@@ -5942,7 +6074,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   function LeadersBox(p) {
     var t = p.t, db = p.db, leaders = leadersOf(db);
     var blank = function () { return { post: 'ceo', name: '', login: '', password: genPw() }; };
-    var f = useState(blank), form = f[0], er = useState({}), made = useState(null), pw = useState({}), del = useState(null);
+    var f = useState(blank), form = f[0], er = useState({}), made = useState(null), pw = useState({}), del = useState(null), ed = useState(null);
     function set(k, v) { var o = Object.assign({}, form); o[k] = v; f[1](o); }
     function create() {
       var e = {}; ['name', 'login', 'password'].forEach(function (k) { if (!String(form[k]).trim()) e[k] = t('fill_required'); });
@@ -5964,7 +6096,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
             h('td', null, t('ini_to_' + u.post)),
             h('td', null, u.name),
             h('td', null, h('code', null, u.login), pw[0][u.id] ? h('div', { className: 'lor-sm made' }, t('new_pw') + ': ', h('code', null, pw[0][u.id])) : null),
-            h('td', { className: 'nowrap' }, h(Btn, { variant: 'ghost', size: 'sm', onClick: function () { resetPw(u); } }, t('reset_pw')),
+            h('td', { className: 'nowrap' }, h(Btn, { variant: 'ghost', size: 'sm', onClick: function () { ed[1](u.id); } }, t('ue_edit')), h(Btn, { variant: 'ghost', size: 'sm', onClick: function () { resetPw(u); } }, t('reset_pw')),
               del[0] === u.id ? h(F, null, ' ', h(Btn, { variant: 'outline', size: 'sm', onClick: function () { remove(u); } }, t('ld_del_yes')), h(Btn, { variant: 'ghost', size: 'sm', onClick: function () { del[1](null); } }, t('cancel')))
                 : h('button', { type: 'button', className: 'app-link danger', onClick: function () { del[1](u.id); } }, t('remove'))));
         })))) : h('p', { className: 'lor-sm lor-muted' }, t('ld_empty')),
@@ -5975,14 +6107,15 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         h(Field, { name: 'ld-pw', label: t('password'), required: true, value: form.password, error: er[0].password, onChange: function (v) { set('password', v); } })),
       h('div', { className: 'box-row' },
         made[0] ? h('span', { className: 'lor-sm made' }, '✓ ' + t('created') + ': ', h('code', null, made[0].login + ' / ' + made[0].password)) : h('span'),
-        h(Btn, { variant: 'secondary', arrow: true, onClick: create }, t('ld_add'))));
+        h(Btn, { variant: 'secondary', arrow: true, onClick: create }, t('ld_add'))),
+      ed[0] && userOf(db, ed[0]).id ? h(UserEditModal, Object.assign({}, p, { key: 'le' + ed[0], u: userOf(db, ed[0]), onClose: function () { ed[1](null); } })) : null);
   }
 
   function Staff(p) {
     var t = p.t, db = p.db;
     var blank = function () { return { name: '', position: 'Omborchi', department: 'Logistika bo‘limi', login: '', password: genPw() }; };
     var f = useState(blank), form = f[0], er = useState({}), pw = useState({}), made = useState(null);
-    var op = useState(null), flt = useState('all');
+    var op = useState(null), flt = useState('all'), ed = useState(null);
     function set(k, v) { var o = Object.assign({}, form); o[k] = v; f[1](o); }
     function create() {
       var e = {}; ['name', 'login', 'password'].forEach(function (k) { if (!String(form[k]).trim()) e[k] = t('fill_required'); });
@@ -6004,7 +6137,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       var m = empMood(db, u.id), isOpen = open === u.id;
       return h(F, { key: u.id },
         h('tr', { className: cx(isOpen && 'is-open') },
-          h('td', null, h('div', { className: 'lor-emp' }, h(Av, { name: u.name, size: 32 }), h('span', null, u.name, h('small', null, u.position + ' · ' + u.department))),
+          h('td', null, h('div', { className: 'lor-emp' }, h(Av, { name: u.name, src: u.avatar, size: 32 }), h('span', null, u.name, h('small', null, u.position + ' · ' + u.department))),
             (function () { var xs = xtasksOf(db, u.id), act = xs.filter(function (x) { return x.status !== 'done'; }).length, rev = xs.filter(function (x) { return x.status === 'review'; }).length;
               return h('button', { type: 'button', className: cx('xt-staff-b', rev && 'has-rev'), 'aria-expanded': isOpen, onClick: function () { op[1](u.id); setTimeout(function () { var el = document.getElementById('xt-' + u.id); if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, 60); } },
                 h(CondIco, { type: 'xtask', size: 13 }), act ? tpl(t('xt_staff_n'), { n: act }) : t('xt_staff_add'), rev ? h('span', { className: 'app-navcount' }, rev) : null); })()),
@@ -6027,7 +6160,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
               h('div', { className: 'lor-sm lor-muted', style: { marginTop: 4 } }, u.assetsDeclaredAt ? '✓ ' + t('as_declared_short') : '○ ' + t('not_filled')));
           })(),
           h('td', { className: 'nowrap' }, u.termsAcceptedAt ? h('span', { className: 'lor-sm' }, '✓ ' + fmtDate(u.termsAcceptedAt)) : h('span', { className: 'lor-muted' }, '○')),
-          h('td', null, h(Btn, { variant: 'ghost', size: 'sm', onClick: function () { var np = genPw(); p.update(function (d) { d.users.forEach(function (x) { if (x.id === u.id) x.password = np; }); }); var o = Object.assign({}, pw[0]); o[u.id] = np; pw[1](o); } }, t('reset_pw')))),
+          h('td', { className: 'nowrap' }, h(Btn, { variant: 'ghost', size: 'sm', onClick: function () { ed[1](u.id); } }, t('ue_edit')),
+            h(Btn, { variant: 'ghost', size: 'sm', onClick: function () { var np = genPw(); p.update(function (d) { d.users.forEach(function (x) { if (x.id === u.id) x.password = np; }); }); var o = Object.assign({}, pw[0]); o[u.id] = np; pw[1](o); } }, t('reset_pw')))),
         isOpen ? h('tr', { className: 'sp-row' }, h('td', { colSpan: 10 },
           h('div', { className: 'sp-detail' },
             h(XtPanel, Object.assign({}, p, { u: u, key: 'xtp' + u.id })),
@@ -6057,8 +6191,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         h('h2', { className: 'lor-h' }, t('new_emp')),
         h('div', { className: 'staff-form' },
           h(Field, { name: 'n-name', label: t('fio'), required: true, value: form.name, error: er[0].name, onChange: function (v) { set('name', v); }, placeholder: 'Ism Familiya' }),
-          h(Field, { name: 'n-pos', label: t('position'), value: form.position, onChange: function (v) { set('position', v); }, options: ['Omborchi', 'Mijozlar menejeri', 'Logistika menejeri', 'Bojxona deklaranti', 'Ombor mudiri'] }),
-          h(Field, { name: 'n-dep', label: t('department'), value: form.department, onChange: function (v) { set('department', v); }, options: ['Logistika bo‘limi', 'Bojxona bo‘limi', 'Savdo bo‘limi', 'Ombor (Yiwu)', 'Ombor (Zhongshan)'] }),
+          h(Field, { name: 'n-pos', label: t('position'), value: form.position, onChange: function (v) { set('position', v); }, options: STAFF_POS }),
+          h(Field, { name: 'n-dep', label: t('department'), value: form.department, onChange: function (v) { set('department', v); }, options: STAFF_DEP }),
           h(Field, { name: 'n-login', label: t('login'), required: true, value: form.login, error: er[0].login, onChange: function (v) { set('login', v); }, placeholder: 'i.familiya' }),
           h(Field, { name: 'n-pw', label: t('password'), required: true, value: form.password, error: er[0].password, onChange: function (v) { set('password', v); } })),
         h('div', { className: 'box-row' },
@@ -6079,7 +6213,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
             h('thead', null, h('tr', null, [t('th_emp'), t('login'), t('trk_col'), t('level'), t('th_status'), t('sp_col'), t('profile'), t('as_col'), t('th_terms'), ''].map(function (x, i) { return h('th', { key: i }, x); }))),
             h('tbody', null, g.list.map(row)))));
       }),
-      groups.length ? null : h('section', { className: 'box' }, h('p', { className: 'lor-muted', style: { margin: 0 } }, t('sp_empty'))));
+      groups.length ? null : h('section', { className: 'box' }, h('p', { className: 'lor-muted', style: { margin: 0 } }, t('sp_empty'))),
+      ed[0] && userOf(db, ed[0]).id ? h(UserEditModal, Object.assign({}, p, { key: 'ue' + ed[0], u: userOf(db, ed[0]), onClose: function () { ed[1](null); } })) : null);
   }
 
   /* ---------------- admin shell ---------------- */
@@ -6102,7 +6237,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       : route.name === 'quality' ? h(QualityAdmin, Object.assign({}, q, { tab: route.tab }))
       : route.name === 'help' ? h(HelpPage, Object.assign({}, q, { go: go, hint: hint, theme: theme, onTour: function () { tour[1](true); } })) : h(Inbox, Object.assign({}, q, { tab: route.tab }));
     return h(F, null,
-      h(Header, { t: t, lang: p.lang, setLang: p.setLang, user: p.user, nav: nav, wide: true, onLogout: p.logout, onTerms: p.showTerms,
+      h(Header, { t: t, lang: p.lang, setLang: p.setLang, onProfile: p.openProfile, user: p.user, nav: nav, wide: true, onLogout: p.logout, onTerms: p.showTerms,
         hint: hint, theme: theme, onSearch: function () { pal[1](true); }, onHelp: function () { go({ name: 'help' }); }, links: [{ key: 'help', label: t('nav_help'), onClick: function () { go({ name: 'help' }); } }],
         notifs: db.notifications.filter(function (n) { return n.userId === p.user.id; }), fmtNotif: function (n) { return notifText(n, db, p.lang, t); },
         onReadAll: function () { p.update(function (d) { d.notifications.forEach(function (n) { if (n.userId === p.user.id) n.read = true; }); }); },
@@ -6120,7 +6255,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var only = function (x) { return iniTo(x).indexOf(u.post) >= 0; };
     var nNew = (db.initiatives || []).filter(function (x) { return only(x) && x.status === 'new'; }).length;
     return h(F, null,
-      h(Header, { t: t, lang: p.lang, setLang: p.setLang, user: u, wide: true, onLogout: p.logout, onTerms: p.showTerms, theme: theme,
+      h(Header, { t: t, lang: p.lang, setLang: p.setLang, onProfile: p.openProfile, user: u, wide: true, onLogout: p.logout, onTerms: p.showTerms, theme: theme,
         subtitle: INI_TO.indexOf(u.post) >= 0 ? t('ini_to_' + u.post) : u.position,
         nav: [{ key: 'ideas', label: t('fb_tab_ini'), count: nNew, active: true, onClick: function () { window.scrollTo(0, 0); } }],
         notifs: db.notifications.filter(function (n) { return n.userId === u.id; }), fmtNotif: function (n) { return notifText(n, db, p.lang, t); },
@@ -6211,7 +6346,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   function App() {
     var s = useDB(), db = s[0], update = s[1];
     var lang = db.lang || 'uz', t0 = T(lang), t = function (k) { return t0(k === 'ai_unavail' ? 'srv_ai_unavail' : k); };
-    var ts = useState(null), toast = ts[0], sampler = useSampler(), tm = useState(false);
+    var ts = useState(null), toast = ts[0], sampler = useSampler(), tm = useState(false), pf = useState(false);
     useEffect(function () { if (!toast) return; var id = setTimeout(function () { ts[1](null); }, 3600); return function () { clearTimeout(id); }; }, [toast]);
     useEffect(function () { document.documentElement.lang = lang; }, [lang]);
     var user = db.users.filter(function (u) { return u.id === db.session; })[0];
@@ -6227,7 +6362,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       setLang: function (l) { update(function (d) { d.lang = l; }); },
       say: function (msg) { ts[1]({ msg: msg, k: Date.now() }); },
       logout: function () { ts[1](null); SV.logout(); },
-      sampler: sampler, showTerms: function () { tm[1](true); }
+      sampler: sampler, showTerms: function () { tm[1](true); }, openProfile: function () { pf[1](true); }
     };
     var view = !user ? h(Login, p)
       : needTpl ? h('div', { className: 'app-wrap' }, h('p', { className: 'lor-muted' }, t('srv_preparing')))
@@ -6235,6 +6370,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       : user.role === 'leader' ? h(LeaderApp, Object.assign({ key: 'l' + user.id }, p))
       : h(EmployeeApp, Object.assign({ key: 'e' + user.id }, p));
     return h(F, null, view, tm[0] ? h(TermsModal, { t: t, lang: lang, acceptedAt: user && user.termsAcceptedAt, onClose: function () { tm[1](false); } }) : null,
+      user && pf[0] ? h(ProfileModal, Object.assign({}, p, { key: 'pf' + user.id, onClose: function () { pf[1](false); } })) : null,
       user ? h(SyncChip, { t: t, admin: user.role === 'admin', say: p.say }) : null, h(Toast, { toast: toast }));
   }
 

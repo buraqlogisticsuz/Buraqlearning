@@ -284,6 +284,40 @@ test('идеи: адресат — CEO, Project Manager или руководи�
   assert.equal(g.state().initiatives.find(x => x.id === 'i5').text, 'Batafsil matn i5');
 });
 
+test('профиль: своё имя и фото — сам, логин и пароль — с текущим паролем; фото видно коллегам и остаётся в данных', () => {
+  const { g, A, D, Z, login } = platform();
+  const jpg = 'data:image/jpeg;base64,' + Buffer.alloc(6000, 7).toString('base64');
+  const ok = D({ action: 'patch', ops: [
+    { op: 'set', path: ['users', { id: 10427 }, 'name'], value: 'Dilnoza Karimova-Aliyeva' },
+    { op: 'set', path: ['users', { id: 10427 }, 'avatar'], value: jpg },
+    /* 2 */ { op: 'set', path: ['users', { id: 10427 }, 'name'], value: ' ' },
+    /* 3 */ { op: 'set', path: ['users', { id: 10427 }, 'avatar'], value: 'data:text/html;base64,PHNjcmlwdD4=' },
+    /* 4 */ { op: 'set', path: ['users', { id: 10427 }, 'avatar'], value: 'data:image/jpeg;base64,' + 'A'.repeat(20000) },
+    /* 5 */ { op: 'set', path: ['users', { id: 10391 }, 'name'], value: 'Boshqa' },
+    /* 6 */ { op: 'set', path: ['users', { id: 10427 }, 'login'], value: 'dilnoza' }] });
+  assert.deepEqual(ok.rejected.map(x => x.i), [2, 3, 4, 5, 6]);
+  const me = g.state().users.find(u => u.id === 10427);
+  assert.equal(me.name, 'Dilnoza Karimova-Aliyeva'); assert.equal(me.avatar, jpg);            // в данных, не lmsfile:
+  const col = Z({ action: 'load' }).state.users.find(u => u.id === 10427);
+  assert.equal(col.avatar, jpg); assert.equal(col.login, undefined);
+  assert.equal(D({ action: 'patch', ops: [{ op: 'del', path: ['users', { id: 10427 }, 'avatar'] }] }).applied, 1);
+
+  // логин — сам, с текущим паролем: свободный и по формату; пароль — только SOP-менеджер
+  assert.equal(D({ action: 'account', old: 'neto‘g‘ri', login: 'dilnoza' }).code, 'login');
+  assert.equal(D({ action: 'account', old: 'pw-dilnoza', login: 'a.yusupova' }).code, 'taken');
+  assert.equal(D({ action: 'account', old: 'pw-dilnoza', login: 'Ди' }).code, 'login_format');
+  assert.equal(D({ action: 'account', old: 'pw-dilnoza', password: 'yangi-parol-1' }).code, 'forbidden');
+  assert.equal(D({ action: 'account', old: 'pw-dilnoza' }).code, 'bad');
+  const D2 = login('d.karimova', 'pw-dilnoza');                                                 // второе устройство
+  const r = D({ action: 'account', old: 'pw-dilnoza', login: 'Dilnoza.K' });
+  assert.equal(r.ok, true, JSON.stringify(r)); assert.equal(r.login, 'dilnoza.k');
+  assert.equal(g.state().users.find(u => u.id === 10427).login, 'dilnoza.k');
+  assert.equal(g.post({ action: 'login', login: 'd.karimova', password: 'pw-dilnoza' }).code, 'login');
+  assert.equal(g.post({ action: 'login', login: 'dilnoza.k', password: 'pw-dilnoza' }).ok, true);
+  assert.equal(D2({ action: 'load' }).ok, true);                                                // логин сменился — входы те же
+  assert.equal(A({ action: 'account', old: 'xato', login: 'sop' }).code, 'login');
+});
+
 test('прогресс урока: сотрудник ставит «читаю / вопрос / готов к тесту», балл и итог — нет', () => {
   const { g, D, Z } = platform();
   const ok = D({ action: 'patch', ops: [
@@ -365,7 +399,7 @@ const pickN = n => ({ userId: n.userId, kind: n.kind, route: n.route, err: n.err
 test('since: та же версия — без данных; после правки — новое состояние', () => {
   const { D, A } = platform();
   const v = D({ action: 'load' });
-  assert.deepEqual(D({ action: 'since', rev: v.rev }), { ok: true, v: 5, ai: false, rev: v.rev, same: true });
+  assert.deepEqual(D({ action: 'since', rev: v.rev }), { ok: true, v: 6, ai: false, rev: v.rev, same: true });
   A({ action: 'patch', ops: [{ op: 'set', path: ['notifications', { id: 9 }], value: { id: 9, userId: 10427, text: 'yangi' }, after: null }] });
   const n = D({ action: 'since', rev: v.rev });
   assert.equal(n.rev, v.rev + 1); assert.equal(n.state.notifications[0].text, 'yangi');
@@ -462,21 +496,25 @@ test('ИИ: дневной лимит на человека и другая мо
   assert.equal(g.calls[0].body.fallbacks, undefined); assert.equal(g.calls[0].opts.headers['anthropic-beta'], undefined);
 });
 
-test('пароли: смена своим паролем закрывает другие входы; сброс SOP-менеджером выдаёт новый один раз', () => {
-  const { g, D, A, login } = platform();
-  const other = login('d.karimova', 'pw-dilnoza');
-  assert.equal(D({ action: 'password', old: 'wrong', password: 'new-pass-1' }).code, 'login');
-  assert.equal(D({ action: 'password', old: 'pw-dilnoza', password: 'short' }).code, 'weak');
-  assert.equal(D({ action: 'password', old: 'pw-dilnoza', password: 'new-pass-1' }).ok, true);
-  assert.equal(D({ action: 'load' }).ok, true);
-  assert.equal(other({ action: 'load' }).code, 'auth');
-  login('d.karimova', 'new-pass-1');
+test('пароли меняет только SOP-менеджер: свой — с текущим паролем, сотруднику — сброс или новый в карточке', () => {
+  const { g, D, A, adm, login } = platform();
+  assert.equal(D({ action: 'password', old: 'pw-dilnoza', password: 'new-pass-1' }).code, 'forbidden');
+  const other = login(adm.login, adm.password);
+  assert.equal(A({ action: 'password', old: 'wrong', password: 'new-pass-1' }).code, 'login');
+  assert.equal(A({ action: 'password', old: adm.password, password: 'short' }).code, 'weak');
+  assert.equal(A({ action: 'account', old: adm.password, password: 'new-pass-1' }).ok, true);
+  assert.equal(A({ action: 'load' }).ok, true);
+  assert.equal(other({ action: 'load' }).code, 'auth');                                         // другие входы закрыты
+  login(adm.login, 'new-pass-1');
   assert.equal(D({ action: 'resetPassword', userId: 10391 }).code, 'forbidden');
   const r = A({ action: 'resetPassword', userId: 10427 });
   assert.match(r.password, /^[a-z2-9]{10}$/);
   assert.equal(D({ action: 'load' }).code, 'auth');
   login('d.karimova', r.password);
-  assert.ok(!JSON.stringify(g.state()).includes(r.password));
+  // новый пароль сотруднику — в его карточке; в данных его нет
+  assert.deepEqual(A({ action: 'patch', ops: [{ op: 'set', path: ['users', { id: 10391 }, 'password'], value: 'aziza-yangi-1' }] }).rejected, []);
+  login('a.yusupova', 'aziza-yangi-1');
+  assert.ok(!JSON.stringify(g.state()).includes(r.password) && !JSON.stringify(g.state()).includes('aziza-yangi-1'));
 });
 
 test('занятый сервер отвечает «повторите», данные не портятся', () => {

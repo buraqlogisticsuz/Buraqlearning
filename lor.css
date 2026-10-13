@@ -3034,3 +3034,13 @@ button.mc-cell.at-cell:hover { outline: 2px solid var(--blue-text); outline-offs
 .sync-chip { position: fixed; left: var(--space-4); bottom: var(--space-4); z-index: 60; max-width: min(440px, calc(100vw - 32px)); box-sizing: border-box; display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); background: var(--surface-raised); color: var(--ink); border: var(--hairline) solid var(--line); border-left: 3px solid var(--red); box-shadow: var(--shadow-lg); font-size: 13px; line-height: 18px; }
 .cms-import { margin-top: var(--space-4); display: grid; gap: var(--space-2); justify-items: start; }
 .lor-video-frame.is-embed iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+
+/* profile: photo, name, login */
+.av-img { object-fit: cover; padding: 0; }
+.pf-modal { max-width: 560px; max-height: calc(100vh - 32px); overflow-y: auto; gap: 14px; }
+.pf-modal .lor-h { margin: 0; }
+.pf-sec { display: flex; flex-direction: column; gap: 12px; padding-top: 14px; border-top: var(--hairline) solid var(--line); }
+.pf-sub { font-size: 18px; }
+.pf-photo { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+.pf-photo-act { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+
