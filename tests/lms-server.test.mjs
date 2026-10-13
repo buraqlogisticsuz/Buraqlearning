@@ -399,7 +399,7 @@ const pickN = n => ({ userId: n.userId, kind: n.kind, route: n.route, err: n.err
 test('since: та же версия — без данных; после правки — новое состояние', () => {
   const { D, A } = platform();
   const v = D({ action: 'load' });
-  assert.deepEqual(D({ action: 'since', rev: v.rev }), { ok: true, v: 7, ai: false, rev: v.rev, same: true });
+  assert.deepEqual(D({ action: 'since', rev: v.rev }), { ok: true, v: 8, ai: false, rev: v.rev, same: true });
   A({ action: 'patch', ops: [{ op: 'set', path: ['notifications', { id: 9 }], value: { id: 9, userId: 10427, text: 'yangi' }, after: null }] });
   const n = D({ action: 'since', rev: v.rev });
   assert.equal(n.rev, v.rev + 1); assert.equal(n.state.notifications[0].text, 'yangi');
@@ -532,6 +532,22 @@ test('копия данных: SOP-менеджер скачивает данн�
   assert.equal(f.name, 'pasport.pdf'); assert.equal('data:application/pdf;base64,' + f.data, pdf);
   assert.ok(!JSON.stringify(x).includes('faqat CEO uchun'));
   assert.equal(x.state.course.sections.length, 2);
+});
+
+test('«Kun hikmati»: цитаты SOP-менеджера видны без входа — только они; сотрудник список не правит', () => {
+  assert.deepEqual(loadLms({ iter: 50 }).post({ action: 'wisdom' }), { ok: true, std: true, list: [] }, 'сервер ещё не настроен');
+  const { g, A, D } = platform();
+  assert.deepEqual(g.post({ action: 'wisdom' }), { ok: true, std: true, list: [] });
+  const long = 'x'.repeat(500);
+  assert.equal(A({ action: 'patch', ops: [{ op: 'set', path: ['settings', 'wisdom'], value: { std: false, list: [
+    { id: 'w1', text: ' Birgalikda muvaffaqiyatga! ', by: 'CEO', at: 5 }, { id: 'w2', text: '   ' }, { id: 'w3', text: long, by: long }, 'buzuq'] } }] }).rejected.length, 0);
+  const w = g.post({ action: 'wisdom' });
+  assert.equal(w.ok, true); assert.equal(w.std, false);
+  assert.deepEqual(w.list[0], { text: 'Birgalikda muvaffaqiyatga!', by: 'CEO' }, 'только текст и автор');
+  assert.equal(w.list.length, 2, 'пустые и битые — нет');
+  assert.equal(w.list[1].text.length, 240); assert.equal(w.list[1].by.length, 80);
+  assert.ok(!JSON.stringify(w).includes('Dilnoza'), 'больше ничего из данных');
+  assert.equal(D({ action: 'patch', ops: [{ op: 'set', path: ['settings', 'wisdom', 'list'], value: [] }] }).rejected.length, 1, 'сотрудник — нет');
 });
 
 test('занятый сервер отвечает «повторите», данные не портятся', () => {

@@ -422,6 +422,36 @@ try {
   assert.deepEqual(await rejected(A), [], 'сервер не отклонил обновление');
   step('Excel туда и обратно: таблица скачана, по ID обновлён 1, добавлен 1, занятый логин отклонён');
 
+  // ---------- страница входа: маршрут, приветствие, «Kun hikmati»; свои цитаты SOP-менеджера — из «Kontent» ----------
+  const R = await device('вход по-русски');
+  assert.match(await R.innerText('.ir-pt.is-from'), /^(YIWU|ZHONGSHAN|ISTANBUL|MOSKVA)$/, 'маршрут — из списка городов');
+  assert.match(await R.innerText('.hello'), /^Xayrli (tong|kun|kech)!$/);
+  await R.waitForSelector('.wz blockquote');
+  assert.equal(await R.locator('.wz-tr').count(), 0, 'по-узбекски — без перевода');
+  await R.getByRole('button', { name: 'RU', exact: true }).first().click(); await R.waitForTimeout(300);
+  assert.ok((await R.innerText('.wz-tr')).length > 5, 'по-русски под пословицей — её смысл');
+  assert.match(await R.innerText('.hello'), /^(Доброе утро|Добрый день|Добрый вечер)!$/);
+  await R.click('.wz-next'); await R.waitForTimeout(300);
+  assert.ok(await R.locator('.wz blockquote').count(), 'стрелка — следующая');
+  await R.context().close();
+  await nav(A, 'cms');
+  await A.getByRole('tab', { name: /Kun hikmati/ }).click(); await A.waitForTimeout(300);
+  await A.fill('#f-wz-text', 'Birgalikda har qanday yukni yetkazamiz.'); await A.fill('#f-wz-by', 'Kompaniya rahbari');
+  await click(A, 'Hikmat qo‘shish');
+  await A.locator('.wz-admin label.check input').uncheck(); await settle(A);
+  await shot(A, '16-wisdom-admin');
+  const wz = srv.g.state().settings.wisdom;
+  assert.equal(wz.std, false); assert.equal(wz.list[0].text, 'Birgalikda har qanday yukni yetkazamiz.');
+  const W = await device('вход: своя цитата');
+  await W.waitForSelector('.wz blockquote');
+  assert.equal(await W.innerText('.wz blockquote'), 'Birgalikda har qanday yukni yetkazamiz.', 'без стандартных — только своя');
+  assert.equal(await W.innerText('.wz figcaption'), '— Kompaniya rahbari');
+  assert.equal(await W.locator('.wz-next').count(), 0, 'одна цитата — без стрелки');
+  await W.waitForTimeout(5200); await shot(W, '17-login-intro');
+  await W.context().close();
+  assert.deepEqual(await rejected(A), [], 'сервер принял «Kun hikmati»');
+  step('страница входа: маршрут, приветствие, «Kun hikmati» с переводом; своя цитата SOP-менеджера видна до входа');
+
   // ---------- демо больше нет: ?demo=1 — тот же вход на сервер; без адреса сервера — «Server ulanmagan» ----------
   const D = await device('бывшее демо', '?demo=1');
   assert.equal(await D.locator('.demo-box').count(), 0, 'демо-входов нет');

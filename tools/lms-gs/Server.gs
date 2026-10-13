@@ -20,11 +20,12 @@
  *
  * Запрос — POST с JSON { action, token, … }, ответ — JSON { ok, … } или { ok: false, code, error }.
  */
-var LMS_VERSION = 7;           // 2: файлы — отдельно на Диске, действие file; 3: ИИ через Claude API (действие ai);
+var LMS_VERSION = 8;           // 2: файлы — отдельно на Диске, действие file; 3: ИИ через Claude API (действие ai);
                                // 4: адресаты идей — CEO, Project Manager, руководитель компании (свой вход, role 'leader');
                                // 5: у идеи несколько адресатов (to — список), repliedBy — кто ответил;
                                // 6: свой профиль — имя и фото, смена логина и пароля (действие account);
                                // 7: копия данных у SOP-менеджера (действие export), уведомления в Telegram (server/)
+                               // 8: «Kun hikmati» на странице входа — свои цитаты SOP-менеджера (действие wisdom, без входа)
 var PBKDF2_ITER = 10000;          // пароль хранится только как PBKDF2-SHA256 с солью
 var SESSION_DAYS = 30;            // вход на устройстве живёт 30 дней с последнего запроса
 var FAIL_MAX = 5, FAIL_LOCK_MIN = 15;  // 5 неверных паролей подряд — логин закрыт на 15 минут
@@ -43,6 +44,7 @@ var AI_MAX_CHARS = 200000;        // длина запроса (текст ст�
 // модели, у которых Claude API сам повторяет отказанный запрос на запасной модели (fallbacks: "default")
 var AI_FALLBACK = ['claude-opus-5-5', 'claude-opus-5', 'claude-fable-5-1', 'claude-sonnet-5-5'];
 var DAY_MS = 864e5;
+var WISDOM_MAX = 60, WISDOM_TEXT = 240, WISDOM_BY = 80;   // «Kun hikmati»: цитат SOP-менеджера и их длина
 // идею сотрудник отправляет одному или нескольким адресатам (to — список); у адресата свой вход (role 'leader',
 // post — кто он) и только эти идеи; ответ общий, repliedBy — кто из адресатов ответил последним
 var INI_TO = ['ceo', 'pm', 'boss'];
@@ -67,6 +69,7 @@ function route_(req) {
   var a = String(req.action || '');
   if (a === 'ping') return { ok: true, v: LMS_VERSION, ready: !!props_().getProperty('LMS_STATE') };
   if (a === 'login') return login_(req);
+  if (a === 'wisdom') return wisdom_();
   var s = session_(req.token);
   if (a === 'logout') { props_().deleteProperty(s.key); return { ok: true }; }
   if (a === 'since') {
@@ -166,6 +169,15 @@ function writeState_(st) {
   props_().setProperty('LMS_REV', String(st.rev));
   // сервер на Node (server/telegram.mjs): новые уведомления — в Telegram; в Apps Script этой функции нет
   if (typeof LMS_AFTER_WRITE === 'function') LMS_AFTER_WRITE(st);
+}
+/* «Kun hikmati» на странице входа — её видят и до входа, поэтому отдаётся только этот список:
+   settings.wisdom = { std: показывать ли узбекские пословицы страницы, list: [{ text, by }] } — правит SOP-менеджер в «Kontent» */
+function wisdom_() {
+  if (!props_().getProperty('LMS_STATE')) return { ok: true, std: true, list: [] };
+  var w = (readState_().settings || {}).wisdom || {};
+  var list = (Array.isArray(w.list) ? w.list : []).filter(function (x) { return x && typeof x.text === 'string' && x.text.trim(); })
+    .slice(0, WISDOM_MAX).map(function (x) { return { text: x.text.trim().slice(0, WISDOM_TEXT), by: String(x.by || '').trim().slice(0, WISDOM_BY) }; });
+  return { ok: true, std: w.std !== false, list: list };
 }
 function userById_(st, uid) { return (st.users || []).filter(function (u) { return String(u.id) === String(uid); })[0] || null; }
 

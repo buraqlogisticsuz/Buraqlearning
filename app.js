@@ -5388,32 +5388,146 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   /* ---------------- login ---------------- */
   /* server error codes → strings */
   var SRV_ERR = { login: 'bad_login', locked: 'srv_locked', busy: 'srv_busy', net: 'srv_net', html: 'srv_html', setup: 'srv_setup' };
-  /* login intro: a line-drawn container truck drives the route Yiwu → Toshkent (brand: thin white lines on navy).
+  /* login intro: a line-drawn container truck drives the route <city> → Toshkent (brand: thin white lines on navy).
+     The container side is Uzbek atlas (ikat) with the BURAQ logo on a navy plate, the cab door has a red girih star.
      Plays once on load; with reduced motion the page shows the final frame. */
-  function IntroRoad() {
-    var ring = function (cx, r) { return 'M' + (cx - r) + ' 93a' + r + ' ' + r + ' 0 1 0 ' + 2 * r + ' 0a' + r + ' ' + r + ' 0 1 0 ' + -2 * r + ' 0'; };
-    var wheel = function (cx) { return ring(cx, 9) + ring(cx, 5) + ring(cx, 1.6); };
-    var rib = function (a, b) { var d = ''; for (var x = a; x <= b; x += 10) d += 'M' + x + ' 27V69'; return d; };
+  var INTRO_FROM = ['YIWU', 'ZHONGSHAN', 'ISTANBUL', 'MOSKVA'];
+  /* every visit — another city than the last one */
+  function introFrom() {
+    var last = null; try { last = localStorage.getItem('lor-intro-from'); } catch (e) {}
+    var list = INTRO_FROM.filter(function (x) { return x !== last; }), x = list[Math.floor(Math.random() * list.length)];
+    try { localStorage.setItem('lor-intro-from', x); } catch (e) {}
+    return x;
+  }
+  function star8(cx, cy, R) {
+    var d = '';
+    for (var k = 0; k < 16; k++) { var a = Math.PI * k / 8 - Math.PI / 2, r = k % 2 ? R * .7654 : R; d += (k ? 'L' : 'M') + (cx + r * Math.cos(a)).toFixed(2) + ' ' + (cy + r * Math.sin(a)).toFixed(2); }
+    return d + 'Z';
+  }
+  /* the container side in atlas (Margilan ikat) — in the brand colours: white ground, red, blue and navy «flames»
+     (zigzag bands with ragged thread edges — the filter ir-ikat), straight thin stripes; a 50-unit repeat over 200×55 */
+  var ATLAS = (function () {
+    function tri(x) { x -= Math.floor(x); return x < .5 ? 4 * x - 1 : 3 - 4 * x; }
+    function rnd(i) { var s = Math.sin(i * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); }
+    function flame(cx, w, A, per, ph, sk, seed) {
+      var R = [], L = [];
+      for (var y = 0, i = 0; y <= 55.01; y += 1.2, i++) {
+        var t = y / per + ph, ww = Math.max(.4, w + A * tri(t)), c = cx + sk * tri(t + .25);
+        R.push((c + ww + (rnd(seed + i) - .5) * 1.6).toFixed(2) + ' ' + y.toFixed(1));
+        L.unshift((c - ww + (rnd(seed + i + 50) - .5) * 1.6).toFixed(2) + ' ' + y.toFixed(1));
+      }
+      return 'M' + R.join('L') + 'L' + L.join('L') + 'Z';
+    }
+    var unit = [[9, 6, 4, 26, 0, 1.2, 'r'], [29, 6, 4.5, 22, .3, 1.6, 'b'], [29, 1.8, 1.8, 22, .3, 0, 'w'], [40, 3, 3, 30, .6, 1, 'n']];
+    var lines = [[18.2, .7, 'r'], [19.8, .7, 'b'], [45.8, .6, 'r'], [47.4, .6, 'r']], out = { flames: [], lines: [] };
+    for (var k = 0; k < 4; k++) {
+      unit.forEach(function (u, j) { out.flames.push({ d: flame(u[0] + 50 * k, u[1], u[2], u[3], u[4] + k * .37, u[5], (k * 4 + j) * 97), c: u[6] }); });
+      lines.forEach(function (l) { out.lines.push({ x: l[0] + 50 * k, w: l[1], c: l[2] }); });
+    }
+    return out;
+  })();
+  function IntroRoad(p) {
+    var ring = function (cx, cy, r) { return 'M' + (cx - r) + ' ' + cy + 'a' + r + ' ' + r + ' 0 1 0 ' + 2 * r + ' 0a' + r + ' ' + r + ' 0 1 0 ' + -2 * r + ' 0'; };
+    var wheel = function (cx) { return ring(cx, 96, 9) + ring(cx, 96, 5.2) + ring(cx, 96, 1.6); };
     var ln = function (d, c) { return h('path', { d: d, pathLength: 1, className: c }); };
     return h('div', { className: 'intro-road', 'aria-hidden': true },
       h('span', { className: 'ir-line' }),
-      h('span', { className: 'ir-pt is-from' }, h('i'), 'YIWU'),
+      h('span', { className: 'ir-pt is-from' }, h('i'), p.from),
       h('span', { className: 'ir-pt is-to' }, h('i'), 'TOSHKENT'),
       h('div', { className: 'ir-truck' },
         h('span', { className: 'ir-trail' }),
-        h('svg', { viewBox: '-60 0 340 103', width: 300, height: 91 },
-          h('g', { className: 'ir-wind' }, ln('M-40 32H-12M-56 50H-20M-34 66H-10')),
+        h('svg', { viewBox: '-60 0 332 106', width: 330, height: 105 },
+          h('defs', null,
+            h('filter', { id: 'ir-ikat', x: '-5%', y: 0, width: '110%', height: '100%' },
+              h('feTurbulence', { type: 'fractalNoise', baseFrequency: '0.03 0.7', numOctaves: 2, seed: 3, result: 'n' }),
+              h('feColorMatrix', { 'in': 'n', type: 'matrix', values: '1 0 0 0 0  0 0 0 0 .5  0 0 0 0 0  0 0 0 0 1', result: 'm' }),
+              h('feDisplacementMap', { 'in': 'SourceGraphic', in2: 'm', scale: 3, xChannelSelector: 'R', yChannelSelector: 'G' })),
+            h('clipPath', { id: 'ir-side' }, h('rect', { width: 200, height: 55 }))),
+          h('g', { className: 'ir-wind' }, ln('M-40 34H-12M-56 52H-20M-34 68H-10')),
           h('g', { className: 'ir-body' },
-            ln('M6 16H198V80H6Z'), ln('M6 22H198M6 74H198'), ln(rib(16, 56) + rib(146, 188), 'ir-thin'),
-            h('image', { href: LOGO_W, x: 76, y: 38, width: 52, height: 18 }),
-            ln('M6 84H266M6 80V84M198 80V84'),
-            ln('M206 84V34Q206 28 212 28H240Q246 28 249 33L262 56Q264 59 264 63V84'),
-            ln('M212 34H238Q241 34 243 37L253 54H212Z'), ln('M210 28L214 17H232Q236 17 238 22L240 28'),
-            ln('M234 58V82M224 63H229M258 66H264M264 72H268V86H254M202 84V22M199 22H205')),
-          ln([34, 56, 186, 246].map(wheel).join('')))));
+            /* container: the atlas side, the logo on a navy plate (clear field around it), frame, rails, corner castings */
+            h('g', { className: 'ir-atlas', transform: 'translate(6 19)', clipPath: 'url(#ir-side)' },
+              h('rect', { className: 'a-w', width: 200, height: 55 }),
+              h('g', { filter: 'url(#ir-ikat)' }, ATLAS.flames.map(function (f, i) { return h('path', { key: i, d: f.d, className: 'a-' + f.c }); })),
+              ATLAS.lines.map(function (l, i) { return h('rect', { key: i, x: l.x, width: l.w, height: 55, className: 'a-' + l.c }); }),
+              h('rect', { className: 'a-n', x: 63, y: 11, width: 74, height: 33 })),
+            ln('M6 14H206V80H6Z'), ln('M6 19H206M6 74H206'), ln('M6 14h5v4h-5zM201 14h5v4h-5zM6 76h5v4h-5zM201 76h5v4h-5z'),
+            h('image', { href: LOGO_W, x: 76, y: 36.2, width: 60, height: 20.65 }),
+            /* semi-trailer: frame and landing gear */
+            ln('M8 80V86H204V80M150 86V95M146 95H154'),
+            /* cab-over tractor: cab, roof deflector, window, door, mirror, lights, fender, fuel tank, rosette */
+            ln('M204 84H235M261 84H267'),
+            ln('M214 80V26Q214 18 222 18H254Q262 18 263 26L265 80Z'), ln('M217 18L222 11H250Q254 11 255 14L257 18'),
+            ln('M239 25H255Q258.5 25 259 28.5L260 46H235Z'), ln('M232 24V78M237 52H242M263 30H268V44H265M260 70H265M265 74H268V86H261'),
+            ln('M234 92A14.6 14.6 0 0 1 262 92'), ln('M211 86H229Q231 86 231 88V92Q231 94 229 94H211Q209 94 209 92V88Q209 86 211 86Z'),
+            ln(star8(247, 61, 6) + ring(247, 61, 2.2), 'ir-red')),
+          ln([28, 48, 68, 174, 196, 248].map(wheel).join('')))));
+  }
+  /* «Kun hikmati» on the login page: Uzbek proverbs and a BURAQ slogan (strings.js wz_1…; under the Uzbek original —
+     its meaning in ru/en/zh) + the SOP manager's own sayings (Kontent → settings.wisdom; the server gives them before
+     sign-in, action wisdom). One a day, the arrow shows the next. */
+  var WZ_N = 13, WZ_MAQOL = 12;
+  function wzStd(t, lang) {
+    var uz = T('uz'), out = [];
+    for (var i = 1; i <= WZ_N; i++) out.push({ text: uz('wz_' + i), tr: lang !== 'uz' ? t('wz_' + i) : '', by: t(i <= WZ_MAQOL ? 'wz_src_maqol' : 'wz_src_buraq') });
+    return out;
+  }
+  function Wisdom(p) {
+    var t = p.t, srv = useState(null), off = useState(0);
+    useEffect(function () { var live = true; (SV ? SV.wisdom() : Promise.resolve({ std: true, list: [] })).then(function (x) { if (live) srv[1](x); }, function () { if (live) srv[1]({ std: true, list: [] }); }); return function () { live = false; }; }, []);
+    if (!srv[0]) return h('div', { className: 'wz is-wait', 'aria-hidden': true });
+    var list = (srv[0].std !== false ? wzStd(t, p.lang) : []).concat((srv[0].list || []).map(function (x) { return { text: x.text, by: x.by }; }));
+    if (!list.length) return h('div', { className: 'wz is-none', 'aria-hidden': true });
+    var day = Math.floor((Date.now() - new Date().getTimezoneOffset() * 6e4) / 864e5), i = (day + off[0]) % list.length, q = list[i];
+    return h('figure', { className: 'wz' },
+      h('div', { className: 'wz-head' }, h('span', { className: 'lor-eyebrow' }, t('wz_title')),
+        list.length > 1 ? h('button', { type: 'button', className: 'wz-next', 'aria-label': t('wz_next'), title: t('wz_next'), onClick: function () { off[1](off[0] + 1); } }, h(Arrow, { length: 18 })) : null),
+      h('div', { key: i, className: 'wz-body' },
+        h('blockquote', { lang: 'uz' }, q.text),
+        q.tr ? h('p', { className: 'wz-tr' }, q.tr) : null,
+        q.by ? h('figcaption', null, '— ' + q.by) : null));
+  }
+  /* greeting by the time of day on this device */
+  function Hello(p) {
+    var hr = new Date().getHours(), k = hr >= 5 && hr < 12 ? 'morning' : hr >= 12 && hr < 18 ? 'day' : 'evening', sun = k !== 'evening';
+    return h('p', { className: 'hello is-' + k },
+      h('svg', { width: 22, height: 22, viewBox: '0 0 24 24', 'aria-hidden': true, className: 'hello-ico' },
+        sun ? h('g', null, h('circle', { cx: 12, cy: 12, r: 4.2 }), h('path', { className: 'hello-rays', d: 'M12 2.5v2.6M12 18.9v2.6M2.5 12h2.6M18.9 12h2.6M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8' }))
+          : h('path', { d: 'M19.5 14.6A8 8 0 0 1 9.4 4.5a8 8 0 1 0 10.1 10.1z' })),
+      p.t('hi_' + k));
+  }
+  /* Kontent → «Kun hikmati»: own sayings for the login page and the standard proverbs switch (settings.wisdom) */
+  function WisdomAdmin(p) {
+    var t = p.t, w = (p.db.settings && p.db.settings.wisdom) || {}, list = w.list || [];
+    var f = useState({ text: '', by: '' }), v = f[0], er = useState('');
+    function save(fn) { p.update(function (d) { d.settings = d.settings || {}; var x = Object.assign({ std: true }, d.settings.wisdom || {}); x.list = (x.list || []).slice(); fn(x); d.settings.wisdom = x; }); }
+    function add() {
+      var text = v.text.trim().replace(/\s+/g, ' ');
+      if (text.length < 3) { er[1](t('fill_required')); return; }
+      save(function (x) { x.list.push({ id: 'w' + Date.now().toString(36), text: text.slice(0, 240), by: v.by.trim().slice(0, 80), at: Date.now() }); });
+      f[1]({ text: '', by: '' }); er[1](''); p.say(t('wz_added'));
+    }
+    return h('div', { className: 'wz-admin' },
+      h('section', { className: 'box' },
+        h('h2', { className: 'lor-h' }, t('wz_title')),
+        h('p', { className: 'lor-sm lor-muted', style: { margin: '0 0 16px' } }, t('wz_admin_hint')),
+        h('div', { className: 'wz-form' },
+          h(Field, { name: 'wz-text', label: t('wz_text'), multiline: true, rows: 3, value: v.text, error: er[0], onChange: function (x) { f[1](Object.assign({}, v, { text: x })); } }),
+          h(Field, { name: 'wz-by', label: t('wz_by'), value: v.by, placeholder: t('wz_by_ph'), onChange: function (x) { f[1](Object.assign({}, v, { by: x })); } }),
+          h('div', null, h(Btn, { variant: 'primary', size: 'sm', arrow: true, onClick: add }, t('wz_add')))),
+        h('h3', { className: 'wz-sub' }, t('wz_mine')),
+        list.length ? h('ul', { className: 'wz-list' }, list.map(function (x) {
+          return h('li', { key: x.id }, h('div', null, h('p', null, x.text), x.by ? h('small', null, '— ' + x.by) : null),
+            h('button', { type: 'button', className: 'app-link', onClick: function () { save(function (y) { y.list = y.list.filter(function (z) { return z.id !== x.id; }); }); } }, t('remove')));
+        })) : h('p', { className: 'lor-sm lor-muted' }, t('wz_none'))),
+      h('section', { className: 'box' },
+        h('label', { className: 'check' }, h('input', { type: 'checkbox', checked: w.std !== false, onChange: function (e) { var on = e.target.checked; save(function (x) { x.std = on; }); } }), tpl(t('wz_std'), { n: WZ_N })),
+        h('ul', { className: cx('wz-list is-std', w.std === false && 'is-off') }, wzStd(t, p.lang).map(function (x, i) {
+          return h('li', { key: i }, h('div', null, h('p', { lang: 'uz' }, x.text), x.tr ? h('small', null, x.tr) : null, h('small', null, '— ' + x.by)));
+        }))));
   }
   function Login(p) {
-    var t = p.t, a = useState(''), b = useState(''), e = useState(''), th = useThemePref(), busy = useState(false);
+    var t = p.t, a = useState(''), b = useState(''), e = useState(''), th = useThemePref(), busy = useState(false), from = useState(introFrom)[0];
     function submit(ev) {
       ev.preventDefault();
       if (!a[0].trim() || !b[0]) { e[1]('bad_login'); return; }
@@ -5429,12 +5543,14 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
             h('span', null, h('span', { className: 'ir-m' }, h('span', null, 'Samaradorlik'))),
             h('span', null, h(Arrow, { dir: 'left', length: 88, tone: 'red' }), h('span', { className: 'ir-m' }, h('span', null, 'Ishonchlilik'))),
             h('span', null, h('span', { className: 'ir-m' }, h('span', null, 'Mukammallik')), h(LOR.RegMark))),
-          h(IntroRoad),
+          h(Wisdom, { t: t, lang: p.lang }),
+          h(IntroRoad, { from: from }),
           h('div', { className: 'lor-login-foot' }, h('span', null, t('app_full')), h('span', null, 'BIRGALIKDA MUVAFFAQIYATGA'))),
         h('div', { className: 'lor-login-side' },
           h('div', { className: 'login-col' },
             h('form', { className: 'lor-login-card', onSubmit: submit, noValidate: true },
               h('div', { className: 'lor-login-top' }, h('span', { className: 'lor-eyebrow' }, t('app_full')), h('span', { className: 'login-prefs' }, h(ThemeSwitch, { t: t, value: th.v, onChange: th.set, compact: true }), h(LOR.LangSwitch, { value: p.lang, onChange: p.setLang }))),
+              h(Hello, { t: t }),
               h('h1', { className: 'lor-title' }, t('login_title')),
               h(Field, { name: 'login', label: t('login'), value: a[0], onChange: a[1], placeholder: 'd.karimova', required: true, autoComplete: 'username' }),
               h(Field, { name: 'password', label: t('password'), type: 'password', value: b[0], onChange: b[1], placeholder: '••••••••', required: true, autoComplete: 'current-password', error: e[0] ? t(e[0]) : null }),
@@ -6075,7 +6191,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
 
     return h('div', { className: 'app-wrap' },
       h('div', { className: 'page-head' }, h('div', null, h('span', { className: 'lor-eyebrow' }, t('srv_cms_hint')), h('h1', { className: 'lor-title' }, t('nav_cms'), h(PageTip, { t: t, id: 'cms' })))),
-      h('div', { className: 'lor-tabs fb-tabs', role: 'tablist' }, [['lessons', t('cms_tab_lessons'), flat(db.course).length], ['cases', t('nav_cases'), (db.cases || []).length], ['journals', t('db_tab_j'), (db.journals || []).length], ['terms', t('db_tab_t'), (db.terms || []).length], ['tracks', t('trk_tab'), (db.tracks || []).length], ['plan', t('pl_tab'), (db.planTpl || []).length]].map(function (x) {
+      h('div', { className: 'lor-tabs fb-tabs', role: 'tablist' }, [['lessons', t('cms_tab_lessons'), flat(db.course).length], ['cases', t('nav_cases'), (db.cases || []).length], ['journals', t('db_tab_j'), (db.journals || []).length], ['terms', t('db_tab_t'), (db.terms || []).length], ['tracks', t('trk_tab'), (db.tracks || []).length], ['plan', t('pl_tab'), (db.planTpl || []).length], ['wisdom', t('wz_title'), ((db.settings && db.settings.wisdom && db.settings.wisdom.list) || []).length]].map(function (x) {
         return h('button', { key: x[0], type: 'button', role: 'tab', 'aria-selected': tab[0] === x[0], className: cx('lor-tab', tab[0] === x[0] && 'is-on'), onClick: function () { tab[1](x[0]); } }, x[1], h('span', { className: 'lor-count' }, x[2]));
       })),
       tab[0] === 'cases' ? h(CasesAdmin, p) :
@@ -6083,6 +6199,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       tab[0] === 'terms' ? h(TermsAdmin, p) :
       tab[0] === 'tracks' ? h(TracksAdmin, p) :
       tab[0] === 'plan' ? h(PlanAdmin, p) :
+      tab[0] === 'wisdom' ? h(WisdomAdmin, p) :
       h('div', { className: 'cms' },
         h('aside', { className: 'cms-tree' },
           db.course.sections.map(function (s, si) {

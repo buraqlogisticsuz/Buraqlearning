@@ -9,7 +9,7 @@
 (function (root) {
   'use strict';
   var S = root.LmsSync;
-  var SERVER_V = 7;                       // версия сервера (tools/lms-gs), под которую написана эта страница
+  var SERVER_V = 8;                       // версия сервера (tools/lms-gs), под которую написана эта страница
   var URL_ = String(root.LMS_SERVER || '').trim();
   var DEMO = !URL_;                      // адреса нет — страница пишет «Server ulanmagan» (демо больше нет)
   var K = { token: 'lor-lms-token', cache: 'lor-lms-cache', queue: 'lor-lms-queue', lang: 'lor-lms-lang' };
@@ -174,6 +174,8 @@
     account: function (o) { return call('account', o); },
     /* SOP-менеджер: все данные и файлы — копия вне сервера */
     exportAll: function () { return call('export'); },
+    /* «Kun hikmati» для страницы входа — без входа: { std, list: [{ text, by }] } */
+    wisdom: function () { return DEMO ? Promise.resolve({ std: true, list: [] }) : call('wisdom'); },
     /* Telegram (сервер на Node): ссылка привязки и отвязка */
     tgLink: function () { return call('tgLink'); },
     tgUnlink: function () { return call('tgUnlink'); },
