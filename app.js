@@ -5388,6 +5388,30 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   /* ---------------- login ---------------- */
   /* server error codes → strings */
   var SRV_ERR = { login: 'bad_login', locked: 'srv_locked', busy: 'srv_busy', net: 'srv_net', html: 'srv_html', setup: 'srv_setup' };
+  /* login intro: a line-drawn container truck drives the route Yiwu → Toshkent (brand: thin white lines on navy).
+     Plays once on load; with reduced motion the page shows the final frame. */
+  function IntroRoad() {
+    var ring = function (cx, r) { return 'M' + (cx - r) + ' 93a' + r + ' ' + r + ' 0 1 0 ' + 2 * r + ' 0a' + r + ' ' + r + ' 0 1 0 ' + -2 * r + ' 0'; };
+    var wheel = function (cx) { return ring(cx, 9) + ring(cx, 5) + ring(cx, 1.6); };
+    var rib = function (a, b) { var d = ''; for (var x = a; x <= b; x += 10) d += 'M' + x + ' 27V69'; return d; };
+    var ln = function (d, c) { return h('path', { d: d, pathLength: 1, className: c }); };
+    return h('div', { className: 'intro-road', 'aria-hidden': true },
+      h('span', { className: 'ir-line' }),
+      h('span', { className: 'ir-pt is-from' }, h('i'), 'YIWU'),
+      h('span', { className: 'ir-pt is-to' }, h('i'), 'TOSHKENT'),
+      h('div', { className: 'ir-truck' },
+        h('span', { className: 'ir-trail' }),
+        h('svg', { viewBox: '-60 0 340 103', width: 300, height: 91 },
+          h('g', { className: 'ir-wind' }, ln('M-40 32H-12M-56 50H-20M-34 66H-10')),
+          h('g', { className: 'ir-body' },
+            ln('M6 16H198V80H6Z'), ln('M6 22H198M6 74H198'), ln(rib(16, 56) + rib(146, 188), 'ir-thin'),
+            h('image', { href: LOGO_W, x: 76, y: 38, width: 52, height: 18 }),
+            ln('M6 84H266M6 80V84M198 80V84'),
+            ln('M206 84V34Q206 28 212 28H240Q246 28 249 33L262 56Q264 59 264 63V84'),
+            ln('M212 34H238Q241 34 243 37L253 54H212Z'), ln('M210 28L214 17H232Q236 17 238 22L240 28'),
+            ln('M234 58V82M224 63H229M258 66H264M264 72H268V86H254M202 84V22M199 22H205')),
+          ln([34, 56, 186, 246].map(wheel).join('')))));
+  }
   function Login(p) {
     var t = p.t, a = useState(''), b = useState(''), e = useState(''), th = useThemePref(), busy = useState(false);
     function submit(ev) {
@@ -5398,10 +5422,14 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     }
     return h('div', { className: 'login-page' },
       h('div', { className: 'lor-login' },
-        h('div', { className: 'lor-login-hero' },
-          h('img', { src: LOGO_W, alt: 'BURAQ logistics', width: 116, height: 40 }),
+        h('div', { className: 'lor-login-hero intro' },
+          h('span', { className: 'ir-glow', 'aria-hidden': true }),
+          h('img', { className: 'ir-logo', src: LOGO_W, alt: 'BURAQ logistics', width: 116, height: 40 }),
           h('div', { className: 'lor-ladder', 'aria-label': 'Samaradorlik, ishonchlilik, mukammallik' },
-            h('span', null, 'Samaradorlik'), h('span', null, h(Arrow, { dir: 'left', length: 88, tone: 'red' }), 'Ishonchlilik'), h('span', null, 'Mukammallik', h(LOR.RegMark))),
+            h('span', null, h('span', { className: 'ir-m' }, h('span', null, 'Samaradorlik'))),
+            h('span', null, h(Arrow, { dir: 'left', length: 88, tone: 'red' }), h('span', { className: 'ir-m' }, h('span', null, 'Ishonchlilik'))),
+            h('span', null, h('span', { className: 'ir-m' }, h('span', null, 'Mukammallik')), h(LOR.RegMark))),
+          h(IntroRoad),
           h('div', { className: 'lor-login-foot' }, h('span', null, t('app_full')), h('span', null, 'BIRGALIKDA MUVAFFAQIYATGA'))),
         h('div', { className: 'lor-login-side' },
           h('div', { className: 'login-col' },
