@@ -25,7 +25,7 @@ const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; ch
   '.json': 'application/json; charset=utf-8', '.webmanifest': 'application/manifest+json' };
 const ZIP = /^(text\/|application\/json|image\/svg|application\/manifest)/;
 // что отдаётся как сайт — то же, что выкладывает .github/workflows/pages.yml; остальное (tests, tools, данные) — нет
-const FILES = ['index.html', 'lms-sync.js', 'lms-client.js', 'lms-gs-script.js', 'lor.css', 'lor-ds.js', 'templates.js', 'strings.js', 'app.js'];
+const FILES = ['index.html', 'lms-sync.js', 'lms-pay.js', 'lms-client.js', 'lms-gs-script.js', 'lor.css', 'lor-ds.js', 'templates.js', 'strings.js', 'app.js'];
 const DIRS = ['js/', 'fonts/', 'icons/', 'buraq-brand/logo/'];
 
 /* папка данных: DATA_DIR, том Railway или ./data. На Railway без тома данные пропадали бы при каждом обновлении — не запускаемся */

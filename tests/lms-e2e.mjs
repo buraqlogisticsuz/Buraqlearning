@@ -86,6 +86,8 @@ function sheetXml(rows) {
   return { sheet: '<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="' + NS + '"><sheetData>' + body + '</sheetData></worksheet>',
     shared: '<?xml version="1.0" encoding="UTF-8"?><sst xmlns="' + NS + '" count="' + ss.length + '">' + ss.map(v => '<si><t>' + xml(v) + '</t></si>').join('') + '</sst>' };
 }
+// текст на странице; узкие неразрывные пробелы в суммах (4 000 000) — обычные
+const txt = async (p, sel) => (await p.innerText(sel)).replace(/[\u202f\u00a0]/g, ' ');
 const skipTour = async p => { const s = p.getByRole('button', { name: 'O‘tkazib yuborish' }); if (await s.count()) { await s.first().click(); await p.waitForTimeout(300); } };
 
 try {
@@ -421,6 +423,59 @@ try {
   assert.equal(srv.g.state().users.filter(u => u.role === 'employee').length, nEmp + 1);
   assert.deepEqual(await rejected(A), [], 'сервер не отклонил обновление');
   step('Excel туда и обратно: таблица скачана, по ID обновлён 1, добавлен 1, занятый логин отклонён');
+
+  // ---------- зарплата: SOP-менеджер задаёт условия, сотрудник считает и сохраняет, SOP-менеджер видит историю и подтверждает ----------
+  await nav(A, 'pay');
+  await A.getByRole('tab', { name: /Shartlar/ }).click(); await A.waitForTimeout(200);
+  await click(A, 'Yangi shart');
+  await A.fill('#f-pay-title', 'Ombor mudiri'); await A.fill('#f-pay-fixed', '4000000'); await A.fill('#f-pay-base', '2000000');
+  await A.locator('.pay-editor .ac-chip', { hasText: /^Ombor mudiri$/ }).click();
+  await A.fill('#f-pk-0-name', 'Shartnomalar'); await A.fill('#f-pk-0-unit', 'ta'); await A.fill('#f-pk-0-plan', '10'); await A.fill('#f-pk-0-w', '60');
+  await A.fill('#f-pk-0-min', '50'); await A.fill('#f-pk-0-cap', '120');
+  await click(A, '+ KPI qo‘shish');
+  await A.fill('#f-pk-1-name', 'Kechikishlar'); await A.selectOption('#f-pk-1-src', 'att_late'); await A.fill('#f-pk-1-plan', '2'); await A.fill('#f-pk-1-w', '40');
+  await A.locator('.pay-ed-kpi').nth(1).locator('label.check input').check();
+  await click(A, '+ KPI qo‘shish');
+  await A.fill('#f-pk-2-name', 'O‘qish soatlari'); await A.selectOption('#f-pk-2-src', 'study_h'); await A.selectOption('#f-pk-2-type', 'unit'); await A.fill('#f-pk-2-rate', '10000');
+  assert.match(await A.innerText('.pay-editor'), /Vaznlar yig‘indisi: 100% ✓/);
+  assert.match(await txt(A, '.pay-example'), /6 000 000 so‘m/, 'пример: все планы на 100 % — фикса + весь KPI-бонус');
+  await shot(A, '18-pay-scheme');
+  await A.locator('.pay-editor').getByRole('button', { name: 'Saqlash' }).click();
+  await settle(A);
+  const sch = srv.g.state().pay.schemes[0];
+  assert.equal(sch.title, 'Ombor mudiri'); assert.equal(sch.kpis.length, 3); assert.equal(sch.kpis[1].less, true);
+  // сотрудник: «Maosh» в меню, своя схема, факт — и итог считается сразу
+  // пароль сотруднику сменил SOP-менеджер (шаг профиля) — его входы закрыты, входит заново
+  await E.reload({ waitUntil: 'networkidle' }); await signIn(E, 'dilnoza.k', 'yangi-parol-77'); await skipTour(E);
+  await nav(E, 'pay');
+  await E.locator('.pay-input input').first().fill('9');
+  await E.waitForTimeout(700);
+  assert.match(await txt(E, '.pay-kpis'), /\+1 080 000 so‘m/, '9 из 10 = 90 % × 60 % × 2 000 000');
+  await E.fill('#f-pay-note', 'Oktyabr, 9 ta shartnoma');
+  await shot(E, '19-pay-calc');
+  await click(E, 'Hisobni saqlash', { wait: 300 });
+  await settle(E);
+  const pc = srv.g.state().payCalcs;
+  assert.equal(pc.length, 1); assert.equal(pc[0].uid, emp.id); assert.equal(pc[0].lines[0].a, 1080000); assert.equal(pc[0].status, 'saved');
+  assert.equal(pc[0].total, 4000000 + pc[0].kpi, 'итог — фикса + KPI'); assert.equal(pc[0].note, 'Oktyabr, 9 ta shartnoma');
+  assert.ok(await E.locator('.pay-hist .pay-st', { hasText: 'Tekshiruvda' }).count(), 'в своей истории — «на проверке»');
+  assert.deepEqual(await rejected(E), [], 'сервер принял расчёт');
+  // SOP-менеджер: история — кто, когда, как посчитал; подтверждает с комментарием
+  await A.reload({ waitUntil: 'networkidle' }); await watchSync(A);
+  await nav(A, 'pay');
+  await A.locator('.pay-tlrow', { hasText: 'Dilnoza Karimova-Aliyeva' }).click(); await A.waitForTimeout(300);
+  assert.match(await txt(A, '.pay-hbody'), /9 \/ 10 ta → 90% × 60% × 2 000 000 so‘m = 1 080 000 so‘m/, 'видно, как посчитано');
+  await A.fill('#f-pay-rep', 'Hammasi to‘g‘ri');
+  await shot(A, '20-pay-history');
+  await A.locator('.pay-decide').getByRole('button', { name: 'Tasdiqlash' }).click();
+  await settle(A);
+  assert.equal(srv.g.state().payCalcs[0].status, 'approved'); assert.equal(srv.g.state().payCalcs[0].reply, 'Hammasi to‘g‘ri');
+  assert.ok(srv.g.state().notifications.some(n => n.kind === 'pay' && n.userId === emp.id && n.pay.s === 'approved'), 'сотруднику — уведомление');
+  await E.reload({ waitUntil: 'networkidle' }); await watchSync(E);
+  await nav(E, 'pay');
+  assert.ok(await E.locator('.pay-hist .pay-st', { hasText: 'Tasdiqlandi' }).count(), 'сотрудник видит «Tasdiqlandi»');
+  assert.deepEqual(await rejected(A), [], 'сервер принял условия и решение');
+  step('зарплата: условия SOP-менеджера, расчёт сотрудника с историей, проверка и подтверждение');
 
   // ---------- страница входа: маршрут, приветствие, «Kun hikmati»; свои цитаты SOP-менеджера — из «Kontent» ----------
   const R = await device('вход по-русски');

@@ -6,6 +6,9 @@ import { readFileSync } from 'node:fs';
 import { pbkdf2Sync } from 'node:crypto';
 import { loadLms } from './lms-gs-mock.mjs';
 import { buildLmsGs, pageScript } from '../tools/build-lms-gs.mjs';
+import { createRequire } from 'node:module';
+
+const g_pay = createRequire(import.meta.url)('../lms-pay.js');
 
 const DAY = 864e5;
 const quiz = [{ q: 'Q1', options: ['a', 'b'], answer: 1 }, { q: 'Q2', options: ['a', 'b'], answer: 0 }];
@@ -399,7 +402,7 @@ const pickN = n => ({ userId: n.userId, kind: n.kind, route: n.route, err: n.err
 test('since: та же версия — без данных; после правки — новое состояние', () => {
   const { D, A } = platform();
   const v = D({ action: 'load' });
-  assert.deepEqual(D({ action: 'since', rev: v.rev }), { ok: true, v: 8, ai: false, rev: v.rev, same: true });
+  assert.deepEqual(D({ action: 'since', rev: v.rev }), { ok: true, v: 9, ai: false, rev: v.rev, same: true });
   A({ action: 'patch', ops: [{ op: 'set', path: ['notifications', { id: 9 }], value: { id: 9, userId: 10427, text: 'yangi' }, after: null }] });
   const n = D({ action: 'since', rev: v.rev });
   assert.equal(n.rev, v.rev + 1); assert.equal(n.state.notifications[0].text, 'yangi');
@@ -548,6 +551,44 @@ test('«Kun hikmati»: цитаты SOP-менеджера видны без в�
   assert.equal(w.list[1].text.length, 240); assert.equal(w.list[1].by.length, 80);
   assert.ok(!JSON.stringify(w).includes('Dilnoza'), 'больше ничего из данных');
   assert.equal(D({ action: 'patch', ops: [{ op: 'set', path: ['settings', 'wisdom', 'list'], value: [] }] }).rejected.length, 1, 'сотрудник — нет');
+});
+
+test('зарплата: сотрудник видит только свои условия и расчёты, добавляет свой расчёт — сумму сервер пересчитывает', () => {
+  const { g, A, D, Z } = platform();
+  const Pay = g_pay;
+  // данные прошлой версии сервера — без раздела зарплаты
+  const f = g.files[g.props.LMS_STATE], old = JSON.parse(f.content); delete old.pay; delete old.payCalcs; f.content = JSON.stringify(old);
+  const sk = { id: 'sk', title: 'Mijozlar', positions: ['Mijozlar menejeri'], fixed: 4000000, base: 2000000, kpis: [{ id: 'k1', name: 'Shartnoma', unit: 'ta', src: 'manual', type: 'plan', plan: 10, w: 100, min: 50, cap: 120 }] };
+  const sl = { id: 'sl', title: 'Logistika', positions: ['Logistika menejeri'], fixed: 9000000, base: 3000000, kpis: [] };
+  assert.equal(A({ action: 'patch', ops: [{ op: 'set', path: ['pay'], value: { schemes: [sk, sl], people: { 10427: { fixed: 4500000 }, 10288: { fixed: 9900000 } } } }] }).rejected.length, 0);
+  const vd = D({ action: 'load' }).state;
+  assert.deepEqual(vd.pay.schemes.map(x => x.id), ['sk'], 'только своя схема');
+  assert.deepEqual(vd.pay.people, { 10427: { fixed: 4500000 } }, 'только своя фикса');
+  assert.ok(!JSON.stringify(vd).includes('9900000') && !JSON.stringify(vd).includes('9000000'), 'чужих сумм нет');
+  const snap = Pay.snapshot(sk), calc = (inputs, extra) => ({ id: 'c' + Math.random(), uid: 10427, at: 1, ym: '2026-10', scheme: snap, fixed: 4500000, inputs, ...Pay.calc(snap, 4500000, inputs), note: 'oktyabr', status: 'saved', ...extra });
+  const c1 = calc({ k1: 9 });
+  assert.equal(c1.total, 4500000 + 1800000);
+  assert.deepEqual(D({ action: 'patch', ops: [{ op: 'set', path: ['payCalcs', { id: c1.id }], value: c1 }] }).rejected, []);
+  const bad = (v, why) => assert.match(D({ action: 'patch', ops: [{ op: 'set', path: ['payCalcs', { id: v.id }], value: v }] }).rejected[0]?.reason || '', why);
+  bad(calc({ k1: 9 }, { total: 99000000 }), /не сходится/);
+  bad(calc({ k1: 9 }, { fixed: 9000000 }), /изменились/);
+  bad(calc({ k1: 9 }, { uid: 10391 }), /только свой/);
+  bad(calc({ k1: 9 }, { status: 'approved' }), /SOP-менеджер/);
+  bad(calc({ k1: '9' }), /факты/);
+  assert.match(D({ action: 'patch', ops: [{ op: 'set', path: ['payCalcs', { id: c1.id }, 'total'], value: 1 }] }).rejected[0].reason, /не меняется/);
+  assert.match(D({ action: 'patch', ops: [{ op: 'del', path: ['payCalcs', { id: c1.id }] }] }).rejected[0].reason, /не меняется/);
+  assert.match(D({ action: 'patch', ops: [{ op: 'set', path: ['pay', 'people', '10427'], value: { fixed: 1e8 } }] }).rejected[0].reason, /SOP-менеджер/);
+  // без условий — нельзя; у коллеги не видно чужого расчёта
+  assert.deepEqual(Z({ action: 'load' }).state.payCalcs, []);
+  assert.deepEqual(Z({ action: 'load' }).state.pay.schemes, []);
+  // SOP-менеджер видит всё и ставит итог
+  assert.equal(A({ action: 'load' }).state.payCalcs.length, 1);
+  assert.equal(A({ action: 'patch', ops: [{ op: 'set', path: ['payCalcs', { id: c1.id }, 'status'], value: 'approved' }] }).rejected.length, 0);
+  assert.equal(D({ action: 'load' }).state.payCalcs[0].status, 'approved');
+  // не больше 20 расчётов за месяц
+  for (let i = 0; i < 19; i++) D({ action: 'patch', ops: [{ op: 'set', path: ['payCalcs', { id: 'm' + i }], value: { ...calc({ k1: i }), id: 'm' + i } }] });
+  bad({ ...calc({ k1: 1 }), id: 'm20' }, /не больше 20/);
+  assert.deepEqual(D({ action: 'patch', ops: [{ op: 'set', path: ['payCalcs', { id: 'n1' }], value: { ...calc({ k1: 1 }), id: 'n1', ym: '2026-11' } }] }).rejected, [], 'новый месяц — можно');
 });
 
 test('занятый сервер отвечает «повторите», данные не портятся', () => {

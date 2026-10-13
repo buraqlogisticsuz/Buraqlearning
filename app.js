@@ -786,6 +786,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     if (n.kind === 'late') return lateNotif(n, t);
     if (n.kind === 'xt') return xtNotif(n, t);
     if (n.kind === 'ltask' && n.lt) return tpl(t('n_ltask'), { x: txtOf(n.lt.x, lang) });
+    if (n.kind === 'pay' && n.pay) return tpl(t('n_pay_' + n.pay.s), { m: ymLabel(n.pay.ym, lang, true), x: sumTxt(n.pay.total, t) }) + (n.pay.reply ? ' — ' + n.pay.reply : '');
     if (!n.promo) return n.text;
     var lv = levelsOf(db)[n.promo.li];
     return tpl(t('n_promo_level'), { x: lvlName(lv, lang) }) + ' ' + levelDesc(lv, lang);
@@ -1737,6 +1738,359 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         h('div', { className: 'ini-admin-act' },
           h('span', { className: 'lor-sm lor-muted' }, tpl(t('ini_xp_note'), { a: XP_INI_OK, b: XP_INI_DONE })),
           h(Btn, { variant: 'primary', size: 'sm', disabled: !dirty, onClick: save }, t('ini_save_notify')))) : null);
+  }
+
+  /* ======================= SALARY: fixed + KPI (lms-pay.js — the same formula runs on the server) =======================
+     The SOP manager sets the terms (Maosh → Shartlar: fixed, KPI bonus, indicators). An employee sees only own terms,
+     enters the actual figures (platform figures — attendance, study hours, lessons, XP, extra tasks, errors — fill in by
+     themselves), sees how every line is counted and saves the calculation to the history. The SOP manager sees who
+     calculated what, with which figures and how, checks the platform figures against today's data and approves or
+     returns it. */
+  var PAY_SRC = ['manual', 'att_late', 'att_absent', 'att_ontime', 'study_h', 'lessons', 'xp', 'xtasks', 'errors'];
+  var PAY_MAX = 20;   // saved calculations a month per employee — as on the server
+  function money(n) { return String(Math.round(+n || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0'); }
+  function sumTxt(n, t) { return money(n) + ' ' + t('pay_cur'); }
+  function payNum(v) { var n = parseFloat(String(v == null ? '' : v).replace(/\s/g, '').replace(',', '.')); return isFinite(n) ? n : 0; }
+  function numTxt(n) { return String(Math.round(n * 100) / 100).replace('.', ','); }
+  /* a platform figure for one month */
+  function paySrcVal(db, u, ym, src) {
+    if (src === 'att_late' || src === 'att_absent' || src === 'att_ontime') { var c = attMonth(db, u, ym); return src === 'att_late' ? c.late : src === 'att_absent' ? c.absent : (c.onTimePct || 0); }
+    if (src === 'study_h' || src === 'lessons' || src === 'xp') { var m = monthStats(db, u, ym); return src === 'study_h' ? Math.round(m.minutes / 6) / 10 : src === 'lessons' ? m.lessons : m.xp; }
+    var s0 = ymStart(ym), e1 = ymStart(ymShift(ym, 1));
+    if (src === 'xtasks') return (db.xtasks || []).filter(function (x) { return x.uid === u.id && x.status === 'done' && x.doneAt >= s0 && x.doneAt < e1; }).length;
+    if (src === 'errors') return (db.errors || []).filter(function (x) { return x.uid === u.id && x.at >= s0 && x.at < e1; }).length;
+    return 0;
+  }
+  /* the condition of one indicator in plain words */
+  function payRule(k, t) {
+    var un = k.unit ? ' ' + k.unit : '';
+    if (k.type === 'unit') return tpl(t(k.rate < 0 ? 'pay_rule_minus' : 'pay_rule_unit'), { u: k.unit || t('pay_unit1'), x: sumTxt(Math.abs(k.rate), t) });
+    if (k.type === 'bonus') return tpl(t(k.less ? 'pay_rule_bonus_less' : 'pay_rule_bonus'), { p: numTxt(k.plan) + un, x: sumTxt(k.amount, t) });
+    var s = [tpl(t('pay_rule_plan'), { p: numTxt(k.plan) + un, w: numTxt(k.w) })];
+    if (k.less) s.push(t('pay_rule_less'));
+    if (k.min) s.push(tpl(t('pay_rule_min'), { n: numTxt(k.min) }));
+    if ((k.cap || 100) !== 100) s.push(tpl(t('pay_rule_cap'), { n: numTxt(k.cap) }));
+    return s.join(' · ');
+  }
+  /* how one line was counted */
+  function payHow(k, ln, base, t) {
+    var un = k.unit ? ' ' + k.unit : '';
+    if (k.type === 'unit') return numTxt(ln.f) + un + ' × ' + sumTxt(k.rate, t) + ' = ' + sumTxt(ln.a, t);
+    if (k.type === 'bonus') return numTxt(ln.f) + un + (ln.a ? ' ✓ ' : ' ✗ ') + '→ ' + sumTxt(ln.a, t);
+    var ratio = k.less ? tpl(t('pay_how_less'), { f: numTxt(ln.f) + un, p: numTxt(k.plan) + un }) : numTxt(ln.f) + ' / ' + numTxt(k.plan) + un;
+    var below = !ln.s && k.min && (k.less ? ln.f > 0 : ln.f < k.plan * k.min / 100);
+    return ratio + ' → ' + numTxt(ln.s) + '%' + (below ? ' (' + tpl(t('pay_below'), { n: numTxt(k.min) }) + ')' : '') + ' × ' + numTxt(k.w) + '% × ' + sumTxt(base, t) + ' = ' + sumTxt(ln.a, t);
+  }
+  function PayStatus(p) { return h('span', { className: 'pay-st is-' + p.s }, p.t('pay_st_' + p.s)); }
+  /* a saved calculation, line by line; check — the SOP manager: platform figures against today's data */
+  function PayLines(p) {
+    var t = p.t, c = p.c, kp = {};
+    (c.scheme.kpis || []).forEach(function (k) { kp[k.id] = k; });
+    return h('div', { className: 'pay-lines' },
+      h('div', { className: 'pay-line is-fixed' }, h('span', null, t('pay_fixed')), h('span', null), h('b', null, sumTxt(c.fixed, t))),
+      (c.lines || []).map(function (ln) {
+        var k = kp[ln.k] || { name: ln.k, type: 'unit', rate: 0 }, now = p.check && k.src && k.src !== 'manual' && p.u ? paySrcVal(p.db, p.u, c.ym, k.src) : null;
+        return h('div', { key: ln.k, className: 'pay-line' },
+          h('span', null, k.name, k.src && k.src !== 'manual' ? h('small', { className: 'pay-auto' }, t('pay_src_' + k.src)) : null),
+          h('span', { className: 'pay-how' }, payHow(k, ln, c.scheme.base, t), now !== null && now !== ln.f ? h('em', { className: 'pay-diff' }, ' ⚠ ' + tpl(t('pay_now'), { x: numTxt(now) })) : null),
+          h('b', { className: ln.a < 0 ? 'is-minus' : '' }, (ln.a > 0 ? '+' : '') + sumTxt(ln.a, t)));
+      }),
+      h('div', { className: 'pay-line is-total' }, h('span', null, t('pay_total')), h('span', null, c.pct != null ? tpl(t('pay_pct_line'), { n: c.pct }) : ''), h('b', null, sumTxt(c.total, t))));
+  }
+  /* the total counts up when it changes */
+  function useTween(v) {
+    var s = useState(v), cur = useRef(v);
+    useEffect(function () {
+      var from = cur.current, t0 = 0, id = 0;
+      if (from === v || (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches)) { cur.current = v; s[1](v); return; }
+      function step(ts) { if (!t0) t0 = ts; var k = Math.min(1, (ts - t0) / 450), e = 1 - Math.pow(1 - k, 3); cur.current = from + (v - from) * e; s[1](cur.current); if (k < 1) id = requestAnimationFrame(step); }
+      id = requestAnimationFrame(step);
+      return function () { cancelAnimationFrame(id); };
+    }, [v]);
+    return s[0];
+  }
+
+  /* the employee: own terms, the calculator, own history */
+  function PayPage(p) {
+    var t = p.t, db = p.db, u = p.user, mine = LmsPay.schemeFor(db.pay, u);
+    var thisYm = ymOf(Date.now()), ymS = useState(thisYm), ym = ymS[0], inS = useState({}), noteS = useState(''), openS = useState(null);
+    var head = h('div', { className: 'page-head' },
+      h('div', null, h('span', { className: 'lor-eyebrow' }, t('pay_eyebrow')), h('h1', { className: 'lor-title' }, t('pay_title'))),
+      mine ? h('div', { className: 'seg pay-months', role: 'group', 'aria-label': t('pay_month') }, [ymShift(thisYm, -1), thisYm].map(function (m) {
+        return h('button', { key: m, type: 'button', className: ym === m ? 'is-on' : '', 'aria-pressed': ym === m, onClick: function () { ymS[1](m); } }, ymLabel(m, p.lang));
+      })) : null);
+    var hist = (db.payCalcs || []).filter(function (c) { return c.uid === u.id; }).sort(function (a, b) { return b.at - a.at; });
+    if (!mine) return h('div', { className: 'app-wrap' }, head,
+      h('section', { className: 'box pay-empty' }, h('span', { className: 'ini-card-ico', 'aria-hidden': true }, h(Ico, { name: 'target', size: 26, w: 1.8 })), h('p', { style: { margin: 0 } }, t('pay_none'))),
+      hist.length ? h(PayHistory, { t: t, lang: p.lang, list: hist, open: openS }) : null);
+    var snap = LmsPay.snapshot(mine.scheme), vals = {};
+    snap.kpis.forEach(function (k) { vals[k.id] = k.src === 'manual' ? payNum(inS[0][ym + '|' + k.id]) : paySrcVal(db, u, ym, k.src); });
+    var r = LmsPay.calc(snap, mine.fixed, vals), lineOf = {};
+    r.lines.forEach(function (ln) { lineOf[ln.k] = ln; });
+    var n = hist.filter(function (c) { return c.ym === ym; }).length;
+    function setIn(k, v) { var o = Object.assign({}, inS[0]); o[ym + '|' + k] = v; inS[1](o); }
+    function save() {
+      var rec = { id: 'pc' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), uid: u.id, at: Date.now(), ym: ym, scheme: snap, fixed: r.fixed, inputs: vals, kpi: r.kpi, total: r.total, pct: r.pct, lines: r.lines, status: 'saved' };
+      if (noteS[0].trim()) rec.note = noteS[0].trim().slice(0, 300);
+      p.update(function (d) { d.payCalcs = d.payCalcs || []; d.payCalcs.unshift(rec); });
+      noteS[1](''); openS[1](rec.id); p.say(t('pay_saved'));
+    }
+    return h('div', { className: 'app-wrap' }, head,
+      h('div', { className: 'pay-grid' },
+        h('div', { className: 'pay-main' },
+          h('section', { className: 'box pay-terms' },
+            h('div', { className: 'box-row', style: { marginTop: 0 } }, h('h2', { className: 'lor-h' }, t('pay_cond')), h('span', { className: 'pay-scheme' }, snap.title)),
+            h('div', { className: 'pay-tiles' },
+              h('div', { className: 'tile' }, h('span', { className: 'lor-eyebrow' }, t('pay_fixed')), h('b', { className: 'tile-sm' }, sumTxt(r.fixed, t))),
+              h('div', { className: 'tile' }, h('span', { className: 'lor-eyebrow' }, t('pay_base')), h('b', { className: 'tile-sm' }, sumTxt(snap.base, t)))),
+            mine.scheme.note ? h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, mine.scheme.note) : null),
+          h('section', { className: 'box' },
+            h('h2', { className: 'lor-h' }, t('pay_kpis')),
+            snap.kpis.length ? h('ul', { className: 'pay-kpis' }, snap.kpis.map(function (k) {
+              var ln = lineOf[k.id], auto = k.src !== 'manual', pct = k.type === 'plan' ? Math.max(0, Math.min(ln.s || 0, k.cap || 100)) : null;
+              return h('li', { key: k.id, className: 'pay-kpi' },
+                h('div', { className: 'pay-kpi-top' },
+                  h('div', null, h('b', null, k.name), h('div', { className: 'lor-sm lor-muted' }, payRule(k, t))),
+                  h('span', { className: cx('pay-amt', ln.a < 0 && 'is-minus', !ln.a && 'is-zero') }, (ln.a > 0 ? '+' : '') + sumTxt(ln.a, t))),
+                h('div', { className: 'pay-kpi-in' },
+                  auto ? h('div', { className: 'pay-autoval' }, h('b', null, numTxt(vals[k.id]) + (k.unit ? ' ' + k.unit : '')), h('small', { className: 'pay-auto' }, t('pay_src_' + k.src) + ' · ' + t('pay_auto')))
+                    : h('label', { className: 'pay-input' }, h('span', { className: 'sr-only' }, k.name),
+                      h('input', { className: 'lor-input', id: 'pay-in-' + k.id, inputMode: 'decimal', placeholder: '0', value: inS[0][ym + '|' + k.id] || '', onChange: function (e) { setIn(k.id, e.target.value.replace(/[^\d.,\s-]/g, '')); } }),
+                      k.unit ? h('span', { className: 'lor-muted' }, k.unit) : null),
+                  pct !== null ? h('div', { className: cx('pay-bar', k.min && ln.s < k.min && 'is-low'), title: numTxt(ln.s) + '%' },
+                    h('i', { style: { width: Math.min(100, pct / (k.cap > 100 ? k.cap : 100) * 100) + '%' } }), k.cap > 100 ? h('span', { className: 'pay-bar-100', style: { left: 100 / k.cap * 100 + '%' } }) : null) : null,
+                  pct !== null ? h('span', { className: 'pay-bar-n' }, numTxt(ln.s) + '%') : null));
+            })) : h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('pay_no_kpi')))),
+        h('aside', { className: 'pay-side' },
+          h(PayResult, { t: t, lang: p.lang, ym: ym, r: r, snap: snap }),
+          h('section', { className: 'box pay-save' },
+            h(Field, { name: 'pay-note', label: t('pay_note'), multiline: true, rows: 2, value: noteS[0], onChange: noteS[1] }),
+            h(Btn, { variant: 'primary', arrow: true, block: true, disabled: n >= PAY_MAX, onClick: save }, t('pay_save')),
+            h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, n >= PAY_MAX ? tpl(t('pay_max'), { n: PAY_MAX }) : t('pay_disclaimer'))))),
+      h(PayHistory, { t: t, lang: p.lang, list: hist, open: openS }));
+  }
+  /* the result card: the total counts up, the parts and «how it was counted» */
+  function PayResult(p) {
+    var t = p.t, r = p.r, shown = useTween(r.total), kp = {};
+    p.snap.kpis.forEach(function (k) { kp[k.id] = k; });
+    return h('section', { className: 'pay-result', 'aria-live': 'polite' },
+      h('span', { className: 'lor-eyebrow' }, t('pay_result') + ' · ' + ymLabel(p.ym, p.lang)),
+      h('div', { className: 'pay-total' }, h('b', null, money(shown)), h('span', null, t('pay_cur'))),
+      h('div', { className: 'pay-split' },
+        h('div', null, h('small', null, t('pay_fixed')), h('b', null, money(r.fixed))),
+        h('div', null, h('small', null, t('pay_kpi_sum')), h('b', null, (r.kpi > 0 ? '+' : '') + money(r.kpi))),
+        r.pct != null ? h('div', null, h('small', null, t('pay_kpi_pct')), h('b', null, r.pct + '%')) : null),
+      h('details', { className: 'pay-howbox' }, h('summary', null, t('pay_how')),
+        h('ul', null, r.lines.map(function (ln) { var k = kp[ln.k]; return h('li', { key: ln.k }, h('span', null, k.name), h('span', null, payHow(k, ln, p.snap.base, t))); }))));
+  }
+  /* own history: when, for which month, how much, status and the SOP manager's answer */
+  function PayHistory(p) {
+    var t = p.t, open = p.open;
+    return h('section', { className: 'box pay-hist' },
+      h('div', { className: 'box-row', style: { marginTop: 0 } }, h('h2', { className: 'lor-h' }, t('pay_hist')), h('span', { className: 'lor-count' }, p.list.length)),
+      p.list.length ? h('ul', { className: 'pay-hlist' }, p.list.map(function (c) {
+        var on = open[0] === c.id;
+        return h('li', { key: c.id, className: cx('pay-hitem', on && 'is-open') },
+          h('button', { type: 'button', className: 'pay-hrow', 'aria-expanded': on, onClick: function () { open[1](on ? null : c.id); } },
+            h('span', { className: 'pay-hwhen' }, fmtDT(c.at)), h('span', null, ymLabel(c.ym, p.lang)),
+            h('b', null, sumTxt(c.total, t)), h('span', { className: 'lor-muted' }, c.pct != null ? 'KPI ' + c.pct + '%' : ''), h(PayStatus, { s: c.status, t: t })),
+          on ? h('div', { className: 'pay-hbody' },
+            h(PayLines, { t: t, c: c }),
+            c.note ? h('p', { className: 'lor-sm', style: { margin: 0 } }, h('b', null, t('pay_note_l') + ': '), c.note) : null,
+            c.reply ? h('p', { className: 'lor-sm pay-reply', style: { margin: 0 } }, h('b', null, t('pay_reply') + ': '), c.reply) : null) : null);
+      })) : h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('pay_hist_none')));
+  }
+  function fmtDT(ts) { var d = new Date(ts); return pad(d.getDate()) + '.' + pad(d.getMonth() + 1) + '.' + d.getFullYear() + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()); }
+
+  /* the SOP manager: history of everyone's calculations, the terms, per-person terms */
+  function PayAdmin(p) {
+    var t = p.t, db = p.db, tab = useState(p.tab || 'hist'), calcs = db.payCalcs || [], schemes = (db.pay && db.pay.schemes) || [];
+    var wait = calcs.filter(function (c) { return c.status === 'saved'; }).length;
+    return h('div', { className: 'app-wrap' },
+      h('div', { className: 'page-head' }, h('div', null, h('span', { className: 'lor-eyebrow' }, t('pay_eyebrow')), h('h1', { className: 'lor-title' }, t('pay_admin_title')))),
+      h('div', { className: 'lor-tabs fb-tabs', role: 'tablist' }, [['hist', t('pay_tab_hist'), wait], ['schemes', t('pay_tab_schemes'), schemes.length], ['people', t('pay_tab_people'), null]].map(function (x) {
+        return h('button', { key: x[0], type: 'button', role: 'tab', 'aria-selected': tab[0] === x[0], className: cx('lor-tab', tab[0] === x[0] && 'is-on'), onClick: function () { tab[1](x[0]); } }, x[1], x[2] != null ? h('span', { className: 'lor-count' }, x[2]) : null);
+      })),
+      tab[0] === 'schemes' ? h(PaySchemes, p) : tab[0] === 'people' ? h(PayPeople, p) : h(PayHistAdmin, p));
+  }
+  function payNotify(d, c, s, reply) {
+    d.notifications.unshift({ id: nextId(d), userId: c.uid, kind: 'pay', route: 'pay', pay: { s: s, ym: c.ym, total: c.total, reply: reply || null }, at: Date.now(), read: false });
+  }
+  /* who calculated what and how — a timeline by day; approve or return with a comment */
+  function PayHistAdmin(p) {
+    var t = p.t, db = p.db, fu = useState(''), fm = useState(''), fs = useState(''), open = useState(null), rep = useState('');
+    var all = (db.payCalcs || []).slice().sort(function (a, b) { return b.at - a.at; });
+    var months = all.map(function (c) { return c.ym; }).filter(function (m, i, a) { return a.indexOf(m) === i; });
+    var people = all.map(function (c) { return c.uid; }).filter(function (m, i, a) { return a.indexOf(m) === i; });
+    var list = all.filter(function (c) { return (!fu[0] || String(c.uid) === fu[0]) && (!fm[0] || c.ym === fm[0]) && (!fs[0] || c.status === fs[0]); });
+    var days = [];
+    list.forEach(function (c) { var k = dayKey(c.at); if (!days.length || days[days.length - 1].k !== k) days.push({ k: k, items: [] }); days[days.length - 1].items.push(c); });
+    function decide(c, s) {
+      var reply = rep[0].trim();
+      p.update(function (d) { (d.payCalcs || []).forEach(function (x) { if (x.id === c.id) { x.status = s; x.by = p.user.id; x.repliedAt = Date.now(); if (reply) x.reply = reply; else delete x.reply; } }); payNotify(d, c, s, reply); });
+      rep[1](''); p.say(t(s === 'approved' ? 'pay_ok_done' : 'pay_back_done'));
+    }
+    function excel() {
+      var a = [['Sana', 'Xodim', 'Lavozim', 'Oy', 'Belgilangan maosh', 'KPI', 'Jami', 'KPI, %', 'Holat', 'Izoh', 'SOP menejeri javobi']], b = [['Sana', 'Xodim', 'Oy', 'Ko‘rsatkich', 'Manba', 'Fakt', 'Bajarilish, %', 'Summa']], tu = T('uz');
+      list.forEach(function (c) {
+        var w = userOf(db, c.uid), kp = {};
+        (c.scheme.kpis || []).forEach(function (k) { kp[k.id] = k; });
+        a.push([fmtDT(c.at), w.name, w.position || '', c.ym, c.fixed, c.kpi, c.total, c.pct != null ? c.pct : '', tu('pay_st_' + c.status), c.note || '', c.reply || '']);
+        (c.lines || []).forEach(function (ln) { var k = kp[ln.k] || {}; b.push([fmtDT(c.at), w.name, c.ym, k.name || ln.k, tu('pay_src_' + (k.src || 'manual')), ln.f, ln.s != null ? ln.s : '', ln.a]); });
+      });
+      downloadBlob('buraq-maosh-' + dayKey(Date.now()) + '.xlsx', makeXlsx([{ name: 'Hisoblar', rows: a }, { name: 'Qatorlar', rows: b }]));
+    }
+    var sel = function (v, set, opts, label) { return h('label', { className: 'pay-filter' }, h('span', { className: 'lor-eyebrow' }, label), h('select', { className: 'lor-input slim', value: v, onChange: function (e) { set(e.target.value); } }, h('option', { value: '' }, t('pay_f_all')), opts)); };
+    return h(F, null,
+      h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('pay_hist_hint')),
+      h('div', { className: 'tiles' },
+        [[t('pay_tile_n'), list.length], [t('pay_tile_people'), list.map(function (c) { return c.uid; }).filter(function (m, i, a) { return a.indexOf(m) === i; }).length],
+          [t('pay_tile_wait'), list.filter(function (c) { return c.status === 'saved'; }).length], [t('pay_tile_ok'), list.filter(function (c) { return c.status === 'approved'; }).length]]
+          .map(function (x) { return h('div', { key: x[0], className: 'tile' }, h('span', { className: 'lor-eyebrow' }, x[0]), h('b', null, x[1])); })),
+      h('div', { className: 'pay-filters' },
+        sel(fu[0], fu[1], people.map(function (id) { return h('option', { key: id, value: String(id) }, userOf(db, id).name); }), t('pay_f_emp')),
+        sel(fm[0], fm[1], months.map(function (m) { return h('option', { key: m, value: m }, ymLabel(m, p.lang)); }), t('pay_month')),
+        sel(fs[0], fs[1], ['saved', 'approved', 'rejected'].map(function (s) { return h('option', { key: s, value: s }, t('pay_st_' + s)); }), t('pay_f_status')),
+        h('span', { style: { flex: 1 } }),
+        list.length ? h(Btn, { variant: 'secondary', size: 'sm', onClick: excel }, t('imp_x_export')) : null),
+      days.length ? days.map(function (g) {
+        return h('section', { key: g.k, className: 'box pay-day' },
+          h('span', { className: 'lor-eyebrow' }, fmtDT(keyDate(g.k).getTime()).slice(0, 10)),
+          h('ul', { className: 'pay-tl' }, g.items.map(function (c) {
+            var w = userOf(db, c.uid), on = open[0] === c.id;
+            return h('li', { key: c.id, className: cx('pay-tli', on && 'is-open') },
+              h('button', { type: 'button', className: 'pay-tlrow', 'aria-expanded': on, onClick: function () { open[1](on ? null : c.id); rep[1](''); } },
+                h(Av, { name: w.name, src: w.avatar, size: 34 }),
+                h('span', { className: 'pay-tlwho' }, h('b', null, w.name), ' ', h('span', { className: 'lor-muted' }, tpl(t('pay_calced'), { m: ymLabel(c.ym, p.lang, true) })),
+                  h('small', null, (w.position || '') + ' · ' + fmtDT(c.at).slice(11) + (c.note ? ' · «' + c.note + '»' : ''))),
+                h('span', { className: 'pay-tlsum' }, h('b', null, sumTxt(c.total, t)), c.pct != null ? h('small', null, 'KPI ' + c.pct + '%') : null),
+                h(PayStatus, { s: c.status, t: t })),
+              on ? h('div', { className: 'pay-hbody' },
+                h(PayLines, { t: t, c: c, db: db, u: w, check: true }),
+                c.status === 'saved' ? h('div', { className: 'pay-decide' },
+                  h(Field, { name: 'pay-rep', label: t('pay_reply'), multiline: true, rows: 2, placeholder: t('pay_reply_ph'), value: rep[0], onChange: rep[1] }),
+                  h('div', { className: 'box-row' },
+                    h(Btn, { variant: 'ghost', size: 'sm', onClick: function () { decide(c, 'rejected'); } }, t('pay_reject')),
+                    h(Btn, { variant: 'primary', size: 'sm', arrow: true, onClick: function () { decide(c, 'approved'); } }, t('pay_approve'))))
+                  : h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, tpl(t('pay_decided'), { s: t('pay_st_' + c.status), d: c.repliedAt ? fmtDT(c.repliedAt) : '' }) + (c.reply ? ' — ' + c.reply : ''))) : null);
+          })));
+      }) : h('section', { className: 'box pay-empty' }, h('p', { style: { margin: 0 } }, all.length ? t('pay_f_none') : t('pay_hist_none_all'))));
+  }
+  /* the terms: per positions — fixed, KPI bonus at 100 %, the indicators */
+  function payKpi() { return { id: 'k' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), name: '', unit: '', src: 'manual', type: 'plan', plan: 100, w: 100, min: 0, cap: 100 }; }
+  function PaySchemes(p) {
+    var t = p.t, db = p.db, list = (db.pay && db.pay.schemes) || [], ed = useState(null), er = useState('');
+    var allPos = STAFF_POS.concat(db.users.filter(function (u) { return u.role === 'employee' && u.position; }).map(function (u) { return u.position; })).filter(function (x, i, a) { return a.indexOf(x) === i; });
+    function users(s) { return db.users.filter(function (u) { var m = u.role === 'employee' && LmsPay.schemeFor(db.pay, u); return m && m.scheme.id === s.id; }); }
+    function save() {
+      var s = ed[0];
+      if (!s.title.trim()) { er[1](t('fill_required')); return; }
+      var clean = Object.assign({}, s, { title: s.title.trim(), fixed: payNum(s.fixed), base: payNum(s.base), kpis: s.kpis.filter(function (k) { return k.name.trim(); }).map(function (k) {
+        var o = { id: k.id, name: k.name.trim(), unit: (k.unit || '').trim(), src: k.src, type: k.type };
+        if (k.type === 'plan') { o.plan = payNum(k.plan); o.w = payNum(k.w); o.min = payNum(k.min); o.cap = payNum(k.cap) || 100; }
+        else if (k.type === 'unit') o.rate = payNum(k.rate);
+        else { o.plan = payNum(k.plan); o.amount = payNum(k.amount); }
+        if (k.type !== 'unit' && k.less) o.less = true;
+        return o;
+      }) });
+      p.update(function (d) {
+        d.pay = d.pay || { schemes: [], people: {} }; d.pay.schemes = d.pay.schemes || [];
+        var i = d.pay.schemes.map(function (x) { return x.id; }).indexOf(clean.id);
+        if (i >= 0) d.pay.schemes[i] = clean; else d.pay.schemes.push(clean);
+      });
+      ed[1](null); er[1](''); p.say(t('pay_s_saved'));
+    }
+    function del(s) { if (!window.confirm(t('pay_s_del_q'))) return; p.update(function (d) { d.pay.schemes = d.pay.schemes.filter(function (x) { return x.id !== s.id; }); }); }
+    if (ed[0]) {
+      var s = ed[0], set = function (k, v) { var o = Object.assign({}, s); o[k] = v; ed[1](o); };
+      var setK = function (i, k, v) { var ks = s.kpis.slice(); ks[i] = Object.assign({}, ks[i]); ks[i][k] = v; if (k === 'src' && v !== 'manual' && !ks[i].unit) ks[i].unit = t('pay_u_' + v); set('kpis', ks); };
+      var snap = LmsPay.snapshot(Object.assign({}, s, { kpis: s.kpis.filter(function (k) { return k.name.trim(); }) })), ex = {};
+      snap.kpis.forEach(function (k) { ex[k.id] = k.type === 'unit' ? 0 : k.plan; });
+      var wsum = snap.kpis.filter(function (k) { return k.type === 'plan'; }).reduce(function (a, k) { return a + k.w; }, 0), hasPlan = snap.kpis.some(function (k) { return k.type === 'plan'; });
+      var num = function (name, label, v, on) { return h(Field, { name: name, label: label, type: 'number', value: v, onChange: on }); };
+      return h('section', { className: 'box pay-editor' },
+        h('h2', { className: 'lor-h' }, list.some(function (x) { return x.id === s.id; }) ? t('pay_s_edit') : t('pay_new')),
+        h('div', { className: 'pay-ed-grid' },
+          h(Field, { name: 'pay-title', label: t('pay_s_title'), required: true, value: s.title, error: er[0], placeholder: t('pay_s_title_ph'), onChange: function (v) { set('title', v); } }),
+          num('pay-fixed', t('pay_fixed') + ', ' + t('pay_cur'), s.fixed, function (v) { set('fixed', v); }),
+          num('pay-base', t('pay_base') + ', ' + t('pay_cur'), s.base, function (v) { set('base', v); })),
+        h('div', { className: 'lor-field' }, h('span', { className: 'lor-field-label' }, t('pay_s_pos')),
+          h('div', { className: 'ac-chips' }, allPos.map(function (x) { var on = (s.positions || []).indexOf(x) >= 0; return h('button', { key: x, type: 'button', className: cx('ac-chip', on && 'is-on'), 'aria-pressed': on, onClick: function () { set('positions', on ? s.positions.filter(function (y) { return y !== x; }) : (s.positions || []).concat([x])); } }, x); }))),
+        h(Field, { name: 'pay-snote', label: t('pay_s_note'), value: s.note || '', placeholder: t('pay_s_note_ph'), onChange: function (v) { set('note', v); } }),
+        h('h3', { className: 'wz-sub' }, t('pay_kpis')),
+        h('ol', { className: 'pay-ed-kpis' }, s.kpis.map(function (k, i) {
+          var f = function (key, label, v, extra) { return h(Field, Object.assign({ key: key, name: 'pk-' + i + '-' + key, label: label, value: v, onChange: function (x) { setK(i, key, x); } }, extra || {})); };
+          return h('li', { key: k.id, className: 'pay-ed-kpi' },
+            h('div', { className: 'pay-ed-row' },
+              f('name', t('pay_k_name'), k.name, { placeholder: t('pay_k_name_ph') }),
+              f('src', t('pay_k_src'), k.src, { options: PAY_SRC.map(function (x) { return [x, t('pay_src_' + x)]; }) }),
+              f('type', t('pay_k_type'), k.type, { options: LmsPay.TYPES.map(function (x) { return [x, t('pay_t_' + x)]; }) }),
+              f('unit', t('pay_k_unit'), k.unit, { placeholder: t('pay_k_unit_ph') })),
+            h('div', { className: 'pay-ed-row is-params' },
+              k.type === 'unit' ? f('rate', t('pay_k_rate'), k.rate, { type: 'number', hint: t('pay_k_rate_h') })
+                : f('plan', t(k.type === 'bonus' ? 'pay_k_cond' : 'pay_k_plan'), k.plan, { type: 'number' }),
+              k.type === 'plan' ? f('w', t('pay_k_w'), k.w, { type: 'number' }) : null,
+              k.type === 'plan' ? f('min', t('pay_k_min'), k.min, { type: 'number', hint: t('pay_k_min_h') }) : null,
+              k.type === 'plan' ? f('cap', t('pay_k_cap'), k.cap, { type: 'number' }) : null,
+              k.type === 'bonus' ? f('amount', t('pay_k_amount') + ', ' + t('pay_cur'), k.amount, { type: 'number' }) : null,
+              k.type !== 'unit' ? h('label', { className: 'check pay-less' }, h('input', { type: 'checkbox', checked: !!k.less, onChange: function (e) { setK(i, 'less', e.target.checked); } }), t('pay_k_less')) : null,
+              h('button', { type: 'button', className: 'app-link pay-ed-del', onClick: function () { set('kpis', s.kpis.filter(function (_, j) { return j !== i; })); } }, t('remove'))),
+            snap.kpis.filter(function (x) { return x.id === k.id; }).map(function (x) { return h('p', { key: 'r', className: 'lor-sm lor-muted', style: { margin: 0 } }, '→ ' + payRule(x, t)); }));
+        })),
+        h('div', { className: 'box-row' },
+          h(Btn, { variant: 'secondary', size: 'sm', onClick: function () { set('kpis', s.kpis.concat([payKpi()])); } }, '+ ' + t('pay_kpi_add')),
+          hasPlan ? h('span', { className: cx('lor-sm', wsum !== 100 ? 'pay-warn' : 'lor-muted') }, tpl(t('pay_wsum'), { n: numTxt(wsum) }) + (wsum !== 100 ? ' ' + t('pay_wsum_bad') : ' ✓')) : null),
+        h('p', { className: 'pay-example' }, tpl(t('pay_example'), { x: sumTxt(LmsPay.calc(snap, payNum(s.fixed), ex).total, t) })),
+        h('div', { className: 'box-row' },
+          h(Btn, { variant: 'ghost', size: 'sm', onClick: function () { ed[1](null); er[1](''); } }, t('cancel')),
+          h(Btn, { variant: 'primary', arrow: true, onClick: save }, t('save'))));
+    }
+    return h(F, null,
+      h('div', { className: 'box-row', style: { marginTop: 0 } },
+        h('p', { className: 'lor-sm lor-muted', style: { margin: 0, maxWidth: 720 } }, t('pay_schemes_hint')),
+        h(Btn, { variant: 'primary', size: 'sm', arrow: true, onClick: function () { ed[1]({ id: 'ps' + Date.now().toString(36), title: '', positions: [], fixed: '', base: '', note: '', kpis: [payKpi()] }); } }, t('pay_new'))),
+      list.length ? h('div', { className: 'pay-cards' }, list.map(function (s) {
+        var us = users(s), snap = LmsPay.snapshot(s);
+        return h('section', { key: s.id, className: 'box pay-card' },
+          h('div', { className: 'box-row', style: { marginTop: 0 } }, h('h2', { className: 'lor-h' }, s.title), h('span', { className: 'lor-count' }, tpl(t('pay_s_users'), { n: us.length }))),
+          (s.positions || []).length ? h('div', { className: 'ac-chips' }, s.positions.map(function (x) { return h('span', { key: x, className: 'ac-chip is-static' }, x); })) : h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('pay_s_nopos')),
+          h('div', { className: 'pay-tiles' },
+            h('div', { className: 'tile' }, h('span', { className: 'lor-eyebrow' }, t('pay_fixed')), h('b', { className: 'tile-sm' }, sumTxt(s.fixed, t))),
+            h('div', { className: 'tile' }, h('span', { className: 'lor-eyebrow' }, t('pay_base')), h('b', { className: 'tile-sm' }, sumTxt(s.base, t)))),
+          h('ul', { className: 'pay-rules' }, snap.kpis.map(function (k) { return h('li', { key: k.id }, h('b', null, k.name), h('span', { className: 'lor-sm lor-muted' }, (k.src !== 'manual' ? t('pay_src_' + k.src) + ' · ' : '') + payRule(k, t))); })),
+          h('div', { className: 'box-row' },
+            h('button', { type: 'button', className: 'app-link danger', onClick: function () { del(s); } }, t('remove')),
+            h(Btn, { variant: 'secondary', size: 'sm', onClick: function () { ed[1](JSON.parse(JSON.stringify(Object.assign({ note: '' }, s)))); } }, t('pay_s_edit'))));
+      })) : h('section', { className: 'box pay-empty' }, h('p', { style: { margin: 0 } }, t('pay_s_none'))));
+  }
+  /* per person: another scheme than the position's, own fixed salary */
+  function PayPeople(p) {
+    var t = p.t, db = p.db, pay = db.pay || {}, schemes = pay.schemes || [], ym = ymOf(Date.now());
+    var emps = db.users.filter(function (u) { return u.role === 'employee'; });
+    function setP(uid, k, v) {
+      p.update(function (d) {
+        d.pay = d.pay || { schemes: [], people: {} }; d.pay.people = d.pay.people || {};
+        var o = Object.assign({}, d.pay.people[uid] || {});
+        if (v === '' || v == null) delete o[k]; else o[k] = k === 'fixed' ? payNum(v) : v;
+        if (Object.keys(o).length) d.pay.people[uid] = o; else delete d.pay.people[uid];
+      });
+    }
+    return h(F, null,
+      h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('pay_people_hint')),
+      h('section', { className: 'box', style: { padding: 0 } }, h('div', { className: 'lor-table-wrap' }, h('table', { className: 'lor-table pay-people' },
+        h('thead', null, h('tr', null, [t('fio'), t('pay_k_scheme'), t('pay_fixed'), ymLabel(ym, p.lang)].map(function (x, i) { return h('th', { key: i }, x); }))),
+        h('tbody', null, emps.map(function (u) {
+          var own = (pay.people || {})[u.id] || {}, m = LmsPay.schemeFor(pay, u), byPos = LmsPay.schemeFor({ schemes: schemes, people: {} }, u);
+          var last = (db.payCalcs || []).filter(function (c) { return c.uid === u.id && c.ym === ym; }).sort(function (a, b) { return b.at - a.at; })[0];
+          return h('tr', { key: u.id },
+            h('td', null, h('div', { className: 'lor-emp' }, h(Av, { name: u.name, src: u.avatar, size: 32 }), h('span', null, u.name, h('small', null, u.position)))),
+            h('td', null, h('select', { className: 'lor-input slim', 'aria-label': t('pay_k_scheme'), value: own.schemeId || '', onChange: function (e) { setP(u.id, 'schemeId', e.target.value); } },
+              h('option', { value: '' }, byPos ? tpl(t('pay_by_pos'), { x: byPos.scheme.title }) : t('pay_no_scheme')),
+              schemes.map(function (s) { return h('option', { key: s.id, value: s.id }, s.title); }))),
+            h('td', null, h('input', { className: 'lor-input slim pay-fix-in', type: 'number', 'aria-label': t('pay_fixed'), placeholder: m ? money(m.scheme.fixed) : '—', disabled: !m, defaultValue: own.fixed != null ? own.fixed : '', key: 'f' + (own.fixed != null ? own.fixed : ''), onBlur: function (e) { var v = e.target.value.trim(); if (String(own.fixed != null ? own.fixed : '') !== v) setP(u.id, 'fixed', v); } }),
+              m && own.fixed != null ? h('small', { className: 'lor-muted', style: { display: 'block' } }, t('pay_fixed_own')) : null),
+            h('td', null, last ? h('span', null, h('b', null, sumTxt(last.total, t)), ' ', h(PayStatus, { s: last.status, t: t })) : h('span', { className: 'lor-muted' }, '—')));
+        }))))));
   }
 
   function MyIdeas(p) {
@@ -3265,8 +3619,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   function cut(s, n) { s = String(s || '').replace(/\s+/g, ' ').trim(); return s.length > n ? s.slice(0, n) + '…' : s; }
 
   var PAGES = {
-    employee: [['home', 'nav_home'], ['tasks', 'nav_tasks'], ['cases', 'nav_cases'], ['base', 'nav_base'], ['path', 'nav_path'], ['drill', 'dr_title'], ['assets', 'as_my_title'], ['ideas', 'ini_my'], ['report', 'mr_nav'], ['help', 'nav_help']],
-    admin: [['inbox', 'nav_inbox'], ['monitor', 'nav_monitor'], ['quality', 'nav_quality'], ['rating', 'nav_rating'], ['levels', 'nav_levels'], ['cms', 'nav_cms'], ['staff', 'nav_staff'], ['assets', 'nav_assets'], ['feedback', 'nav_feedback'], ['help', 'nav_help']]
+    employee: [['home', 'nav_home'], ['tasks', 'nav_tasks'], ['cases', 'nav_cases'], ['base', 'nav_base'], ['path', 'nav_path'], ['drill', 'dr_title'], ['assets', 'as_my_title'], ['ideas', 'ini_my'], ['report', 'mr_nav'], ['pay', 'nav_pay'], ['help', 'nav_help']],
+    admin: [['inbox', 'nav_inbox'], ['monitor', 'nav_monitor'], ['quality', 'nav_quality'], ['rating', 'nav_rating'], ['levels', 'nav_levels'], ['cms', 'nav_cms'], ['staff', 'nav_staff'], ['assets', 'nav_assets'], ['feedback', 'nav_feedback'], ['pay', 'nav_pay'], ['help', 'nav_help']]
   };
 
   /* every group knows how to open itself, so the palette stays a dumb list */
@@ -6006,12 +6360,14 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       : route.name === 'cases' ? h(CasesPage, Object.assign({}, q, { caseId: route.id, key: 'cs' + (route.id || '') }))
       : route.name === 'base' ? h(BasePage, q)
       : route.name === 'report' ? h(MonthReport, Object.assign({}, q, { ym: route.ym }))
+      : route.name === 'pay' ? h(PayPage, q)
       : route.name === 'mentor' && isMentor(u) ? h(MentorPanel, q)
       : route.name === 'help' ? h(HelpPage, Object.assign({}, q, { hint: hint, theme: theme, onTour: function () { tour[1](true); } }))
       : h(Home, q);
     var tkN = taskCount(db, u);
     var navItems = [['home', t('nav_home')], ['tasks', t('nav_tasks'), tkN], ['cases', t('nav_cases')], ['base', t('nav_base')], ['path', t('nav_path')]];
     if (isMentor(u)) navItems.push(['mentor', t('nav_mentor')]);
+    if (LmsPay.schemeFor(db.pay, u) || (db.payCalcs || []).some(function (c) { return c.uid === u.id; })) navItems.push(['pay', t('nav_pay')]);
     var nav = filled ? navItems.map(function (n) { return { key: n[0], label: n[1], count: n[2], active: route.name === n[0], onClick: function () { go({ name: n[0] }); } }; }) : null;
     var issuedN = assetsOf(db, u.id).filter(function (a) { return a.status === 'issued'; }).length;
     var links = filled ? [{ key: 'drill', label: t('dr_title'), onClick: function () { go({ name: 'drill' }); } }, { key: 'assets', label: t('as_my_title'), count: issuedN, onClick: function () { go({ name: 'assets' }); } }, { key: 'ideas', label: t('ini_my'), onClick: function () { go({ name: 'ideas' }); } }, { key: 'report', label: t('mr_nav'), onClick: function () { go({ name: 'report' }); } }, { key: 'help', label: t('nav_help'), onClick: function () { go({ name: 'help' }); } }] : null;
@@ -6594,11 +6950,12 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
 
     var attnA = (db.assets || []).filter(assetAttn).length, newIni = (db.initiatives || []).filter(function (x) { return !iniTo(x).length && x.status === 'new'; }).length;
     var qN = errStats(db, 90).open;
-    var nav = [['inbox', t('nav_inbox'), openN], ['monitor', t('nav_monitor')], ['quality', t('nav_quality'), qN], ['rating', t('nav_rating')], ['levels', t('nav_levels')], ['cms', t('nav_cms')], ['staff', t('nav_staff')], ['assets', t('nav_assets'), attnA], ['feedback', t('nav_feedback'), newIni]].map(function (n) { return { key: n[0], label: n[1], count: n[2], active: route.name === n[0], onClick: function () { go({ name: n[0] }); } }; });
+    var nav = [['inbox', t('nav_inbox'), openN], ['monitor', t('nav_monitor')], ['quality', t('nav_quality'), qN], ['rating', t('nav_rating')], ['levels', t('nav_levels')], ['cms', t('nav_cms')], ['staff', t('nav_staff')], ['assets', t('nav_assets'), attnA], ['feedback', t('nav_feedback'), newIni], ['pay', t('nav_pay'), (db.payCalcs || []).filter(function (c) { return c.status === 'saved'; }).length]].map(function (n) { return { key: n[0], label: n[1], count: n[2], active: route.name === n[0], onClick: function () { go({ name: n[0] }); } }; });
     var q = Object.assign({}, p, { goCms: function (lid) { go({ name: 'cms', lessonId: lid }); }, goAssets: function (uid) { go({ name: 'assets', uid: uid }); } });
     var main = route.name === 'monitor' ? h(Monitor, Object.assign({}, q, { tab: route.tab, ym: route.ym })) : route.name === 'rating' ? h(Rating, q) : route.name === 'levels' ? h(LevelsAdmin, q) : route.name === 'cms' ? h(CMS, Object.assign({}, q, { lessonId: route.lessonId, tab: route.tab })) : route.name === 'staff' ? h(Staff, q)
       : route.name === 'assets' ? h(AssetsAdmin, Object.assign({}, q, { uid: route.uid, key: 'as' + (route.uid || '') })) : route.name === 'feedback' ? h(FeedbackAdmin, Object.assign({}, q, { tab: route.tab }))
       : route.name === 'quality' ? h(QualityAdmin, Object.assign({}, q, { tab: route.tab }))
+      : route.name === 'pay' ? h(PayAdmin, Object.assign({}, q, { tab: route.tab }))
       : route.name === 'help' ? h(HelpPage, Object.assign({}, q, { go: go, hint: hint, theme: theme, onTour: function () { tour[1](true); } })) : h(Inbox, Object.assign({}, q, { tab: route.tab }));
     return h(F, null,
       h(Header, { t: t, lang: p.lang, setLang: p.setLang, onProfile: p.openProfile, user: p.user, nav: nav, wide: true, onLogout: p.logout, onTerms: p.showTerms,

@@ -3145,3 +3145,110 @@ button.mc-cell.at-cell:hover { outline: 2px solid var(--blue-text); outline-offs
 @media (max-width: 960px) { .wz-admin { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 760px) { .wz { display: none; } }
 
+
+/* ---------- salary: fixed + KPI (app.js PayPage, PayAdmin) ---------- */
+.pay-months { align-self: flex-end; }
+.pay-empty { flex-direction: row; align-items: center; gap: var(--space-4); }
+.pay-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(300px, 1fr); gap: var(--space-6); align-items: start; }
+.pay-main, .pay-side { display: flex; flex-direction: column; gap: var(--space-6); min-width: 0; }
+.pay-side { position: sticky; top: 132px; }
+.pay-scheme { font-size: 13px; padding: 3px 10px; border-radius: var(--radius-pill); background: var(--blue-soft); color: var(--blue-text); }
+.pay-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+.pay-kpis { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.pay-kpi { padding: var(--space-4) 0; border-top: var(--hairline) solid var(--line); display: flex; flex-direction: column; gap: var(--space-3); }
+.pay-kpi:first-child { border-top: 0; padding-top: 0; }
+.pay-kpi-top { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-4); }
+.pay-kpi-top b { font-weight: 500; }
+.pay-amt { font-size: 17px; line-height: 24px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pay-amt.is-minus, .pay-lines b.is-minus { color: var(--red-text); }
+.pay-amt.is-zero { color: var(--ink-muted); }
+.pay-kpi-in { display: grid; grid-template-columns: minmax(150px, 220px) minmax(0, 1fr) auto; align-items: center; gap: var(--space-4); }
+.pay-input { display: flex; align-items: center; gap: var(--space-2); }
+.pay-input .lor-input { font-size: 18px; font-variant-numeric: tabular-nums; }
+.pay-autoval { display: flex; flex-direction: column; gap: 2px; }
+.pay-autoval b { font-size: 18px; font-weight: 400; font-variant-numeric: tabular-nums; }
+.pay-auto { display: inline-block; font-size: 11px; line-height: 16px; letter-spacing: .02em; color: var(--blue-text); }
+.pay-line .pay-auto { display: block; }
+.pay-bar { position: relative; height: 6px; border-radius: 3px; background: var(--surface-sunken); overflow: visible; }
+.pay-bar i { position: absolute; inset: 0 auto 0 0; border-radius: 3px; background: var(--blue); transition: width var(--t-lg, .38s) var(--ease-out, ease-out); }
+.pay-bar.is-low i { background: var(--red); }
+.pay-bar-100 { position: absolute; top: -4px; bottom: -4px; width: var(--hairline); background: var(--ink-muted); }
+.pay-bar-n { font-size: 13px; color: var(--ink-muted); font-variant-numeric: tabular-nums; min-width: 48px; text-align: right; }
+/* the result: a navy card with the big total */
+.pay-result { background: var(--navy); color: var(--on-navy); border-radius: var(--radius-lg); padding: var(--space-6); display: flex; flex-direction: column; gap: var(--space-4);
+  background-image: radial-gradient(320px 220px at 100% 0%, rgba(3, 76, 170, .55), rgba(3, 76, 170, 0) 70%); }
+.pay-result .lor-eyebrow { color: #ffffffb3; }
+.pay-total { display: flex; align-items: baseline; gap: var(--space-2); }
+.pay-total b { font-size: 44px; line-height: 50px; font-weight: 400; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.pay-total span { font-size: 16px; color: #ffffffb3; }
+.pay-split { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: var(--space-3); padding-top: var(--space-4); border-top: var(--hairline) solid #ffffff2e; }
+.pay-split small { display: block; font-size: 12px; color: #ffffffa6; }
+.pay-split b { font-size: 17px; font-weight: 400; font-variant-numeric: tabular-nums; }
+.pay-howbox summary { cursor: pointer; font-size: 13px; color: #ffffffcc; }
+.pay-howbox ul { list-style: none; margin: var(--space-3) 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.pay-howbox li { display: flex; flex-direction: column; font-size: 12px; line-height: 17px; color: #ffffffb3; }
+.pay-howbox li span:first-child { color: var(--white); font-size: 13px; }
+.pay-save .lor-btn { margin-top: var(--space-2); }
+/* history */
+.pay-hlist, .pay-tl { list-style: none; margin: 0; padding: 0; }
+.pay-hitem, .pay-tli { border-top: var(--hairline) solid var(--line); }
+.pay-hitem:first-child, .pay-tli:first-child { border-top: 0; }
+.pay-hrow, .pay-tlrow { width: 100%; display: grid; align-items: center; gap: var(--space-4); padding: var(--space-3) 0; background: none; border: 0; text-align: left; color: inherit; font: inherit; cursor: pointer; }
+.pay-hrow { grid-template-columns: 140px minmax(0, 1fr) auto 80px auto; }
+.pay-hrow b, .pay-tlsum b { font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pay-hwhen { font-size: 13px; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+.pay-hrow:hover b, .pay-tlrow:hover .pay-tlwho b { color: var(--blue-text); }
+.pay-hbody { padding: 0 0 var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); animation: pop-in .25s var(--ease-out, ease-out) both; }
+.pay-lines { border: var(--hairline) solid var(--line); border-radius: var(--radius-md); overflow: hidden; }
+.pay-line { display: grid; grid-template-columns: minmax(140px, .9fr) minmax(0, 2fr) auto; gap: var(--space-4); align-items: center; padding: 10px var(--space-4); border-top: var(--hairline) solid var(--line); font-size: 14px; }
+.pay-line:first-child { border-top: 0; }
+.pay-line b { font-weight: 500; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pay-line.is-fixed, .pay-line.is-total { background: var(--surface-sunken); }
+.pay-line.is-total b { font-size: 16px; }
+.pay-how { font-size: 12px; line-height: 17px; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+.pay-diff { font-style: normal; color: var(--red-text); }
+.pay-reply { padding: 10px var(--space-4); border-left: 2px solid var(--blue); background: var(--blue-soft); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
+.pay-st { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: var(--radius-pill); font-size: 12px; line-height: 16px; white-space: nowrap; border: var(--hairline) solid var(--line); color: var(--ink-muted); }
+.pay-st.is-approved { background: var(--blue-soft); border-color: transparent; color: var(--blue-text); }
+.pay-st.is-rejected { background: var(--red-soft); border-color: transparent; color: var(--red-text); }
+/* the SOP manager */
+.pay-filters { display: flex; align-items: flex-end; gap: var(--space-4); flex-wrap: wrap; }
+.pay-filter { display: flex; flex-direction: column; gap: 4px; min-width: 170px; }
+.pay-day { gap: var(--space-2); }
+.pay-tlrow { grid-template-columns: auto minmax(0, 1fr) auto auto; }
+.pay-tlwho small { display: block; font-size: 12px; color: var(--ink-muted); margin-top: 2px; }
+.pay-tlwho b { font-weight: 500; }
+.pay-tlsum { display: flex; flex-direction: column; align-items: flex-end; }
+.pay-tlsum small { font-size: 12px; color: var(--ink-muted); }
+.pay-decide { display: flex; flex-direction: column; gap: var(--space-2); }
+.pay-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: var(--space-4); }
+.pay-rules { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.pay-rules li { display: flex; flex-direction: column; font-size: 14px; }
+.pay-rules b { font-weight: 500; }
+.ac-chip.is-static { cursor: default; }
+.ac-chip.is-static:hover { transform: none; }
+.pay-editor { gap: var(--space-4); }
+.pay-ed-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-4); }
+.pay-ed-kpis { margin: 0; padding: 0 0 0 20px; display: flex; flex-direction: column; gap: var(--space-4); }
+.pay-ed-kpi { padding: var(--space-4); border: var(--hairline) solid var(--line); border-radius: var(--radius-md); display: flex; flex-direction: column; gap: var(--space-3); }
+.pay-ed-row { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1.2fr) minmax(0, 1.2fr) minmax(0, .8fr); gap: var(--space-3); align-items: start; }
+.pay-ed-row.is-params { grid-template-columns: repeat(4, minmax(0, 1fr)) auto auto; }
+/* the checkbox and «remove» sit on the inputs' line (under the labels) */
+.pay-less, .pay-ed-del { margin-top: 38px; }
+.pay-warn { color: var(--red-text); }
+.pay-example { margin: 0; padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); background: var(--blue-soft); color: var(--blue-text); font-size: 14px; }
+.pay-fix-in { width: 150px; }
+@media (max-width: 1100px) { .pay-grid { grid-template-columns: minmax(0, 1fr); } .pay-side { position: static; } .pay-ed-row.is-params { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 760px) {
+  .pay-kpi-in { grid-template-columns: minmax(0, 1fr) auto; }
+  .pay-kpi-in .pay-bar { grid-column: 1 / -1; grid-row: 2; }
+  .pay-hrow { grid-template-columns: minmax(0, 1fr) auto auto; }
+  .pay-hrow > :nth-child(2), .pay-hrow > :nth-child(4) { display: none; }
+  .pay-tlrow { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .pay-tlrow .pay-st { display: none; }
+  .pay-line { grid-template-columns: minmax(0, 1fr) auto; }
+  .pay-line > b { grid-column: 2; grid-row: 1; }
+  .pay-line .pay-how { grid-column: 1 / -1; grid-row: 2; }
+  .pay-ed-grid, .pay-ed-row, .pay-ed-row.is-params { grid-template-columns: minmax(0, 1fr); }
+  .pay-total b { font-size: 36px; line-height: 42px; }
+}

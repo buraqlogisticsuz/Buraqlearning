@@ -44,7 +44,7 @@ jobs:
         if: env.SITE_URL == ''
         run: |
           mkdir _site
-          cp index.html config.js lms-sync.js lms-client.js lms-gs-script.js lor.css lor-ds.js templates.js strings.js app.js _site/
+          cp index.html config.js lms-sync.js lms-pay.js lms-client.js lms-gs-script.js lor.css lor-ds.js templates.js strings.js app.js _site/
           cp -r js fonts icons _site/
           mkdir -p _site/buraq-brand/logo
           cp buraq-brand/logo/*.svg _site/buraq-brand/logo/

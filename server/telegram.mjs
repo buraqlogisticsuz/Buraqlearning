@@ -15,7 +15,7 @@ export function loadStrings(root) {
   const ctx = { window: {} };
   vm.createContext(ctx);
   vm.runInContext(readFileSync(join(root, 'strings.js'), 'utf8'), ctx);
-  return ctx.APP_T;
+  return Object.assign({}, ctx.APP_T, { months: ctx.MONTHS });
 }
 
 const tashkent = ms => {
@@ -84,6 +84,10 @@ export function startTelegram({ token, C, strings, fetch = globalThis.fetch, log
     if (n.kind === 'errfix' && n.err) return tpl(T('n_errfix'), { name: n.err.name, x: n.err.ttl, n: n.err.score });
     if (n.kind === 'sop' && n.sop) return tpl(T('n_sop'), { x: n.sop.ttl });
     if (n.kind === 'ltask' && n.lt) return tpl(T('n_ltask'), { x: (n.lt.x && (n.lt.x.uz || n.lt.x)) || '' });
+    if (n.kind === 'pay' && n.pay) {
+      const [y, mo] = String(n.pay.ym).split('-'), mn = (((strings || {}).months || {}).uz || [])[+mo - 1];
+      return tpl(T('n_pay_' + n.pay.s), { m: mn ? mn + ' ' + y : n.pay.ym, x: String(Math.round(n.pay.total || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0') + ' ' + T('pay_cur') }) + (n.pay.reply ? ' — ' + n.pay.reply : '');
+    }
     if (lv) return tpl(T('n_promo_level'), { x: (lv.name && (lv.name.uz || lv.name)) || '' });
     return n.text && !n.kind ? n.text : T('tg_new');
   }

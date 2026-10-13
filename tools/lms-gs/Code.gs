@@ -20,12 +20,13 @@
  *
  * Запрос — POST с JSON { action, token, … }, ответ — JSON { ok, … } или { ok: false, code, error }.
  */
-var LMS_VERSION = 8;           // 2: файлы — отдельно на Диске, действие file; 3: ИИ через Claude API (действие ai);
+var LMS_VERSION = 9;           // 2: файлы — отдельно на Диске, действие file; 3: ИИ через Claude API (действие ai);
                                // 4: адресаты идей — CEO, Project Manager, руководитель компании (свой вход, role 'leader');
                                // 5: у идеи несколько адресатов (to — список), repliedBy — кто ответил;
                                // 6: свой профиль — имя и фото, смена логина и пароля (действие account);
                                // 7: копия данных у SOP-менеджера (действие export), уведомления в Telegram (server/)
-                               // 8: «Kun hikmati» на странице входа — свои цитаты SOP-менеджера (действие wisdom, без входа)
+                               // 8: «Kun hikmati» на странице входа — свои цитаты SOP-менеджера (действие wisdom, без входа);
+                               // 9: зарплата — фикса + KPI (pay, payCalcs; формула — lms-pay.js, общая со страницей)
 var PBKDF2_ITER = 10000;          // пароль хранится только как PBKDF2-SHA256 с солью
 var SESSION_DAYS = 30;            // вход на устройстве живёт 30 дней с последнего запроса
 var FAIL_MAX = 5, FAIL_LOCK_MIN = 15;  // 5 неверных паролей подряд — логин закрыт на 15 минут
@@ -45,6 +46,7 @@ var AI_MAX_CHARS = 200000;        // длина запроса (текст ст�
 var AI_FALLBACK = ['claude-opus-5-5', 'claude-opus-5', 'claude-fable-5-1', 'claude-sonnet-5-5'];
 var DAY_MS = 864e5;
 var WISDOM_MAX = 60, WISDOM_TEXT = 240, WISDOM_BY = 80;   // «Kun hikmati»: цитат SOP-менеджера и их длина
+var PAY_MONTH_MAX = 20, PAY_NOTE = 300;   // зарплата: расчётов в истории у сотрудника за месяц, длина комментария
 // идею сотрудник отправляет одному или нескольким адресатам (to — список); у адресата свой вход (role 'leader',
 // post — кто он) и только эти идеи; ответ общий, repliedBy — кто из адресатов ответил последним
 var INI_TO = ['ceo', 'pm', 'boss'];
@@ -188,7 +190,8 @@ function emptyState_() {
     settings: { survey: { on: false, every: 3, round: 0 } },
     users: [], alumni: [], progress: {}, study: {}, requests: [], notifications: [], reminded: {}, audit: [],
     assets: [], errors: [], cases: [], journals: [], terms: [], drills: [], sopUpdates: [], initiatives: [], surveys: [],
-    attend: {}, attendCover: {}, attendImports: [], attendAlias: {}, xtasks: [], monthly: {}
+    attend: {}, attendCover: {}, attendImports: [], attendAlias: {}, xtasks: [], monthly: {},
+    pay: { schemes: [], people: {} }, payCalcs: []
   };
 }
 
@@ -349,6 +352,11 @@ function viewFor_(st, me) {
   v.attend = {}; if (st.attend && st.attend[uid]) v.attend[uid] = st.attend[uid];
   v.attendImports = []; v.attendAlias = {};
   v.reminded = {}; if (st.reminded && st.reminded[uid] !== undefined) v.reminded[uid] = st.reminded[uid];
+  // зарплата: только свои условия (схема и фикса) и свои расчёты — чужих сумм не видно
+  var pay = LmsPay.schemeFor(st.pay, me), people = (st.pay || {}).people || {};
+  v.pay = { schemes: pay ? [pay.scheme] : [], people: {} };
+  if (people[uid]) v.pay.people[uid] = people[uid];
+  v.payCalcs = own_(st.payCalcs, 'uid', uid);
   return clone_(v);
 }
 
@@ -445,6 +453,13 @@ function checkEmployee_(st, me, op) {
     return op.value && String(op.value.by) === uid ? null : 'строка — только от своего имени';
   }
 
+  if (top === 'pay') return 'условия зарплаты задаёт SOP-менеджер';
+  if (top === 'payCalcs') {
+    // история расчётов: сотрудник только добавляет свой; изменить или удалить — нельзя
+    if (!isId_(p[1]) || p.length !== 2 || op.op !== 'set' || LmsSync.get(st, p.slice(0, 2))) return 'расчёт в истории не меняется';
+    return checkPayCalc_(st, me, op.value);
+  }
+
   if (OWN[top]) {
     var f = OWN[top];
     if (!isId_(p[1])) return 'список целиком меняет SOP-менеджер';
@@ -470,6 +485,26 @@ function checkEmployee_(st, me, op) {
   }
 
   return 'нет прав на «' + top + '»';
+}
+
+/* новый расчёт зарплаты сотрудника: свой, по его нынешним условиям, сумма — как у формулы lms-pay.js */
+function checkPayCalc_(st, me, x) {
+  var uid = String(me.id);
+  if (!x || typeof x !== 'object' || String(x.uid) !== uid) return 'расчёт — только свой';
+  if (x.status !== 'saved' || x.reply != null || x.by != null || x.repliedAt != null) return 'итог расчёта ставит SOP-менеджер';
+  if (!/^\d{4}-\d{2}$/.test(String(x.ym || ''))) return 'неверный месяц расчёта';
+  if (x.note != null && (typeof x.note !== 'string' || x.note.length > PAY_NOTE)) return 'комментарий — до ' + PAY_NOTE + ' символов';
+  if (JSON.stringify(x).length > 16000) return 'слишком большой расчёт';
+  var mine = LmsPay.schemeFor(st.pay, me);
+  if (!mine) return 'условия зарплаты вам ещё не заданы';
+  var snap = LmsPay.snapshot(mine.scheme);
+  if (!LmsSync.equal(x.scheme, snap) || x.fixed !== Math.round(mine.fixed)) return 'условия зарплаты изменились — обновите страницу';
+  var inp = x.inputs;
+  if (!inp || typeof inp !== 'object' || Object.keys(inp).some(function (k) { return typeof inp[k] !== 'number' || !isFinite(inp[k]) || Math.abs(inp[k]) > 1e9; })) return 'неверные факты';
+  var r = LmsPay.calc(snap, mine.fixed, inp);
+  if (!['kpi', 'total', 'pct', 'lines'].every(function (k) { return LmsSync.equal(r[k], x[k]); })) return 'сумма не сходится с условиями';
+  var n = own_(st.payCalcs, 'uid', uid).filter(function (c) { return c.ym === x.ym; }).length;
+  return n >= PAY_MONTH_MAX ? 'за месяц — не больше ' + PAY_MONTH_MAX + ' расчётов' : null;
 }
 
 /* правка адресата идей: ответ (статус, текст, даты, кто ответил) на идею, где он среди адресатов; саму идею меняет автор */
@@ -538,6 +573,8 @@ function patch_(s, ops) {
   if (ops.length > MAX_OPS) throw err_('bad', 'Слишком много правок за раз (больше ' + MAX_OPS + ')');
   return withLock_(function () {
     var st = readState_(), me = me_(st, s), admin = me.role === 'admin', rejected = [], applied = 0;
+    // разделы, которых не было в данных прошлых версий (например, зарплата с v9), — пустыми, как у нового сервера
+    var empty = emptyState_(); Object.keys(empty).forEach(function (k) { if (st[k] === undefined) st[k] = empty[k]; });
     var before = admin ? clone_(st.users || []) : null, seen = null;
     /* ссылка на файл в правке сотрудника — только на файл, который ему и так виден (иначе вписал бы чужой и скачал) */
     function foreignFile(op) {
@@ -962,4 +999,83 @@ function installTriggers() {
   }
 
   return { diff: diff, apply: apply, applyOne: applyOne, get: get, equal: equal, clone: clone, isIdSeg: isIdSeg };
+});
+
+/* ---------------- lms-pay.js (собрано tools/build-lms-gs.mjs — правьте исходники) ---------------- */
+/* Учебная платформа: зарплата сотрудника — фикса + KPI по условиям SOP-менеджера. Один файл считает на странице
+   (window.LmsPay), в тестах Node (module.exports) и на сервере (сборка tools/build-lms-gs.mjs кладёт его к скрипту):
+   расчёт, который сотрудник сохраняет в историю, сервер пересчитывает этой же функцией — сумму не подогнать.
+
+   Условия (state.pay, правит SOP-менеджер):
+     schemes: [{ id, title, positions: [должности], fixed: фикса, base: KPI-бонус при выполнении 100%, kpis: [KPI], note }]
+     people:  { <id сотрудника>: { schemeId?, fixed? } } — своя схема или своя фикса (иначе — схема по должности)
+   KPI: { id, name, unit, src: 'manual' (вводит сотрудник) или показатель платформы (считает страница), type, … }
+     type 'plan'  — доля KPI-бонуса: вес w %, план plan. Выполнение = факт / план (less — «меньше — лучше»: план / факт),
+                    ниже порога min % — 0, выше потолка cap % — cap. Сумма = base × w % × выполнение
+     type 'unit'  — за единицу: rate × факт (rate меньше нуля — вычет, например за ошибку)
+     type 'bonus' — премия amount, если факт ≥ plan (less: факт ≤ plan)
+   История (state.payCalcs): { id, uid, at, ym, scheme: снимок условий, fixed, inputs: { id KPI: факт }, lines, kpi, total,
+     pct, note, status: 'saved' | 'approved' | 'rejected', reply, by, repliedAt } */
+(function (root, factory) {
+  var api = factory();
+  if (typeof module === 'object' && module.exports) module.exports = api; else root.LmsPay = api;
+})(this, function () {
+  'use strict';
+
+  var TYPES = ['plan', 'unit', 'bonus'];
+  function num(x) { x = +x; return isFinite(x) ? x : 0; }
+
+  /* условия человека: своя схема (people) или первая по должности; фикса — своя или схемы. null — условий нет */
+  function schemeFor(pay, u) {
+    if (!pay || !u) return null;
+    var me = (pay.people || {})[u.id] || {}, list = pay.schemes || [], s = null;
+    if (me.schemeId) s = list.filter(function (x) { return x && x.id === me.schemeId; })[0] || null;
+    if (!s) s = list.filter(function (x) { return x && (x.positions || []).indexOf(u.position) >= 0; })[0] || null;
+    if (!s) return null;
+    var own = me.fixed !== undefined && me.fixed !== null && me.fixed !== '' && isFinite(+me.fixed);
+    return { scheme: s, fixed: own ? +me.fixed : num(s.fixed) };
+  }
+
+  /* снимок условий для истории: только то, из чего считается сумма (схему потом могут поменять) */
+  function snapshot(s) {
+    return { id: s.id, title: String(s.title || ''), base: num(s.base), kpis: (s.kpis || []).map(function (k) {
+      var o = { id: String(k.id), name: String(k.name || ''), unit: String(k.unit || ''), src: String(k.src || 'manual'), type: TYPES.indexOf(k.type) >= 0 ? k.type : 'plan' };
+      if (o.type === 'plan') { o.plan = num(k.plan); o.w = num(k.w); o.min = num(k.min); o.cap = num(k.cap) || 100; }
+      else if (o.type === 'unit') o.rate = num(k.rate);
+      else { o.plan = num(k.plan); o.amount = num(k.amount); }
+      if (o.type !== 'unit' && k.less) o.less = true;
+      return o;
+    }) };
+  }
+
+  /* выполнение KPI типа plan, % — до порога и потолка */
+  function rawScore(k, f) {
+    if (!(k.plan > 0)) return 0;
+    if (!k.less) return f / k.plan * 100;
+    return f <= 0 ? Infinity : k.plan / f * 100;
+  }
+
+  /* расчёт по снимку условий: строки по KPI (факт, выполнение %, сумма) и итог; суммы — целые сумы */
+  function calc(snap, fixed, inputs) {
+    inputs = inputs || {};
+    var lines = [], kpi = 0, wsum = 0, wdone = 0;
+    (snap.kpis || []).forEach(function (k) {
+      var f = num(inputs[k.id]), a = 0, s = null;
+      if (k.type === 'unit') a = num(k.rate) * f;
+      else if (k.type === 'bonus') { var ok = k.less ? f <= k.plan : f >= k.plan; s = ok ? 100 : 0; a = ok ? num(k.amount) : 0; }
+      else {
+        s = Math.min(rawScore(k, f), k.cap || 100);
+        if (s < (k.min || 0)) s = 0;
+        a = num(snap.base) * num(k.w) / 100 * s / 100;
+        wsum += num(k.w); wdone += num(k.w) * s / 100;
+      }
+      a = Math.round(a) || 0;            // без «−0» у вычета при нулевом факте
+      lines.push({ k: k.id, f: f, s: s === null ? null : Math.round(s * 10) / 10, a: a });
+      kpi += a;
+    });
+    fixed = Math.round(num(fixed));
+    return { fixed: fixed, kpi: kpi, total: fixed + kpi, pct: wsum ? Math.round(wdone * 100 / wsum) : null, lines: lines };
+  }
+
+  return { TYPES: TYPES, schemeFor: schemeFor, snapshot: snapshot, calc: calc };
 });
