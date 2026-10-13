@@ -9,7 +9,7 @@
 (function (root) {
   'use strict';
   var S = root.LmsSync;
-  var SERVER_V = 6;                       // версия сервера (tools/lms-gs), под которую написана эта страница
+  var SERVER_V = 7;                       // версия сервера (tools/lms-gs), под которую написана эта страница
   var URL_ = String(root.LMS_SERVER || '').trim();
   var DEMO = !URL_;                      // адреса нет — страница пишет «Server ulanmagan» (демо больше нет)
   var K = { token: 'lor-lms-token', cache: 'lor-lms-cache', queue: 'lor-lms-queue', lang: 'lor-lms-lang' };
@@ -172,6 +172,8 @@
     changePassword: function (old, password) { return call('password', { old: old, password: password }); },
     /* свой логин и (у SOP-менеджера) пароль: { old, login?, password? } */
     account: function (o) { return call('account', o); },
+    /* SOP-менеджер: все данные и файлы — копия вне сервера */
+    exportAll: function () { return call('export'); },
     sync: function () { return sync().then(flush); },
     flushAll: flushAll
   };

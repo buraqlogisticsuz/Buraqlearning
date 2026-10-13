@@ -329,6 +329,23 @@ try {
   step('профиль: сотрудник сменил фото, имя и логин; пароль задал SOP-менеджер');
 
 
+  // ---------- сотрудники из Excel (CSV): заголовки по-русски, кириллица → логин латиницей, занятый логин — отказ ----------
+  await nav(A, 'staff');
+  const csv = '﻿ФИО;Должность;Отдел;Логин;Пароль\r\nШерзод Алиев;Omborchi;Ombor (Yiwu);;\r\nMalika Ergasheva;Mijozlar menejeri;Savdo bo‘limi;m.ergasheva;malika-123\r\nIkkinchi Dilnoza;Omborchi;;dilnoza.k;\r\n';
+  await A.setInputFiles('#staff-import', { name: 'xodimlar.csv', mimeType: 'text/csv', buffer: Buffer.from(csv, 'utf8') });
+  await A.waitForSelector('.imp-table');
+  assert.equal(await A.locator('.imp-table tbody tr').count(), 3);
+  assert.equal(await A.locator('.imp-table tr.imp-bad').count(), 1, 'занятый логин — отказ');
+  await shot(A, '14-import');
+  await click(A, 'Qo‘shish: 2 ta xodim', { wait: 400 });
+  await settle(A);
+  const sher = srv.g.state().users.find(u => u.name === 'Шерзод Алиев'), mal = srv.g.state().users.find(u => u.login === 'm.ergasheva');
+  assert.ok(sher && sher.login === 's.aliev' && sher.department === 'Ombor (Yiwu)' && srv.g.props['cred:' + sher.id], 'логин из кириллицы, вход на сервере');
+  assert.ok(mal && !('password' in mal) && srv.g.post({ action: 'login', login: 'm.ergasheva', password: 'malika-123' }).ok, 'пароль из файла работает');
+  assert.ok(await A.locator('.imp-done').count(), 'можно скачать логины и пароли');
+  assert.deepEqual(await rejected(A), [], 'сервер не отклонил импорт');
+  step('сотрудники из Excel: 2 добавлены, занятый логин отклонён, логины из кириллицы');
+
   // ---------- демо больше нет: ?demo=1 — тот же вход на сервер; без адреса сервера — «Server ulanmagan» ----------
   const D = await device('бывшее демо', '?demo=1');
   assert.equal(await D.locator('.demo-box').count(), 0, 'демо-входов нет');

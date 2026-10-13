@@ -3044,3 +3044,8 @@ button.mc-cell.at-cell:hover { outline: 2px solid var(--blue-text); outline-offs
 .pf-photo { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
 .pf-photo-act { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
 
+/* staff from Excel */
+.imp-act { justify-content: flex-start; gap: 12px; }
+.imp-table tr.imp-bad td { background: var(--red-soft); }
+.imp-done { margin-top: 12px; }
+

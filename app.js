@@ -6133,6 +6133,78 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       ed[0] && userOf(db, ed[0]).id ? h(UserEditModal, Object.assign({}, p, { key: 'le' + ed[0], u: userOf(db, ed[0]), onClose: function () { ed[1](null); } })) : null);
   }
 
+  /* ---------------- staff from Excel / CSV: name, position, department, login, password (empty — made up) ---------------- */
+  var TRANSLIT = { а: 'a', б: 'b', в: 'v', г: 'g', ғ: 'g', д: 'd', е: 'e', ё: 'yo', ж: 'j', з: 'z', и: 'i', й: 'y', к: 'k', қ: 'q', л: 'l', м: 'm', н: 'n', о: 'o', ў: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f', х: 'x', ҳ: 'h', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'sh', ъ: '', ы: 'i', ь: '', э: 'e', ю: 'yu', я: 'ya' };
+  function latin(s) { return String(s || '').toLowerCase().split('').map(function (c) { return TRANSLIT[c] != null ? TRANSLIT[c] : c; }).join('').replace(/[‘’'`ʻʼ]/g, '').replace(/[^a-z0-9]/g, ''); }
+  /* «Dilnoza Karimova» → d.karimova (as the logins made by hand) */
+  function autoLogin(name) { var w = String(name || '').trim().split(/\s+/).map(latin).filter(Boolean); return w.length > 1 ? w[0][0] + '.' + w[w.length - 1] : (w[0] || 'xodim'); }
+  var IMP_COLS = { name: /f\.?\s*i\.?\s*sh|^ism|familiya|фио|имя|^name|full\s*name/i, position: /lavozim|должност|position/i, department: /bo.?lim|отдел|department/i, login: /login|логин/i, password: /parol|пароль|password/i };
+  function importRows(rows, db) {
+    var head = (rows[0] || []).map(function (x) { return String(x || ''); }), col = {};
+    Object.keys(IMP_COLS).forEach(function (k) { head.forEach(function (hv, i) { if (col[k] == null && IMP_COLS[k].test(hv.trim())) col[k] = i; }); });
+    var body = rows;
+    if (col.name != null) body = rows.slice(1); else col = { name: 0, position: 1, department: 2, login: 3, password: 4 };
+    var taken = {}; db.users.forEach(function (u) { if (u.login) taken[String(u.login).toLowerCase()] = 1; });
+    return body.map(function (r) {
+      var g = function (k) { return col[k] == null ? '' : String(r[col[k]] == null ? '' : r[col[k]]).trim(); };
+      var x = { name: g('name').replace(/\s+/g, ' '), position: g('position') || STAFF_POS[0], department: g('department') || STAFF_DEP[0], login: g('login').toLowerCase(), password: g('password'), err: '' };
+      if (!x.name) return null;
+      if (x.name.length < 2) x.err = 'imp_x_err_name';
+      if (x.login) { if (!LOGIN_RE.test(x.login)) x.err = x.err || 'imp_x_err_login'; else if (taken[x.login]) x.err = x.err || 'imp_x_err_taken'; }
+      else { var base = autoLogin(x.name), l = base, n = 2; while (taken[l] || !LOGIN_RE.test(l)) { l = (LOGIN_RE.test(base) ? base : 'xodim') + n; n++; } x.login = l; x.auto = true; }
+      if (!x.password) x.password = genPw();
+      if (!x.err) taken[x.login] = 1;
+      return x;
+    }).filter(Boolean);
+  }
+  function csvLine(a) { return a.map(function (v) { v = String(v == null ? '' : v); return /[;"\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }).join(';'); }
+  function StaffImport(p) {
+    var t = p.t, rs = useState(null), rows = rs[0], er = useState(''), done = useState(null), inp = useRef(null);
+    function tpl_() { downloadText('xodimlar-namuna.csv', '\ufeff' + [csvLine(['F.I.Sh.', 'Lavozim', 'Bo‘lim', 'Login', 'Parol']), csvLine(['Dilnoza Karimova', STAFF_POS[1], STAFF_DEP[0], '', ''])].join('\r\n'), 'text/csv;charset=utf-8'); }
+    function pick(e) {
+      var f = e.target.files && e.target.files[0]; e.target.value = '';
+      if (!f) return;
+      er[1](''); done[1](null);
+      f.arrayBuffer().then(function (buf) { return isZip(buf) ? parseXLSX(buf) : parseCSV(decodeText(buf)); })
+        .then(function (r) { var x = importRows(r || [], p.db); if (!x.length) { er[1](t('imp_x_none')); rs[1](null); } else rs[1](x); }, function () { er[1](t('imp_x_bad')); rs[1](null); });
+    }
+    function add() {
+      var ok = rows.filter(function (x) { return !x.err; });
+      p.update(function (d) {
+        var nid = Math.max.apply(null, d.users.map(function (u) { return u.id; }).concat([10000])) + 1;
+        ok.forEach(function (x) {
+          d.users.push({ id: nid++, role: 'employee', login: x.login, password: x.password, name: x.name, position: x.position, department: x.department, trackId: (tracksOf(d).filter(function (tr) { return (tr.positions || []).indexOf(x.position) >= 0; })[0] || {}).id, status: 'probation', profileComplete: false, createdAt: Date.now(), startedAt: Date.now(), cohort: dayKey(Date.now()).slice(0, 7), reminderTime: '19:00' });
+        });
+      });
+      done[1](ok); rs[1](null);
+    }
+    function dl() { downloadText('xodimlar-loginlar.csv', '\ufeff' + [csvLine(['F.I.Sh.', 'Lavozim', 'Bo‘lim', 'Login', 'Parol'])].concat(done[0].map(function (x) { return csvLine([x.name, x.position, x.department, x.login, x.password]); })).join('\r\n'), 'text/csv;charset=utf-8'); }
+    var okN = rows ? rows.filter(function (x) { return !x.err; }).length : 0;
+    return h('section', { className: 'box imp-box' },
+      h('h2', { className: 'lor-h' }, t('imp_x_t')),
+      h('p', { className: 'lor-sm lor-muted', style: { margin: '0 0 12px' } }, t('imp_x_hint')),
+      h('div', { className: 'box-row imp-act' },
+        h('input', { ref: inp, id: 'staff-import', type: 'file', accept: '.xlsx,.csv,.txt,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', className: 'sr-only', onChange: pick }),
+        h('label', { className: 'lor-btn lor-btn-outline lor-btn-sm', htmlFor: 'staff-import' }, t('imp_x_pick')),
+        h('button', { type: 'button', className: 'app-link', onClick: tpl_ }, t('imp_x_tpl'))),
+      er[0] ? h('p', { className: 'lor-field-error' }, er[0]) : null,
+      rows ? h(F, null,
+        h('div', { className: 'lor-table-wrap' }, h('table', { className: 'lor-table imp-table' },
+          h('thead', null, h('tr', null, [t('fio'), t('position'), t('department'), t('login'), t('password'), t('imp_x_col_status')].map(function (x, i) { return h('th', { key: i }, x); }))),
+          h('tbody', null, rows.map(function (x, i) {
+            return h('tr', { key: i, className: x.err ? 'imp-bad' : '' }, h('td', null, x.name), h('td', null, x.position), h('td', null, x.department),
+              h('td', null, h('code', null, x.login), x.auto ? h('small', { className: 'lor-muted' }, ' · ' + t('imp_x_auto')) : null), h('td', null, h('code', null, x.password)),
+              h('td', null, x.err ? h('span', { className: 'lor-field-error' }, t(x.err)) : '✓'));
+          })))),
+        h('div', { className: 'box-row' },
+          h(Btn, { variant: 'ghost', size: 'sm', onClick: function () { rs[1](null); } }, t('cancel')),
+          h(Btn, { variant: 'primary', arrow: true, disabled: !okN, onClick: add }, tpl(t('imp_x_add'), { n: okN })))) : null,
+      done[0] ? h('div', { className: 'lor-notice imp-done' }, h('div', { className: 'lor-notice-body' },
+        h('b', null, '✓ ' + tpl(t('imp_x_done'), { n: done[0].length })),
+        h('p', { className: 'lor-sm', style: { margin: '4px 0 8px' } }, t('imp_x_dl_hint')),
+        h(Btn, { variant: 'secondary', size: 'sm', onClick: dl }, t('imp_x_dl')))) : null);
+  }
+
   function Staff(p) {
     var t = p.t, db = p.db;
     var blank = function () { return { name: '', position: 'Omborchi', department: 'Logistika bo‘limi', login: '', password: genPw() }; };
@@ -6220,6 +6292,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         h('div', { className: 'box-row' },
           made[0] ? h('span', { className: 'lor-sm made' }, '✓ ' + t('created') + ': ', h('code', null, made[0].login + ' / ' + made[0].password)) : h('span'),
           h(Btn, { variant: 'primary', arrow: true, onClick: create }, t('create')))),
+      h(StaffImport, p),
       h(LeadersBox, p),
       h('div', { className: 'seg sp-seg', role: 'tablist' }, [['all', t('all'), emps.length]].concat(L.map(function (lv, i) { return [String(i), lvlShort(lv, p.lang), emps.filter(function (u) { return Math.min(u.level || 0, L.length - 1) === i; }).length]; })).map(function (x) {
         return h('button', { key: x[0], type: 'button', role: 'tab', 'aria-selected': fl === x[0], className: fl === x[0] ? 'is-on' : '', onClick: function () { flt[1](x[0]); } }, x[1], h('span', { className: 'lor-count' }, x[2]));
@@ -6260,7 +6333,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       : route.name === 'help' ? h(HelpPage, Object.assign({}, q, { go: go, hint: hint, theme: theme, onTour: function () { tour[1](true); } })) : h(Inbox, Object.assign({}, q, { tab: route.tab }));
     return h(F, null,
       h(Header, { t: t, lang: p.lang, setLang: p.setLang, onProfile: p.openProfile, user: p.user, nav: nav, wide: true, onLogout: p.logout, onTerms: p.showTerms,
-        hint: hint, theme: theme, onSearch: function () { pal[1](true); }, onHelp: function () { go({ name: 'help' }); }, links: [{ key: 'help', label: t('nav_help'), onClick: function () { go({ name: 'help' }); } }],
+        hint: hint, theme: theme, onSearch: function () { pal[1](true); }, onHelp: function () { go({ name: 'help' }); }, links: [{ key: 'help', label: t('nav_help'), onClick: function () { go({ name: 'help' }); } }, { key: 'export', label: t('exp_btn'), onClick: function () { exportAll(p.say, t); } }],
         notifs: db.notifications.filter(function (n) { return n.userId === p.user.id; }), fmtNotif: function (n) { return notifText(n, db, p.lang, t); },
         onReadAll: function () { p.update(function (d) { d.notifications.forEach(function (n) { if (n.userId === p.user.id) n.read = true; }); }); },
         onNotif: function (n) { p.update(function (d) { d.notifications.forEach(function (x) { if (x.id === n.id) x.read = true; }); }); go({ name: n.route === 'mentor' ? 'quality' : (n.route || 'inbox'), tab: n.kind === 'errfix' ? 'err' : (n.tab || null), ym: n.ym || null }); } }),
@@ -6289,6 +6362,15 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
             h('p', { className: 'lor-muted', style: { margin: '6px 0 0' } }, t('ld_inbox_p')))),
           h(IniAdmin, Object.assign({}, p, { only: only }))),
         h(Foot, { t: t, onTerms: p.showTerms, say: p.say }))));
+  }
+
+  /* the SOP manager downloads all data and files — a copy kept outside the server */
+  function exportAll(say, t) {
+    say(t('exp_wait'));
+    SV.exportAll().then(function (x) {
+      downloadText('buraq-lms-' + dayKey(Date.now()) + '.json', JSON.stringify(x), 'application/json;charset=utf-8');
+      say(tpl(t('exp_done'), { n: Object.keys(x.files || {}).length }));
+    }, function (e) { say(t(e.code === 'net' ? 'srv_net' : 'exp_err')); });
   }
 
   /* ---------------- server: templates, course import, sync status, server code ---------------- */

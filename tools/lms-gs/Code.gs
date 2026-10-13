@@ -20,10 +20,11 @@
  *
  * Запрос — POST с JSON { action, token, … }, ответ — JSON { ok, … } или { ok: false, code, error }.
  */
-var LMS_VERSION = 6;           // 2: файлы — отдельно на Диске, действие file; 3: ИИ через Claude API (действие ai);
+var LMS_VERSION = 7;           // 2: файлы — отдельно на Диске, действие file; 3: ИИ через Claude API (действие ai);
                                // 4: адресаты идей — CEO, Project Manager, руководитель компании (свой вход, role 'leader');
                                // 5: у идеи несколько адресатов (to — список), repliedBy — кто ответил;
-                               // 6: свой профиль — имя и фото, смена логина и пароля (действие account)
+                               // 6: свой профиль — имя и фото, смена логина и пароля (действие account);
+                               // 7: копия данных у SOP-менеджера (действие export), уведомления в Telegram (server/)
 var PBKDF2_ITER = 10000;          // пароль хранится только как PBKDF2-SHA256 с солью
 var SESSION_DAYS = 30;            // вход на устройстве живёт 30 дней с последнего запроса
 var FAIL_MAX = 5, FAIL_LOCK_MIN = 15;  // 5 неверных паролей подряд — логин закрыт на 15 минут
@@ -82,6 +83,7 @@ function route_(req) {
   if (a === 'account') return account_(s, req);
   if (a === 'resetPassword') return resetPassword_(s, req);
   if (a === 'file') return file_(s, req);
+  if (a === 'export') return export_(s);
   throw err_('bad', 'Неизвестное действие «' + a + '»');
 }
 
@@ -604,6 +606,20 @@ function file_(s, req) {
   if (JSON.stringify(viewFor_(st, me)).indexOf('"lmsfile:' + id + '"') < 0) throw err_('forbidden', 'Этот файл вам недоступен');
   var b = DriveApp.getFileById(id).getBlob();
   return { ok: true, name: b.getName(), type: b.getContentType(), data: Utilities.base64Encode(b.getBytes()) };
+}
+
+/* копия данных вне сервера: SOP-менеджер скачивает то, что ему видно (идеи с адресатом — без текста), и все файлы */
+function export_(s) {
+  var st = readState_(), me = me_(st, s);
+  if (me.role !== 'admin') throw err_('forbidden', 'Данные скачивает SOP-менеджер');
+  var v = viewFor_(st, me), files = {};
+  (JSON.stringify(v).match(/"lmsfile:[\w-]+"/g) || []).forEach(function (r) {
+    var id = r.slice(9, -1);
+    if (files[id]) return;
+    try { var b = DriveApp.getFileById(id).getBlob(); files[id] = { name: b.getName(), type: b.getContentType(), data: Utilities.base64Encode(b.getBytes()) }; }
+    catch (e) { files[id] = { missing: true }; }
+  });
+  return { ok: true, app: 'buraq-lms', v: LMS_VERSION, at: now_(), state: v, files: files };
 }
 
 /* ---------------- тест урока: балл считает сервер ---------------- */

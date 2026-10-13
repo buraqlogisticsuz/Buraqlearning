@@ -399,7 +399,7 @@ const pickN = n => ({ userId: n.userId, kind: n.kind, route: n.route, err: n.err
 test('since: та же версия — без данных; после правки — новое состояние', () => {
   const { D, A } = platform();
   const v = D({ action: 'load' });
-  assert.deepEqual(D({ action: 'since', rev: v.rev }), { ok: true, v: 6, ai: false, rev: v.rev, same: true });
+  assert.deepEqual(D({ action: 'since', rev: v.rev }), { ok: true, v: 7, ai: false, rev: v.rev, same: true });
   A({ action: 'patch', ops: [{ op: 'set', path: ['notifications', { id: 9 }], value: { id: 9, userId: 10427, text: 'yangi' }, after: null }] });
   const n = D({ action: 'since', rev: v.rev });
   assert.equal(n.rev, v.rev + 1); assert.equal(n.state.notifications[0].text, 'yangi');
@@ -515,6 +515,23 @@ test('пароли меняет только SOP-менеджер: свой — 
   assert.deepEqual(A({ action: 'patch', ops: [{ op: 'set', path: ['users', { id: 10391 }, 'password'], value: 'aziza-yangi-1' }] }).rejected, []);
   login('a.yusupova', 'aziza-yangi-1');
   assert.ok(!JSON.stringify(g.state()).includes(r.password) && !JSON.stringify(g.state()).includes('aziza-yangi-1'));
+});
+
+test('копия данных: SOP-менеджер скачивает данные и файлы; сотрудник — нет; текст идей с адресатом не уходит', () => {
+  const { A, D } = platform();
+  const pdf = 'data:application/pdf;base64,' + Buffer.from('%PDF-1.4 ' + 'x'.repeat(3000)).toString('base64');
+  D({ action: 'patch', ops: [
+    { op: 'set', path: ['users', { id: 10427 }, 'profile'], value: { passportFile: { name: 'pasport.pdf', type: 'application/pdf', data: pdf } } },
+    { op: 'set', path: ['initiatives', { id: 'iz' }], value: { id: 'iz', uid: 10427, to: ['ceo'], type: 'idea', area: 'it', title: 'Maxfiy g‘oya', text: 'faqat CEO uchun', status: 'new', at: 1 } }] });
+  assert.equal(D({ action: 'export' }).code, 'forbidden');
+  const x = A({ action: 'export' });
+  assert.equal(x.ok, true); assert.equal(x.app, 'buraq-lms');
+  const ref = x.state.users.find(u => u.id === 10427).profile.passportFile.data;
+  assert.match(ref, /^lmsfile:/);
+  const f = x.files[ref.slice(8)];
+  assert.equal(f.name, 'pasport.pdf'); assert.equal('data:application/pdf;base64,' + f.data, pdf);
+  assert.ok(!JSON.stringify(x).includes('faqat CEO uchun'));
+  assert.equal(x.state.course.sections.length, 2);
 });
 
 test('занятый сервер отвечает «повторите», данные не портятся', () => {
