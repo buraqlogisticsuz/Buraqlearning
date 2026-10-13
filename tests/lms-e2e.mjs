@@ -295,13 +295,21 @@ try {
   assert.deepEqual(await rejected(A), [], 'сервер не отклонил ни одной правки SOP-менеджера');
   step('сервер не отклонил ни одной правки');
 
-  // ---------- демо по ?demo=1: как раньше, данные только в браузере ----------
-  const D = await device('демо', '?demo=1');
-  assert.equal(await D.locator('.demo-box').count(), 1, 'в демо — демо-входы');
+  // ---------- демо больше нет: ?demo=1 — тот же вход на сервер; без адреса сервера — «Server ulanmagan» ----------
+  const D = await device('бывшее демо', '?demo=1');
+  assert.equal(await D.locator('.demo-box').count(), 0, 'демо-входов нет');
   await D.fill('#f-login', 'metodist'); await D.fill('#f-password', 'admin123'); await D.click('button[type="submit"]');
-  await D.waitForFunction(() => !document.querySelector('#f-password'));
-  assert.ok((await D.innerText('body')).includes('Nodira Saidova'), 'демо-SOP-менеджер');
-  step('демо по ?demo=1 работает без сервера');
+  await D.waitForSelector('.lor-field-error', { timeout: 15000 });
+  assert.ok(await D.locator('#f-password').count(), 'демо-пароль не подходит — вход только на сервер');
+  const nctx = await browser.newContext();
+  await nctx.route('**/config.js', r => r.fulfill({ contentType: 'text/javascript', body: "window.LMS_SERVER = '';" }));
+  const N = await nctx.newPage();
+  N.on('pageerror', e => errors.push('без сервера: ' + e.message));
+  await N.goto(srv.url, { waitUntil: 'networkidle' });
+  assert.match(await N.innerText('body'), /server ulanmagan/i, 'без адреса сервера — «Server ulanmagan»');
+  await shot(N, '13-no-server');
+  assert.equal(await N.locator('#f-login').count(), 0, 'и без формы входа');
+  step('демо нет: ?demo=1 ведёт на вход сервера, без сервера — «Server ulanmagan»');
   assert.deepEqual(errors, [], 'ошибок на странице нет');
   console.log('всё прошло');
 } finally {

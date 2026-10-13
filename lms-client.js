@@ -11,7 +11,7 @@
   var S = root.LmsSync;
   var SERVER_V = 5;                       // версия сервера (tools/lms-gs), под которую написана эта страница
   var URL_ = String(root.LMS_SERVER || '').trim();
-  var DEMO = !URL_ || /[?&]demo=1(&|$)/.test(root.location.search);
+  var DEMO = !URL_;                      // адреса нет — страница пишет «Server ulanmagan» (демо больше нет)
   var K = { token: 'lor-lms-token', cache: 'lor-lms-cache', queue: 'lor-lms-queue', lang: 'lor-lms-lang' };
   var LOCAL = ['lang', 'session'];
   var BATCH = 200, POLL_MS = 30000;
