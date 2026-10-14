@@ -228,6 +228,9 @@ function login_(req) {
   Object.keys(all).forEach(function (k) { if (all[k].login === login) cred = all[k]; });
   // без такого логина пароль всё равно считается: по времени ответа не узнать, есть ли логин
   var hash = pbkdf2_(pw, cred ? cred.salt : 'x', cred ? cred.iter : PBKDF2_ITER);
+  // пароль, скопированный с пробелом или с точкой после него (так он стоял в старой строке журнала), — ещё одна попытка
+  var bare = pw.trim().replace(/\.$/, '');
+  if (cred && hash !== cred.hash && bare && bare !== pw) hash = pbkdf2_(bare, cred.salt, cred.iter);
   var st = cred && hash === cred.hash ? readState_() : null, user = st ? userById_(st, cred.uid) : null;
   if (!user) {
     var n = (f && !f.until ? f.n : 0) + 1;
@@ -890,7 +893,10 @@ function newAdmin() {
     setCred_(makeCred_(id, login, pw));
     st.rev = (+st.rev || 0) + 1;
     writeState_(st);
-    Logger.log('Вход SOP-менеджера — логин: ' + login + ', пароль: ' + pw + '. Запишите: пароль больше нигде не показывается.');
+    // логин и пароль — каждый в своей строке и без знаков рядом: копируется ровно пароль
+    Logger.log('Вход SOP-менеджера (запишите — пароль больше нигде не показывается):');
+    Logger.log('логин: ' + login);
+    Logger.log('пароль: ' + pw);
     return { login: login, password: pw };
   });
 }

@@ -64,7 +64,7 @@ test('setup: папка и state.json на Диске, вход SOP-менедж
   assert.equal(g.post({ action: 'load', token: 'x' }).code, 'auth');
   const adm = g.ctx.setup();
   assert.equal(adm.login, 'metodist'); assert.match(adm.password, /^[a-z2-9]{10}$/);
-  assert.match(g.logs[0], new RegExp('логин: metodist, пароль: ' + adm.password));
+  assert.ok(g.logs.includes('логин: metodist') && g.logs.includes('пароль: ' + adm.password), 'логин и пароль — каждый в своей строке журнала');
   assert.equal(g.get().ready, true);
   const st = g.state();
   assert.equal(st.users.length, 1); assert.equal(st.users[0].role, 'admin'); assert.equal(st.users[0].password, undefined);
@@ -74,6 +74,10 @@ test('setup: папка и state.json на Диске, вход SOP-менедж
   const second = g.ctx.newAdmin();
   assert.equal(second.login, 'metodist2');
   assert.equal(g.post({ action: 'login', login: 'METODIST2 ', password: second.password }).ok, true);
+  // скопирован из журнала с точкой или пробелом — тоже входит; чужой пароль — нет
+  assert.equal(g.post({ action: 'login', login: 'metodist2', password: second.password + '.' }).ok, true);
+  assert.equal(g.post({ action: 'login', login: 'metodist2', password: ' ' + second.password + ' ' }).ok, true);
+  assert.equal(g.post({ action: 'login', login: 'metodist2', password: adm.password + '.' }).code, 'login');
 });
 
 test('пароль хранится как PBKDF2-SHA256 с солью (10 000 повторов), а не открытым текстом', () => {

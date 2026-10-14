@@ -18,7 +18,7 @@ async function start(dir, opts = {}) {
   };
   return { ...s, logs, api };
 }
-const adminFrom = logs => { const m = logs.join('\n').match(/логин: (\S+), пароль: (\S+?)\./); return m && { login: m[1], password: m[2] }; };
+const adminFrom = logs => { const m = logs.join('\n').match(/логин: (\S+)\n[^]*?пароль: (\S+)/); return m && { login: m[1], password: m[2] }; };
 
 test('сайт: страница, адрес сервера, только файлы сайта — без тестов, инструментов и данных', async () => {
   const dir = tmp(), s = await start(dir);
