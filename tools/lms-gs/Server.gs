@@ -20,13 +20,14 @@
  *
  * Запрос — POST с JSON { action, token, … }, ответ — JSON { ok, … } или { ok: false, code, error }.
  */
-var LMS_VERSION = 9;           // 2: файлы — отдельно на Диске, действие file; 3: ИИ через Claude API (действие ai);
+var LMS_VERSION = 10;          // 2: файлы — отдельно на Диске, действие file; 3: ИИ через Claude API (действие ai);
                                // 4: адресаты идей — CEO, Project Manager, руководитель компании (свой вход, role 'leader');
                                // 5: у идеи несколько адресатов (to — список), repliedBy — кто ответил;
                                // 6: свой профиль — имя и фото, смена логина и пароля (действие account);
                                // 7: копия данных у SOP-менеджера (действие export), уведомления в Telegram (server/)
                                // 8: «Kun hikmati» на странице входа — свои цитаты SOP-менеджера (действие wisdom, без входа);
-                               // 9: зарплата — фикса + KPI (pay, payCalcs; формула — lms-pay.js, общая со страницей)
+                               // 9: зарплата — фикса + KPI (pay, payCalcs; формула — lms-pay.js, общая со страницей);
+                               // 10: уровни доступа — CEO, SOP-менеджер, руководитель (владелец), PM (lvl_)
 var PBKDF2_ITER = 10000;          // пароль хранится только как PBKDF2-SHA256 с солью
 var SESSION_DAYS = 30;            // вход на устройстве живёт 30 дней с последнего запроса
 var FAIL_MAX = 5, FAIL_LOCK_MIN = 15;  // 5 неверных паролей подряд — логин закрыт на 15 минут
@@ -51,6 +52,19 @@ var PAY_MONTH_MAX = 20, PAY_DRAFT_MAX = 40, PAY_TRIES = 40, PAY_NOTE = 300;   //
 // идею сотрудник отправляет одному или нескольким адресатам (to — список); у адресата свой вход (role 'leader',
 // post — кто он) и только эти идеи; ответ общий, repliedBy — кто из адресатов ответил последним
 var INI_TO = ['ceo', 'pm', 'boss'];
+/* уровни доступа (решение владельца 14.10.2026):
+   ceo  — CEO (role admin, post ceo): всё на платформе, зарплата (условия, подтверждение), входы и пароли всем;
+   sop  — SOP-менеджер, методист (role admin без post): обучение и сотрудники, входы и пароли только сотрудникам,
+          зарплату не видит; пока CEO нет — создаёт первый вход CEO;
+   boss — руководитель, владелец (role admin, post boss): видит всё, включая зарплату, отвечает на идеи, адресованные
+          ему, — больше ничего не меняет;
+   pm   — Project Manager (role leader): только идеи, адресованные ему; employee — сотрудник */
+var MGR_POSTS = ['ceo', 'boss'];
+function lvl_(u) {
+  if (!u) return 'none';
+  if (u.role === 'admin') return u.post === 'ceo' ? 'ceo' : u.post === 'boss' ? 'boss' : 'sop';
+  return u.role === 'leader' ? 'pm' : 'employee';
+}
 var INI_STATUS = ['new', 'review', 'accepted', 'done', 'declined'];
 var INI_ANSWER = ['status', 'reply', 'repliedAt', 'acceptedAt', 'repliedBy'];   // ответ адресата на идею
 function iniTo_(x) { return !x ? [] : Array.isArray(x.to) ? x.to : x.to ? [x.to] : []; }   // ранние идеи — одна строка
@@ -165,7 +179,12 @@ function trimSessions_(uid) {
 function readState_() {
   var id = props_().getProperty('LMS_STATE');
   if (!id) throw err_('setup', 'Сервер не настроен: в редакторе Apps Script запустите функцию setup');
-  return JSON.parse(DriveApp.getFileById(id).getBlob().getDataAsString('UTF-8'));
+  return migrate_(JSON.parse(DriveApp.getFileById(id).getBlob().getDataAsString('UTF-8')));
+}
+/* до v10 CEO и руководитель были только адресатами идей (role leader) — теперь у них свои кабинеты (role admin) */
+function migrate_(st) {
+  (st.users || []).forEach(function (u) { if (u && u.role === 'leader' && MGR_POSTS.indexOf(u.post) >= 0) u.role = 'admin'; });
+  return st;
 }
 function writeState_(st) {
   DriveApp.getFileById(props_().getProperty('LMS_STATE')).setContent(JSON.stringify(st));
@@ -248,13 +267,13 @@ function avatarOk_(v) {
   return v == null || (typeof v === 'string' && v.length <= AVATAR_MAX && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+\/=]+$/.test(v));
 }
 
-/* свой логин и (или) пароль: { old, login?, password? } — с текущим паролем. Логин меняет каждый сам, пароль —
-   только SOP-менеджер (свой здесь, сотрудникам — в их карточке). Новый пароль закрывает другие входы */
+/* свой логин и (или) пароль: { old, login?, password? } — с текущим паролем. Логин меняет каждый сам, свой пароль —
+   CEO, SOP-менеджер и руководитель (сотрудникам — CEO или SOP-менеджер, в их карточке). Новый пароль закрывает другие входы */
 function account_(s, req) {
   var old = String(req.old || ''), nl = req.login == null || req.login === '' ? null : normLogin_(req.login);
   var np = req.password == null || req.password === '' ? null : String(req.password);
   if (nl == null && np == null) throw err_('bad', 'Нечего менять');
-  if (np != null && me_(readState_(), s).role !== 'admin') throw err_('forbidden', 'Пароль меняет SOP-менеджер');
+  if (np != null && me_(readState_(), s).role !== 'admin') throw err_('forbidden', 'Пароль сотруднику меняет SOP-менеджер или CEO');
   if (np != null && np.length < 8) throw err_('weak', 'Новый пароль — не короче 8 символов');
   if (nl != null && !LOGIN_RE.test(nl)) throw err_('login_format', 'Логин: 3–32 символа — латиница, цифры, точка, дефис, подчёркивание');
   return withLock_(function () {
@@ -278,9 +297,11 @@ function account_(s, req) {
 function resetPassword_(s, req) {
   return withLock_(function () {
     var st = readState_(), me = me_(st, s);
-    if (me.role !== 'admin') throw err_('forbidden', 'Пароль сбрасывает SOP-менеджер');
+    var lv = lvl_(me);
+    if (lv !== 'ceo' && lv !== 'sop') throw err_('forbidden', 'Пароль сбрасывает CEO или SOP-менеджер');
     var u = userById_(st, req.userId);
     if (!u || !u.login) throw err_('bad', 'Нет такого сотрудника или у него нет логина');
+    if (lv === 'sop' && u.role !== 'employee' && String(u.id) !== String(me.id)) throw err_('forbidden', 'Пароль руководства сбрасывает CEO');
     var pw = genPassword_();
     setCred_(makeCred_(u.id, u.login, pw));
     dropSessions_(u.id, String(u.id) === String(me.id) ? s.key : null);
@@ -311,10 +332,15 @@ function canSee_(u, a) {
 }
 
 function viewFor_(st, me) {
-  if (me.role === 'leader') return leaderView_(st, me);
+  var lv = lvl_(me);
+  if (lv === 'pm') return leaderView_(st, me);
   var v = clone_(st);
   delete v.rev;
-  if (me.role === 'admin') { hideAddressed_(v); return v; }
+  if (me.role === 'admin') {
+    hideAddressed_(v, lv === 'sop' ? null : me.post);   // идеи, адресованные CEO или руководителю, — только им
+    if (lv === 'sop') hidePay_(v);                        // зарплату SOP-менеджер не видит
+    return v;
+  }
   var uid = String(me.id), official = me.status === 'official';
   // уроки: правильные ответы тестов не уходят никому, кроме SOP-менеджера; закрытые разделы — только названия
   ((v.course || {}).sections || []).forEach(function (s) {
@@ -361,13 +387,19 @@ function viewFor_(st, me) {
   return clone_(v);
 }
 
-/* идеи, адресованные CEO, Project Manager или руководителю, SOP-менеджер не читает: остаётся то, из чего считаются
-   XP и уровни сотрудника (статус, даты). В уведомлениях автору об ответе — без названия и текста ответа */
-function hideAddressed_(v) {
-  v.initiatives = (v.initiatives || []).map(function (x) { return iniTo_(x).length ? pick_(x, ['id', 'uid', 'to', 'status', 'at', 'acceptedAt', 'repliedAt']) : x; });
+/* идеи, адресованные CEO, Project Manager или руководителю, читает только адресат (post — свой; у SOP-менеджера нет):
+   остальным — то, из чего считаются XP и уровни сотрудника (статус, даты). В уведомлениях автору — без названия и ответа */
+function hideAddressed_(v, post) {
+  var other = function (x) { var to = iniTo_(x); return to.length && (!post || to.indexOf(post) < 0); };
+  v.initiatives = (v.initiatives || []).map(function (x) { return other(x) ? pick_(x, ['id', 'uid', 'to', 'status', 'at', 'acceptedAt', 'repliedAt']) : x; });
   v.notifications = (v.notifications || []).map(function (n) {
-    return n && n.kind === 'ini' && n.ini && iniTo_(n.ini).length ? Object.assign({}, n, { ini: pick_(n.ini, ['s', 'xp', 'to']) }) : n;
+    return n && n.kind === 'ini' && n.ini && other(n.ini) ? Object.assign({}, n, { ini: pick_(n.ini, ['s', 'xp', 'to']) }) : n;
   });
+}
+/* зарплата — у CEO и руководителя; SOP-менеджеру ни условий, ни расчётов, ни уведомлений с суммами */
+function hidePay_(v) {
+  v.pay = { schemes: [], people: {} }; v.payCalcs = [];
+  v.notifications = (v.notifications || []).filter(function (n) { return !n || n.kind !== 'pay'; });
 }
 
 /* адресат идей видит только идеи, адресованные его должности, кто их прислал и свои уведомления */
@@ -408,7 +440,8 @@ function checkEmployee_(st, me, op) {
   var p = op.path || [], top = p[0], uid = String(me.id);
   if (!Array.isArray(p) || !p.length) return 'пустой путь';
   // адресат идей: своя карточка и уведомления — как у сотрудника, остальное — только ответ на свои идеи
-  if (me.role === 'leader' && ['users', 'notifications', 'study', 'reminded'].indexOf(top) < 0) return checkLeader_(st, me, op);
+  // адресат идей (PM) и руководитель: своя карточка и уведомления — как у сотрудника, остальное — только ответ на свои идеи
+  if ((me.role === 'leader' || lvl_(me) === 'boss') && ['users', 'notifications', 'study', 'reminded'].indexOf(top) < 0) return checkLeader_(st, me, op);
 
   if (top === 'users') {
     if (!isId_(p[1]) || String(p[1].id) !== uid) return 'чужая карточка';
@@ -454,7 +487,7 @@ function checkEmployee_(st, me, op) {
     return op.value && String(op.value.by) === uid ? null : 'строка — только от своего имени';
   }
 
-  if (top === 'pay') return 'условия зарплаты задаёт SOP-менеджер';
+  if (top === 'pay') return 'условия зарплаты задаёт CEO';
   if (top === 'payCalcs') {
     // история расчётов: сотрудник только добавляет свой; изменить или удалить — нельзя
     if (!isId_(p[1]) || p.length !== 2 || op.op !== 'set' || LmsSync.get(st, p.slice(0, 2))) return 'расчёт в истории не меняется';
@@ -495,7 +528,7 @@ function payNums_(o) { return !!o && typeof o === 'object' && !Array.isArray(o) 
 function checkPayCalc_(st, me, x) {
   var uid = String(me.id);
   if (!x || typeof x !== 'object' || String(x.uid) !== uid) return 'расчёт — только свой';
-  if (['saved', 'draft'].indexOf(x.status) < 0 || x.reply != null || x.by != null || x.repliedAt != null) return 'итог расчёта ставит SOP-менеджер';
+  if (['saved', 'draft'].indexOf(x.status) < 0 || x.reply != null || x.by != null || x.repliedAt != null) return 'итог расчёта ставит CEO';
   if (!/^\d{4}-\d{2}$/.test(String(x.ym || ''))) return 'неверный месяц расчёта';
   if (x.note != null && (typeof x.note !== 'string' || x.note.length > PAY_NOTE)) return 'комментарий — до ' + PAY_NOTE + ' символов';
   if (JSON.stringify(x).length > 24000) return 'слишком большой расчёт';
@@ -536,13 +569,44 @@ function checkLeader_(st, me, op) {
   return p[2] === 'status' && INI_STATUS.indexOf(op.value) < 0 ? 'неверный статус идеи' : null;
 }
 
-/* правка SOP-менеджера: идею с адресатом он не видит — менять её нельзя, удалить (вместе с сотрудником) можно */
-function checkAdmin_(st, op) {
-  var p = op.path;
-  if (p[0] !== 'initiatives') return null;
-  if (p.length === 1) return op.op === 'set' && (st.initiatives || []).some(function (x) { return iniTo_(x).length; }) ? 'список идей целиком не меняется' : null;
-  var item = isId_(p[1]) ? LmsSync.get(st, p.slice(0, 2)) : null;
-  return item && iniTo_(item).length && op.op !== 'del' ? 'на эту идею отвечает её адресат' : null;
+/* правка CEO или SOP-менеджера. Идея с адресатом: отвечает адресат (CEO — на свои), остальным — только удалить
+   (вместе с сотрудником). SOP-менеджер: зарплату не меняет, карточки руководства — только CEO */
+function checkAdmin_(st, op, me) {
+  var p = op.path, lv = lvl_(me);
+  if (p[0] === 'initiatives') {
+    if (p.length === 1) return op.op === 'set' && (st.initiatives || []).some(function (x) { return iniTo_(x).length; }) ? 'список идей целиком не меняется' : null;
+    var item = isId_(p[1]) ? LmsSync.get(st, p.slice(0, 2)) : null;
+    if (!item || !iniTo_(item).length || op.op === 'del') return null;
+    return iniTo_(item).indexOf(me.post) >= 0 ? checkLeader_(st, me, op) : 'на эту идею отвечает её адресат';
+  }
+  if (lv !== 'sop') return null;
+  if (p[0] === 'pay' || p[0] === 'payCalcs') return 'зарплату ведёт CEO';
+  if (p[0] === 'users') return checkSopUsers_(st, op, me);
+  return null;
+}
+
+/* SOP-менеджер и карточки: сотрудники — да; CEO, руководитель, PM и другие SOP-менеджеры — только CEO.
+   Своя карточка — без роли, должности, логина и пароля (логин и пароль — действие account). Пока CEO нет — первый вход CEO */
+function checkSopUsers_(st, op, me) {
+  var p = op.path, mgr = function (u) { return u && u.role !== 'employee'; };
+  if (p.length === 1) {
+    var keep = function (list) { return JSON.stringify((list || []).filter(mgr)); };
+    return op.op === 'set' && keep(op.value) === keep(st.users) ? null : 'входы руководства меняет CEO';
+  }
+  if (!isId_(p[1])) return 'неверный путь';
+  var cur = LmsSync.get(st, p.slice(0, 2)), v = op.value || {};
+  if (!cur) {
+    if (p.length !== 2 || op.op !== 'set') return 'такой карточки нет';
+    if (v.role === 'employee') return null;
+    var noCeo = !(st.users || []).some(function (u) { return lvl_(u) === 'ceo'; });
+    return v.role === 'admin' && v.post === 'ceo' && noCeo ? null : 'входы руководства создаёт CEO';
+  }
+  if (!mgr(cur)) {
+    if (p.length === 2) return op.op === 'del' || v.role === 'employee' ? null : 'роль сотрудника меняет CEO';
+    return p[2] === 'role' || p[2] === 'post' ? 'роль сотрудника меняет CEO' : null;
+  }
+  if (String(cur.id) === String(me.id) && p.length >= 3 && ['role', 'post', 'login', 'password'].indexOf(p[2]) < 0) return null;
+  return 'входы руководства меняет CEO';
 }
 
 /* новый урок в прогрессе или изменённый: сотрудник ставит только «читаю / вопрос / готов к тесту» */
@@ -581,7 +645,7 @@ function patch_(s, ops) {
   if (!Array.isArray(ops)) throw err_('bad', 'Нет правок');
   if (ops.length > MAX_OPS) throw err_('bad', 'Слишком много правок за раз (больше ' + MAX_OPS + ')');
   return withLock_(function () {
-    var st = readState_(), me = me_(st, s), admin = me.role === 'admin', rejected = [], applied = 0;
+    var st = readState_(), me = me_(st, s), lv = lvl_(me), admin = lv === 'ceo' || lv === 'sop', rejected = [], applied = 0;   // руководитель — как сотрудник: только своё
     // разделы, которых не было в данных прошлых версий (например, зарплата с v9), — пустыми, как у нового сервера
     var empty = emptyState_(); Object.keys(empty).forEach(function (k) { if (st[k] === undefined) st[k] = empty[k]; });
     var before = admin ? clone_(st.users || []) : null, seen = null;
@@ -594,7 +658,7 @@ function patch_(s, ops) {
     }
     ops.forEach(function (op, i) {
       var top = op && Array.isArray(op.path) ? op.path[0] : '';
-      var why = !top ? 'неверная правка' : DEVICE_KEYS.indexOf(top) >= 0 ? '«' + top + '» хранится только на устройстве' : admin ? checkAdmin_(st, op) : checkEmployee_(st, me, op) || (foreignFile(op) ? 'чужой файл' : null);
+      var why = !top ? 'неверная правка' : DEVICE_KEYS.indexOf(top) >= 0 ? '«' + top + '» хранится только на устройстве' : admin ? checkAdmin_(st, op, me) : checkEmployee_(st, me, op) || (foreignFile(op) ? 'чужой файл' : null);
       if (!why && !admin && top === 'notifications' && op.path.length === 2 && op.op === 'set' && !LmsSync.get(st, op.path)) op = Object.assign({}, op, { value: Object.assign({}, op.value, { from: me.id }) });
       if (why) { rejected.push({ i: i, reason: why }); return; }
       try {
@@ -673,7 +737,7 @@ function file_(s, req) {
 /* копия данных вне сервера: SOP-менеджер скачивает то, что ему видно (идеи с адресатом — без текста), и все файлы */
 function export_(s) {
   var st = readState_(), me = me_(st, s);
-  if (me.role !== 'admin') throw err_('forbidden', 'Данные скачивает SOP-менеджер');
+  if (me.role !== 'admin') throw err_('forbidden', 'Данные скачивают CEO, SOP-менеджер и руководитель');   // SOP-менеджеру — без зарплаты (viewFor_)
   var v = viewFor_(st, me), files = {};
   (JSON.stringify(v).match(/"lmsfile:[\w-]+"/g) || []).forEach(function (r) {
     var id = r.slice(9, -1);

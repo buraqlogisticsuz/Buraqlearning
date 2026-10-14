@@ -16,6 +16,16 @@ const course = { sections: [
   { id: 's1', title: 'Ombor', officialOnly: false, lessons: [{ id: 'b4-1', title: '4.1', html: '<p>matn</p>', quiz }, { id: 'b4-2', title: '4.2', html: '<p>ikki</p>', quiz }] },
   { id: 's2', title: 'Bojxona', officialOnly: true, lessons: [{ id: 'b4-9', title: '4.9', html: '<p>yopiq</p>', quiz, intro: 'x' }] }] };
 
+// руководство: первый вход CEO создаёт SOP-менеджер (пока CEO нет), PM и руководителя (владельца) — CEO
+function chiefs({ A, login }) {
+  assert.deepEqual(A({ action: 'patch', ops: [{ op: 'set', path: ['users', { id: 10901 }], value: { id: 10901, role: 'admin', post: 'ceo', login: 'ceo', password: 'pw-ceo-1', name: 'Bosh direktor', position: 'CEO' } }] }).rejected, []);
+  const C = login('ceo', 'pw-ceo-1');
+  assert.deepEqual(C({ action: 'patch', ops: [
+    { op: 'set', path: ['users', { id: 10902 }], value: { id: 10902, role: 'leader', post: 'pm', login: 'pm', password: 'pw-pm-1', name: 'Loyiha rahbari', position: 'Project Manager' } },
+    { op: 'set', path: ['users', { id: 10903 }], value: { id: 10903, role: 'admin', post: 'boss', login: 'boss', password: 'pw-boss-1', name: 'Kompaniya egasi', position: 'Rahbar' } }] }).rejected, []);
+  return { C, P: login('pm', 'pw-pm-1'), B: login('boss', 'pw-boss-1') };
+}
+
 // запущенная платформа: SOP-менеджер, три сотрудника (наставник Sardor — официальный), курс, журнал и кейсы
 function platform(opts = {}) {
   const g = loadLms({ iter: 50, ...opts });
@@ -207,11 +217,7 @@ test('сотрудник: свои правки проходят, чужие и 
 });
 
 test('идеи: адресат — CEO, Project Manager или руководитель; он видит и отвечает только на свои, SOP-менеджер их не читает', () => {
-  const { g, A, D, Z, login } = platform();
-  const add = A({ action: 'patch', ops: [
-    { op: 'set', path: ['users', { id: 10901 }], value: { id: 10901, role: 'leader', post: 'ceo', login: 'ceo', password: 'pw-ceo-1', name: 'Bosh direktor', position: 'CEO' } },
-    { op: 'set', path: ['users', { id: 10902 }], value: { id: 10902, role: 'leader', post: 'pm', login: 'pm', password: 'pw-pm-1', name: 'Loyiha rahbari', position: 'Project Manager' } }] });
-  assert.deepEqual(add.rejected, []);
+  const pf = platform(), { g, A, D, Z } = pf, { C, P } = chiefs(pf);
   const idea = (id, to, extra) => ({ op: 'set', path: ['initiatives', { id }], value: { id, uid: 10427, to, type: 'idea', area: 'it', title: 'G‘oya ' + id, text: 'Batafsil matn ' + id, status: 'new', at: 5, ...extra } });
   const sent = D({ action: 'patch', ops: [
     idea('i5', 'ceo'), idea('i6', 'pm'),
@@ -222,13 +228,16 @@ test('идеи: адресат — CEO, Project Manager или руководи�
   assert.deepEqual(sent.rejected.map(x => x.i), [2, 3, 4, 7, 8, 9]);
   assert.match(sent.rejected[0].reason, /кому отправить идею/); assert.match(sent.rejected[2].reason, /даёт её адресат/);
 
-  // адресат видит только свои идеи и почти ничего больше
-  const C = login('ceo', 'pw-ceo-1'), cv = C({ action: 'load' }).state;
-  assert.deepEqual(cv.initiatives.map(x => x.id).sort(), ['i10', 'i5']);
-  assert.equal(cv.initiatives[0].text, 'Batafsil matn i5');
-  assert.deepEqual(cv.course.sections, []); assert.deepEqual(cv.progress, {}); assert.deepEqual(cv.journals, []); assert.deepEqual(cv.errors, []);
-  assert.deepEqual(cv.notifications.map(n => n.id), [50]);
-  const author = cv.users.find(u => u.id === 10427);
+  // CEO видит всю платформу; идеи, адресованные CEO, — целиком, адресованные только PM — без названия и текста
+  const cv = C({ action: 'load' }).state;
+  assert.equal(cv.initiatives.find(x => x.id === 'i5').text, 'Batafsil matn i5');
+  assert.equal(cv.initiatives.find(x => x.id === 'i6').text, undefined, 'идея только для PM');
+  assert.equal(cv.course.sections.length, 2); assert.ok(cv.notifications.some(n => n.id === 50));
+  // PM видит только свои идеи и почти ничего больше
+  const pv = P({ action: 'load' }).state;
+  assert.deepEqual(pv.initiatives.map(x => x.id).sort(), ['i10', 'i6']);
+  assert.deepEqual(pv.course.sections, []); assert.deepEqual(pv.progress, {}); assert.deepEqual(pv.journals, []); assert.deepEqual(pv.errors, []);
+  const author = pv.users.find(u => u.id === 10427);
   assert.equal(author.name, 'Dilnoza Karimova'); assert.equal(author.passport, undefined); assert.equal(author.login, undefined);
 
   // ответ на свою идею — можно; чужую идею, текст идеи, курс, свою должность — нельзя
@@ -240,19 +249,18 @@ test('идеи: адресат — CEO, Project Manager или руководи�
     { op: 'set', path: ['users', { id: 10901 }, 'hints'], value: false },
     /* 5 */ { op: 'set', path: ['initiatives', { id: 'i6' }, 'status'], value: 'declined' },
     /* 6 */ { op: 'set', path: ['initiatives', { id: 'i5' }, 'title'], value: 'boshqa' },
-    /* 7 */ { op: 'set', path: ['initiatives', { id: 'i5' }, 'status'], value: 'zo‘r' },
-    /* 8 */ { op: 'del', path: ['initiatives', { id: 'i5' }] },
-    /* 9 */ { op: 'set', path: ['course', 'sections'], value: [] },
-    /* 10 */ { op: 'set', path: ['users', { id: 10901 }, 'post'], value: 'boss' },
-    /* 11 */ { op: 'set', path: ['initiatives', { id: 'i1' }, 'status'], value: 'done' }] });
-  assert.deepEqual(ans.rejected.map(x => x.i), [5, 6, 7, 8, 9, 10, 11]);
-  assert.match(ans.rejected[0].reason, /адресована не вам/); assert.match(ans.rejected[1].reason, /меняет автор идеи/);
+    /* 7 */ { op: 'set', path: ['initiatives', { id: 'i5' }, 'status'], value: 'zo‘r' }] });
+  assert.deepEqual(ans.rejected.map(x => x.i), [5, 6, 7]);
+  assert.match(ans.rejected[0].reason, /отвечает её адресат/); assert.match(ans.rejected[1].reason, /меняет автор идеи/);
+  // PM — только ответ на свои идеи: ни курса, ни своей должности, ни удаления
+  const pno = P({ action: 'patch', ops: [
+    { op: 'set', path: ['course', 'sections'], value: [] }, { op: 'set', path: ['users', { id: 10902 }, 'post'], value: 'boss' },
+    { op: 'del', path: ['initiatives', { id: 'i6' }] }, { op: 'set', path: ['initiatives', { id: 'i1' }, 'status'], value: 'done' }] });
+  assert.equal(pno.applied, 0); assert.match(pno.rejected[3].reason, /адресована не вам/);
   const i5 = g.state().initiatives.find(x => x.id === 'i5');
   assert.equal(i5.status, 'accepted'); assert.equal(i5.reply, 'Zo‘r, qilamiz'); assert.equal(i5.title, 'G‘oya i5');
 
   // идея нескольким адресатам: видят оба, отвечает любой — только от своего имени
-  const P = login('pm', 'pw-pm-1');
-  assert.deepEqual(P({ action: 'load' }).state.initiatives.map(x => x.id).sort(), ['i10', 'i6']);
   const pa = P({ action: 'patch', ops: [
     { op: 'set', path: ['initiatives', { id: 'i10' }, 'status'], value: 'review' },
     { op: 'set', path: ['initiatives', { id: 'i10' }, 'repliedBy'], value: 'pm' },
@@ -402,7 +410,7 @@ const pickN = n => ({ userId: n.userId, kind: n.kind, route: n.route, err: n.err
 test('since: та же версия — без данных; после правки — новое состояние', () => {
   const { D, A } = platform();
   const v = D({ action: 'load' });
-  assert.deepEqual(D({ action: 'since', rev: v.rev }), { ok: true, v: 9, ai: false, rev: v.rev, same: true });
+  assert.deepEqual(D({ action: 'since', rev: v.rev }), { ok: true, v: 10, ai: false, rev: v.rev, same: true });
   A({ action: 'patch', ops: [{ op: 'set', path: ['notifications', { id: 9 }], value: { id: 9, userId: 10427, text: 'yangi' }, after: null }] });
   const n = D({ action: 'since', rev: v.rev });
   assert.equal(n.rev, v.rev + 1); assert.equal(n.state.notifications[0].text, 'yangi');
@@ -537,6 +545,52 @@ test('копия данных: SOP-менеджер скачивает данн�
   assert.equal(x.state.course.sections.length, 2);
 });
 
+test('уровни доступа: CEO — всё и входы всем; SOP-менеджер — сотрудники; руководитель — только смотрит; старые CEO — в кабинет', () => {
+  const pf = platform(), { g, A, D, login } = pf;
+  // пока CEO нет, SOP-менеджер не создаёт ни PM, ни руководителя, ни второго SOP-менеджера
+  const early = A({ action: 'patch', ops: [
+    { op: 'set', path: ['users', { id: 10950 }], value: { id: 10950, role: 'leader', post: 'pm', login: 'pm0', password: 'pw-pm-0', name: 'PM' } },
+    { op: 'set', path: ['users', { id: 10951 }], value: { id: 10951, role: 'admin', post: 'boss', login: 'boss0', password: 'pw-boss-0', name: 'Egasi' } },
+    { op: 'set', path: ['users', { id: 10952 }], value: { id: 10952, role: 'admin', login: 'sop2', password: 'pw-sop-2', name: 'SOP 2' } }] });
+  assert.equal(early.applied, 0); assert.match(early.rejected[0].reason, /создаёт CEO/);
+  const { C, B } = chiefs(pf);
+  // второго CEO SOP-менеджер уже не создаёт; карточки и пароли руководства не трогает; сотрудника не повышает
+  const sno = A({ action: 'patch', ops: [
+    { op: 'set', path: ['users', { id: 10960 }], value: { id: 10960, role: 'admin', post: 'ceo', login: 'ceo2', password: 'pw-ceo-2', name: 'CEO 2' } },
+    { op: 'set', path: ['users', { id: 10901 }, 'password'], value: 'xakerlik-1' },
+    { op: 'set', path: ['users', { id: 10903 }, 'name'], value: 'Boshqa' },
+    { op: 'del', path: ['users', { id: 10901 }] },
+    { op: 'set', path: ['users', { id: 10427 }, 'role'], value: 'admin' }] });
+  assert.equal(sno.applied, 0); assert.ok(sno.rejected.every(x => /CEO/.test(x.reason)), JSON.stringify(sno.rejected));
+  assert.ok(g.post({ action: 'login', login: 'ceo', password: 'pw-ceo-1' }).ok, 'пароль CEO не сменился');
+  assert.equal(A({ action: 'resetPassword', userId: 10901 }).code, 'forbidden');
+  assert.ok(A({ action: 'resetPassword', userId: 10427 }).password, 'сотруднику — можно');
+  // своя карточка SOP-менеджера — имя да, роль нет
+  const own = A({ action: 'load' }).me;
+  assert.deepEqual(A({ action: 'patch', ops: [{ op: 'set', path: ['users', { id: own }, 'name'], value: 'SOP menejeri' }, { op: 'set', path: ['users', { id: own }, 'post'], value: 'ceo' }] }).rejected.map(x => x.i), [1]);
+  // CEO — входы и пароли всем, включая SOP-менеджера
+  assert.ok(C({ action: 'resetPassword', userId: own }).password);
+  assert.deepEqual(C({ action: 'patch', ops: [{ op: 'set', path: ['users', { id: 10952 }], value: { id: 10952, role: 'admin', login: 'sop2', password: 'pw-sop-22', name: 'SOP 2' } }] }).rejected, []);
+  assert.ok(login('sop2', 'pw-sop-22')({ action: 'load' }).ok);
+  // руководитель: видит всё (курс, анкеты, зарплату), меняет только своё
+  const bv = B({ action: 'load' }).state;
+  assert.equal(bv.course.sections.length, 2); assert.ok(bv.users.find(u => u.id === 10427).passport, 'анкеты видит');
+  const bno = B({ action: 'patch', ops: [
+    { op: 'set', path: ['course', 'sections'], value: [] },
+    { op: 'set', path: ['users', { id: 10427 }, 'position'], value: 'Boshliq' },
+    { op: 'set', path: ['pay'], value: { schemes: [] } },
+    { op: 'set', path: ['users', { id: 10970 }], value: { id: 10970, role: 'employee', login: 'yangi', name: 'Yangi' } },
+    { op: 'set', path: ['users', { id: 10903 }, 'hints'], value: true }] });
+  assert.deepEqual(bno.rejected.map(x => x.i), [0, 1, 2, 3], 'только своя карточка');
+  assert.equal(B({ action: 'resetPassword', userId: 10427 }).code, 'forbidden');
+  assert.ok(B({ action: 'export' }).ok, 'копию данных скачивает');
+  // старые аккаунты: CEO и руководитель были адресатами идей (role leader) — теперь в своём кабинете
+  const f = g.files[g.props.LMS_STATE], st = JSON.parse(f.content);
+  st.users.push({ id: 10980, role: 'leader', post: 'boss', login: 'eski', name: 'Eski rahbar' }); f.content = JSON.stringify(st);
+  assert.equal(C({ action: 'load' }).state.users.find(u => u.id === 10980).role, 'admin');
+  void D;
+});
+
 test('«Kun hikmati»: цитаты SOP-менеджера видны без входа — только они; сотрудник список не правит', () => {
   assert.deepEqual(loadLms({ iter: 50 }).post({ action: 'wisdom' }), { ok: true, std: true, list: [] }, 'сервер ещё не настроен');
   const { g, A, D } = platform();
@@ -554,13 +608,15 @@ test('«Kun hikmati»: цитаты SOP-менеджера видны без в�
 });
 
 test('зарплата: сотрудник видит только свои условия и расчёты, добавляет свой расчёт — сумму сервер пересчитывает', () => {
-  const { g, A, D, Z } = platform();
+  const pf = platform(), { g, A, D, Z } = pf;
   const Pay = g_pay;
   // данные прошлой версии сервера — без раздела зарплаты
   const f = g.files[g.props.LMS_STATE], old = JSON.parse(f.content); delete old.pay; delete old.payCalcs; f.content = JSON.stringify(old);
+  const { C, B } = chiefs(pf);
   const sk = { id: 'sk', title: 'Mijozlar', positions: ['Mijozlar menejeri'], fixed: 4000000, base: 2000000, kpis: [{ id: 'k1', name: 'Shartnoma', unit: 'ta', src: 'manual', type: 'plan', plan: 10, w: 100, min: 50, cap: 120 }] };
   const sl = { id: 'sl', title: 'Logistika', positions: ['Logistika menejeri'], fixed: 9000000, base: 3000000, kpis: [] };
-  assert.equal(A({ action: 'patch', ops: [{ op: 'set', path: ['pay'], value: { schemes: [sk, sl], people: { 10427: { fixed: 4500000 }, 10288: { fixed: 9900000 } } } }] }).rejected.length, 0);
+  assert.match(A({ action: 'patch', ops: [{ op: 'set', path: ['pay'], value: { schemes: [sk] } }] }).rejected[0].reason, /ведёт CEO/, 'SOP-менеджер условий не задаёт');
+  assert.equal(C({ action: 'patch', ops: [{ op: 'set', path: ['pay'], value: { schemes: [sk, sl], people: { 10427: { fixed: 4500000 }, 10288: { fixed: 9900000 } } } }] }).rejected.length, 0);
   const vd = D({ action: 'load' }).state;
   assert.deepEqual(vd.pay.schemes.map(x => x.id), ['sk'], 'только своя схема');
   assert.deepEqual(vd.pay.people, { 10427: { fixed: 4500000 } }, 'только своя фикса');
@@ -573,23 +629,28 @@ test('зарплата: сотрудник видит только свои ус
   bad(calc({ k1: 9 }, { total: 99000000 }), /не сходится/);
   bad(calc({ k1: 9 }, { fixed: 9000000 }), /изменились/);
   bad(calc({ k1: 9 }, { uid: 10391 }), /только свой/);
-  bad(calc({ k1: 9 }, { status: 'approved' }), /SOP-менеджер/);
+  bad(calc({ k1: 9 }, { status: 'approved' }), /ставит CEO/);
   bad(calc({ k1: '9' }), /факты/);
   // «считал, но не сохранил»: черновик с попытками; каждая попытка пересчитывается
   const tries = [{ at: 1, inputs: { k1: 5 }, total: 4500000 + 1000000 }, { at: 2, inputs: { k1: 9 }, total: 4500000 + 1800000 }];
   assert.deepEqual(D({ action: 'patch', ops: [{ op: 'set', path: ['payCalcs', { id: 'd1' }], value: { ...calc({ k1: 9 }), id: 'd1', status: 'draft', tries } }] }).rejected, []);
   bad({ ...calc({ k1: 9 }), id: 'd2', status: 'draft', tries: [{ at: 1, inputs: { k1: 5 }, total: 99 }] }, /попытка/);
   bad({ ...calc({ k1: 9 }), id: 'd3', status: 'draft', tries: Array(41).fill(tries[0]) }, /попыток/);
-  bad({ ...calc({ k1: 9 }), id: 'd4', status: 'nonsense' }, /SOP-менеджер/);
+  bad({ ...calc({ k1: 9 }), id: 'd4', status: 'nonsense' }, /ставит CEO/);
   assert.match(D({ action: 'patch', ops: [{ op: 'set', path: ['payCalcs', { id: c1.id }, 'total'], value: 1 }] }).rejected[0].reason, /не меняется/);
   assert.match(D({ action: 'patch', ops: [{ op: 'del', path: ['payCalcs', { id: c1.id }] }] }).rejected[0].reason, /не меняется/);
-  assert.match(D({ action: 'patch', ops: [{ op: 'set', path: ['pay', 'people', '10427'], value: { fixed: 1e8 } }] }).rejected[0].reason, /SOP-менеджер/);
+  assert.match(D({ action: 'patch', ops: [{ op: 'set', path: ['pay', 'people', '10427'], value: { fixed: 1e8 } }] }).rejected[0].reason, /задаёт CEO/);
   // без условий — нельзя; у коллеги не видно чужого расчёта
   assert.deepEqual(Z({ action: 'load' }).state.payCalcs, []);
   assert.deepEqual(Z({ action: 'load' }).state.pay.schemes, []);
   // SOP-менеджер видит всё и ставит итог
-  assert.equal(A({ action: 'load' }).state.payCalcs.length, 2, 'SOP-менеджер видит и сохранённый, и несохранённый');
-  assert.equal(A({ action: 'patch', ops: [{ op: 'set', path: ['payCalcs', { id: c1.id }, 'status'], value: 'approved' }] }).rejected.length, 0);
+  assert.equal(C({ action: 'load' }).state.payCalcs.length, 2, 'CEO видит и отправленный, и неотправленный');
+  assert.equal(B({ action: 'load' }).state.payCalcs.length, 2, 'руководитель тоже видит');
+  assert.match(B({ action: 'patch', ops: [{ op: 'set', path: ['payCalcs', { id: c1.id }, 'status'], value: 'approved' }] }).rejected[0].reason, /нет прав/, 'руководитель только смотрит');
+  const sv = A({ action: 'load' }).state;
+  assert.deepEqual([sv.pay.schemes, sv.payCalcs], [[], []], 'SOP-менеджер зарплату не видит');
+  assert.ok(!JSON.stringify(sv).includes('4500000') && !JSON.stringify(A({ action: 'export' })).includes('4500000'), 'и в копии данных её нет');
+  assert.equal(C({ action: 'patch', ops: [{ op: 'set', path: ['payCalcs', { id: c1.id }, 'status'], value: 'approved' }] }).rejected.length, 0);
   assert.equal(D({ action: 'load' }).state.payCalcs.find(c => c.id === c1.id).status, 'approved');
   // не больше 20 расчётов за месяц
   for (let i = 0; i < 19; i++) D({ action: 'patch', ops: [{ op: 'set', path: ['payCalcs', { id: 'm' + i }], value: { ...calc({ k1: i }), id: 'm' + i } }] });

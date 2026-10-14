@@ -1613,7 +1613,28 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   /* whom an employee sends an initiative to — each has a login of their own (role 'leader', post) and sees only theirs;
      the SOP manager does not read them (the server hides the text from the admin) */
   var INI_TO = ['ceo', 'pm', 'boss'];
-  function leadersOf(db, post) { return db.users.filter(function (u) { return u.role === 'leader' && (!post || u.post === post); }); }
+  /* access levels — the same as the server's lvl_: ceo — everything, salary, every login; sop — learning and staff, no
+     salary; boss — the owner: sees everything, changes only his card and the answers to ideas sent to him; pm — ideas only */
+  function lvlOf(u) { if (!u) return 'none'; if (u.role === 'admin') return u.post === 'ceo' ? 'ceo' : u.post === 'boss' ? 'boss' : 'sop'; return u.role === 'leader' ? 'pm' : 'employee'; }
+  /* the people ideas go to: CEO, Project Manager, the owner (CEO and the owner are admins with a post since v10) */
+  function leadersOf(db, post) { return db.users.filter(function (u) { return (u.role === 'leader' || u.role === 'admin') && INI_TO.indexOf(u.post) >= 0 && (!post || u.post === post); }); }
+  /* the owner's page changes only what the server lets him change — anything else says «view only» instead of being sent */
+  function roUpdate(p, t) {
+    return function (fn) {
+      var prev = p.db, d = clone(prev), me = p.user.id;
+      fn(d);
+      var find = function (list, id) { return (list || []).filter(function (x) { return x && x.id === id; })[0]; };
+      var ok = LmsSync.diff(prev, d).every(function (op) {
+        var top = op.path[0], seg = op.path[1] || {};
+        if (top === 'lang' || top === 'session') return true;
+        if (top === 'users') return seg.id === me && op.path.length >= 3 && ['role', 'post', 'login', 'password'].indexOf(op.path[2]) < 0;
+        if (top === 'notifications') { var n = find(prev.notifications, seg.id); return !n || n.userId === me; }
+        if (top === 'initiatives') return iniTo(find(prev.initiatives, seg.id) || {}).indexOf('boss') >= 0;
+        return false;
+      });
+      if (ok) p.update(fn); else p.say(t('ro_note'));
+    };
+  }
   /* recipients of an initiative — one or several (an early one may hold a single string) */
   function iniTo(x) { return !x ? [] : Array.isArray(x.to) ? x.to : x.to ? [x.to] : []; }
   function iniToLabel(x, t) { return iniTo(x).map(function (k) { return t('ini_to_s_' + k); }).join(', '); }
@@ -2042,6 +2063,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
                 h(PayLines, { t: t, c: c, db: db, u: w, check: true }),
                 h(PayTries, { t: t, c: c }),
                 c.status === 'draft' ? h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('pay_draft_note'))
+                : c.status === 'saved' && lvlOf(p.user) !== 'ceo' ? h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('pay_wait_ceo'))
                 : c.status === 'saved' ? h('div', { className: 'pay-decide' },
                   h(Field, { name: 'pay-rep', label: t('pay_reply'), multiline: true, rows: 2, placeholder: t('pay_reply_ph'), value: rep[0], onChange: rep[1] }),
                   h('div', { className: 'box-row' },
@@ -2123,7 +2145,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     return h(F, null,
       h('div', { className: 'box-row', style: { marginTop: 0 } },
         h('p', { className: 'lor-sm lor-muted', style: { margin: 0, maxWidth: 720 } }, t('pay_schemes_hint')),
-        h(Btn, { variant: 'primary', size: 'sm', arrow: true, onClick: function () { ed[1]({ id: 'ps' + Date.now().toString(36), title: '', positions: [], fixed: '', base: '', note: '', kpis: [payKpi()] }); } }, t('pay_new'))),
+        lvlOf(p.user) !== 'ceo' ? null : h(Btn, { variant: 'primary', size: 'sm', arrow: true, onClick: function () { ed[1]({ id: 'ps' + Date.now().toString(36), title: '', positions: [], fixed: '', base: '', note: '', kpis: [payKpi()] }); } }, t('pay_new'))),
       list.length ? h('div', { className: 'pay-cards' }, list.map(function (s) {
         var us = users(s), snap = LmsPay.snapshot(s);
         return h('section', { key: s.id, className: 'box pay-card' },
@@ -2133,14 +2155,14 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
             h('div', { className: 'tile' }, h('span', { className: 'lor-eyebrow' }, t('pay_fixed')), h('b', { className: 'tile-sm' }, sumTxt(s.fixed, t))),
             h('div', { className: 'tile' }, h('span', { className: 'lor-eyebrow' }, t('pay_base')), h('b', { className: 'tile-sm' }, sumTxt(s.base, t)))),
           h('ul', { className: 'pay-rules' }, snap.kpis.map(function (k) { return h('li', { key: k.id }, h('b', null, k.name), h('span', { className: 'lor-sm lor-muted' }, (k.src !== 'manual' ? t('pay_src_' + k.src) + ' · ' : '') + payRule(k, t))); })),
-          h('div', { className: 'box-row' },
+          lvlOf(p.user) !== 'ceo' ? null : h('div', { className: 'box-row' },
             h('button', { type: 'button', className: 'app-link danger', onClick: function () { del(s); } }, t('remove')),
             h(Btn, { variant: 'secondary', size: 'sm', onClick: function () { ed[1](JSON.parse(JSON.stringify(Object.assign({ note: '' }, s)))); } }, t('pay_s_edit'))));
       })) : h('section', { className: 'box pay-empty' }, h('p', { style: { margin: 0 } }, t('pay_s_none'))));
   }
   /* per person: another scheme than the position's, own fixed salary */
   function PayPeople(p) {
-    var t = p.t, db = p.db, pay = db.pay || {}, schemes = pay.schemes || [], ym = ymOf(Date.now());
+    var t = p.t, db = p.db, pay = db.pay || {}, schemes = pay.schemes || [], ym = ymOf(Date.now()), ro = lvlOf(p.user) !== 'ceo';
     var emps = db.users.filter(function (u) { return u.role === 'employee'; });
     function setP(uid, k, v) {
       p.update(function (d) {
@@ -2159,10 +2181,10 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           var last = (db.payCalcs || []).filter(function (c) { return c.uid === u.id && c.ym === ym; }).sort(function (a, b) { return b.at - a.at; })[0];
           return h('tr', { key: u.id },
             h('td', null, h('div', { className: 'lor-emp' }, h(Av, { name: u.name, src: u.avatar, size: 32 }), h('span', null, u.name, h('small', null, u.position)))),
-            h('td', null, h('select', { className: 'lor-input slim', 'aria-label': t('pay_k_scheme'), value: own.schemeId || '', onChange: function (e) { setP(u.id, 'schemeId', e.target.value); } },
+            h('td', null, h('select', { className: 'lor-input slim', 'aria-label': t('pay_k_scheme'), value: own.schemeId || '', disabled: ro, onChange: function (e) { setP(u.id, 'schemeId', e.target.value); } },
               h('option', { value: '' }, byPos ? tpl(t('pay_by_pos'), { x: byPos.scheme.title }) : t('pay_no_scheme')),
               schemes.map(function (s) { return h('option', { key: s.id, value: s.id }, s.title); }))),
-            h('td', null, h('input', { className: 'lor-input slim pay-fix-in', type: 'number', 'aria-label': t('pay_fixed'), placeholder: m ? money(m.scheme.fixed) : '—', disabled: !m, defaultValue: own.fixed != null ? own.fixed : '', key: 'f' + (own.fixed != null ? own.fixed : ''), onBlur: function (e) { var v = e.target.value.trim(); if (String(own.fixed != null ? own.fixed : '') !== v) setP(u.id, 'fixed', v); } }),
+            h('td', null, h('input', { className: 'lor-input slim pay-fix-in', type: 'number', 'aria-label': t('pay_fixed'), placeholder: m ? money(m.scheme.fixed) : '—', disabled: !m || ro, defaultValue: own.fixed != null ? own.fixed : '', key: 'f' + (own.fixed != null ? own.fixed : ''), onBlur: function (e) { var v = e.target.value.trim(); if (String(own.fixed != null ? own.fixed : '') !== v) setP(u.id, 'fixed', v); } }),
               m && own.fixed != null ? h('small', { className: 'lor-muted', style: { display: 'block' } }, t('pay_fixed_own')) : null),
             h('td', null, last ? h('span', null, h('b', null, sumTxt(last.total, t)), ' ', h(PayStatus, { s: last.status, t: t })) : h('span', { className: 'lor-muted' }, '—')));
         }))))));
@@ -2223,7 +2245,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         aiBusy[0] && !ai[0] ? h('p', { className: 'ai-thinking' }, t('ai_thinking')) : null,
         ai[0] ? h('div', { className: 'ai-md', dangerouslySetInnerHTML: { __html: mdLite(ai[0]) } }) : null,
         aiE[0] ? h('p', { className: 'lor-field-error' }, aiE[0]) : null),
-      list.length ? list.map(function (x) { return h(IniItem, { key: x.id, x: x, t: t, db: db, lang: p.lang, admin: true, update: p.update, say: p.say, post: p.user && p.user.role === 'leader' ? p.user.post : null }); })
+      list.length ? list.map(function (x) { return h(IniItem, { key: x.id, x: x, t: t, db: db, lang: p.lang, admin: true, update: p.update, say: p.say, post: p.user && p.user.post && iniTo(x).indexOf(p.user.post) >= 0 ? p.user.post : null }); })
         : h('section', { className: 'box' }, h('p', { className: 'lor-muted', style: { margin: 0 } }, t('ini_none_rows'))));
   }
 
@@ -2231,14 +2253,15 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   function FeedbackAdmin(p) {
     var t = p.t, db = p.db, tb = useState(p.tab || 'ini'), tab = tb[0];
     useEffect(function () { if (p.tab) tb[1](p.tab); }, [p.tab]);
-    var nNew = (db.initiatives || []).filter(function (x) { return !iniTo(x).length && x.status === 'new'; }).length;
+    var post = p.user.post, only = post ? function (x) { var to = iniTo(x); return !to.length || to.indexOf(post) >= 0; } : null;   // CEO, the owner: also the ideas sent to them
+    var nNew = (db.initiatives || []).filter(function (x) { return (only ? only(x) : !iniTo(x).length) && x.status === 'new'; }).length;
     return h('div', { className: 'app-wrap' },
       h('div', { className: 'page-head' }, h('div', null, h('span', { className: 'lor-eyebrow' }, t('fb_eyebrow')), h('h1', { className: 'lor-title' }, t('nav_feedback'), h(PageTip, { t: t, id: 'feedback' })))),
       h('div', { className: 'lor-tabs fb-tabs', role: 'tablist' },
         [['ini', t('fb_tab_ini'), nNew], ['pulse', t('fb_tab_pulse'), (db.surveys || []).filter(function (s) { return s.at > Date.now() - 7 * DAY; }).length]].map(function (x) {
           return h('button', { key: x[0], type: 'button', role: 'tab', 'aria-selected': tab === x[0], className: cx('lor-tab', tab === x[0] && 'is-on'), onClick: function () { tb[1](x[0]); } }, x[1], h('span', { className: 'lor-count' }, x[2]));
         })),
-      tab === 'pulse' ? h(PulseAdmin, p) : h(IniAdmin, p));
+      tab === 'pulse' ? h(PulseAdmin, p) : h(IniAdmin, only ? Object.assign({}, p, { only: only }) : p));
   }
 
   /* ======================= FEATURES 3: error log · AI drills · SOP updates ======================= */
@@ -3676,7 +3699,9 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   }
 
   function HelpPage(p) {
-    var t = p.t, admin = p.user.role === 'admin', list = HELP[admin ? 'admin' : 'employee'];
+    var t = p.t, admin = p.user.role === 'admin', lv = lvlOf(p.user);
+    // salary — CEO and the owner; management logins — CEO
+    var list = HELP[admin ? 'admin' : 'employee'].filter(function (x) { return !(x.id === 'apay' && lv === 'sop') && !(x.id === 'aleaders' && admin && lv !== 'ceo'); });
     return h('div', { className: 'app-wrap help-page' },
       h('div', { className: 'page-head' },
         h('div', null, h('span', { className: 'lor-eyebrow' }, t('help_eyebrow')), h('h1', { className: 'lor-title' }, t('nav_help')))),
@@ -3712,7 +3737,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var admin = u.role === 'admin', out = [];
     function add(g, key, title, sub, sc, go) { out.push({ g: g, key: key, title: title, sub: sub, sc: sc, go: go }); }
 
-    (PAGES[admin ? 'admin' : 'employee']).forEach(function (x) {
+    (PAGES[admin ? 'admin' : 'employee']).filter(function (x) { return !(x[0] === 'pay' && lvlOf(u) === 'sop'); }).forEach(function (x) {
       var name = t(x[1]);
       if (hit(name, q)) add('page', 'pg' + x[0], name, t('gs_g_page'), 6, { name: x[0] });
     });
@@ -6750,10 +6775,14 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
 
   /* ---------------- admin: staff ---------------- */
   /* staff page: logins of those who receive initiatives (CEO, Project Manager, Boss) — they see only the initiatives sent to them */
-  var LEADER_POS = { ceo: 'CEO', pm: 'Project Manager', boss: 'Boss' };
+  /* management logins — CEO: SOP managers, CEO, the owner, Project Manager (create, edit, password, remove);
+     first — the SOP manager makes the first CEO login while there is none */
+  var ACC_KINDS = ['sop', 'ceo', 'boss', 'pm'];
+  var ACC_ROLE = { sop: { role: 'admin' }, ceo: { role: 'admin', post: 'ceo' }, boss: { role: 'admin', post: 'boss' }, pm: { role: 'leader', post: 'pm' } };
   function LeadersBox(p) {
-    var t = p.t, db = p.db, leaders = leadersOf(db);
-    var blank = function () { return { post: 'ceo', name: '', login: '', password: genPw() }; };
+    var t = p.t, db = p.db, me = p.user.id, kinds = p.first ? ['ceo'] : ACC_KINDS;
+    var list = p.first ? [] : db.users.filter(function (u) { return u.role !== 'employee'; });
+    var blank = function () { return { kind: kinds[0], name: '', login: '', password: genPw() }; };
     var f = useState(blank), form = f[0], er = useState({}), made = useState(null), pw = useState({}), del = useState(null), ed = useState(null);
     function set(k, v) { var o = Object.assign({}, form); o[k] = v; f[1](o); }
     function create() {
@@ -6761,33 +6790,35 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       if (!e.login && db.users.some(function (u) { return u.login === form.login.trim().toLowerCase(); })) e.login = t('login_taken');
       er[1](e); if (Object.keys(e).length) return;
       var nid = Math.max.apply(null, db.users.map(function (u) { return u.id; })) + 1;
-      p.update(function (d) { d.users.push({ id: nid, role: 'leader', post: form.post, login: form.login.trim().toLowerCase(), password: form.password, name: form.name.trim(), position: LEADER_POS[form.post], department: '', status: 'official', profileComplete: true, tourDone: true, createdAt: Date.now() }); });
+      p.update(function (d) { d.users.push(Object.assign({ id: nid, login: form.login.trim().toLowerCase(), password: form.password, name: form.name.trim(), position: t('lvl_' + form.kind), department: '', status: 'official', profileComplete: true, tourDone: form.kind === 'pm', createdAt: Date.now() }, ACC_ROLE[form.kind])); });
       made[1]({ login: form.login.trim().toLowerCase(), password: form.password }); f[1](blank());
     }
     function resetPw(u) { var np = genPw(); p.update(function (d) { d.users.forEach(function (x) { if (x.id === u.id) x.password = np; }); }); var o = Object.assign({}, pw[0]); o[u.id] = np; pw[1](o); }
     function remove(u) { del[1](null); p.update(function (d) { d.users = d.users.filter(function (x) { return x.id !== u.id; }); }); }
     return h('section', { className: 'box ld-box' },
-      h('h2', { className: 'lor-h' }, t('ld_title')),
-      h('p', { className: 'lor-sm lor-muted', style: { margin: '0 0 12px' } }, t('ld_hint')),
-      leaders.length ? h('div', { className: 'lor-table-wrap' }, h('table', { className: 'lor-table ld-table' },
+      h('h2', { className: 'lor-h' }, t(p.first ? 'acc_first_t' : 'acc_title')),
+      h('p', { className: 'lor-sm lor-muted', style: { margin: '0 0 12px' } }, t(p.first ? 'acc_first_hint' : 'acc_hint')),
+      p.first ? null : list.length ? h('div', { className: 'lor-table-wrap' }, h('table', { className: 'lor-table ld-table' },
         h('thead', null, h('tr', null, [t('ld_post'), t('fio'), t('login'), ''].map(function (x, i) { return h('th', { key: i }, x); }))),
-        h('tbody', null, leaders.map(function (u) {
+        h('tbody', null, list.map(function (u) {
+          var self = u.id === me;
           return h('tr', { key: u.id },
-            h('td', null, t('ini_to_' + u.post)),
-            h('td', null, u.name),
+            h('td', null, t('lvl_' + lvlOf(u))),
+            h('td', null, u.name, self ? h('small', { className: 'lor-muted' }, ' · ' + t('acc_you')) : null),
             h('td', null, h('code', null, u.login), pw[0][u.id] ? h('div', { className: 'lor-sm made' }, t('new_pw') + ': ', h('code', null, pw[0][u.id])) : null),
-            h('td', { className: 'nowrap' }, h(Btn, { variant: 'ghost', size: 'sm', onClick: function () { ed[1](u.id); } }, t('ue_edit')), h(Btn, { variant: 'ghost', size: 'sm', onClick: function () { resetPw(u); } }, t('reset_pw')),
-              del[0] === u.id ? h(F, null, ' ', h(Btn, { variant: 'outline', size: 'sm', onClick: function () { remove(u); } }, t('ld_del_yes')), h(Btn, { variant: 'ghost', size: 'sm', onClick: function () { del[1](null); } }, t('cancel')))
+            h('td', { className: 'nowrap' }, h(Btn, { variant: 'ghost', size: 'sm', onClick: function () { ed[1](u.id); } }, t('ue_edit')), self ? null : h(Btn, { variant: 'ghost', size: 'sm', onClick: function () { resetPw(u); } }, t('reset_pw')),
+              self ? null : del[0] === u.id ? h(F, null, ' ', h(Btn, { variant: 'outline', size: 'sm', onClick: function () { remove(u); } }, t('ld_del_yes')), h(Btn, { variant: 'ghost', size: 'sm', onClick: function () { del[1](null); } }, t('cancel')))
                 : h('button', { type: 'button', className: 'app-link danger', onClick: function () { del[1](u.id); } }, t('remove'))));
         })))) : h('p', { className: 'lor-sm lor-muted' }, t('ld_empty')),
       h('div', { className: 'staff-form ld-form' },
-        h(Field, { name: 'ld-post', label: t('ld_post'), value: form.post, onChange: function (v) { set('post', v); }, options: INI_TO.map(function (x) { return [x, t('ini_to_' + x)]; }) }),
+        p.first ? null : h(Field, { name: 'ld-post', label: t('ld_post'), value: form.kind, onChange: function (v) { set('kind', v); }, options: kinds.map(function (x) { return [x, t('lvl_' + x)]; }) }),
         h(Field, { name: 'ld-name', label: t('fio'), required: true, value: form.name, error: er[0].name, onChange: function (v) { set('name', v); }, placeholder: 'Ism Familiya' }),
-        h(Field, { name: 'ld-login', label: t('login'), required: true, value: form.login, error: er[0].login, onChange: function (v) { set('login', v); }, placeholder: 'ceo' }),
+        h(Field, { name: 'ld-login', label: t('login'), required: true, value: form.login, error: er[0].login, onChange: function (v) { set('login', v); }, placeholder: form.kind === 'sop' ? 'metodist2' : form.kind }),
         h(Field, { name: 'ld-pw', label: t('password'), required: true, value: form.password, error: er[0].password, onChange: function (v) { set('password', v); } })),
+      h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, p.first ? null : t('acc_kind_' + form.kind)),
       h('div', { className: 'box-row' },
         made[0] ? h('span', { className: 'lor-sm made' }, '✓ ' + t('created') + ': ', h('code', null, made[0].login + ' / ' + made[0].password)) : h('span'),
-        h(Btn, { variant: 'secondary', arrow: true, onClick: create }, t('ld_add'))),
+        h(Btn, { variant: 'secondary', arrow: true, onClick: create }, t(p.first ? 'acc_first_add' : 'ld_add'))),
       ed[0] && userOf(db, ed[0]).id ? h(UserEditModal, Object.assign({}, p, { key: 'le' + ed[0], u: userOf(db, ed[0]), onClose: function () { ed[1](null); } })) : null);
   }
 
@@ -6901,7 +6932,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         nat.push([u.id, u.name, l ? l.title : lid, tu('s_' + x.status.replace(/-/g, '_')) !== 's_' + x.status.replace(/-/g, '_') ? tu('s_' + x.status.replace(/-/g, '_')) : x.status, x.score != null ? x.score : '', x.at ? dayKey(x.at) : '']);
       });
     });
-    var rah = [['ID', 'F.I.Sh.', 'Login', 'Kim']].concat(db.users.filter(function (u) { return u.role === 'leader'; }).map(function (u) { return [u.id, u.name, u.login || '', tu('ini_to_' + u.post)]; }));
+    var rah = [['ID', 'F.I.Sh.', 'Login', 'Kim']].concat(db.users.filter(function (u) { return u.role !== 'employee'; }).map(function (u) { return [u.id, u.name, u.login || '', tu('lvl_' + lvlOf(u))]; }));
     return makeXlsx([{ name: 'Xodimlar', rows: xod }, { name: 'Natijalar', rows: nat }, { name: 'Rahbarlar', rows: rah }]);
   }
   function csvLine(a) { return a.map(function (v) { v = String(v == null ? '' : v); return /[;"\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }).join(';'); }
@@ -7037,7 +7068,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
             h('span', null, h('b', null, u.name), h('small', null, (m.low.length ? m.low.map(function (k) { return t('pt_' + k); }).join(', ') : (m.recent || m.avg).toFixed(1) + ' / 5'))));
         })),
         h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('sp_attn_note'))) : null,
-      h('section', { className: 'box' },
+      lvlOf(p.user) === 'boss' ? null : h('section', { className: 'box' },
         h('h2', { className: 'lor-h' }, t('new_emp')),
         h('div', { className: 'staff-form' },
           h(Field, { name: 'n-name', label: t('fio'), required: true, value: form.name, error: er[0].name, onChange: function (v) { set('name', v); }, placeholder: 'Ism Familiya' }),
@@ -7048,11 +7079,13 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         h('div', { className: 'box-row' },
           made[0] ? h('span', { className: 'lor-sm made' }, '✓ ' + t('created') + ': ', h('code', null, made[0].login + ' / ' + made[0].password)) : h('span'),
           h(Btn, { variant: 'primary', arrow: true, onClick: create }, t('create')))),
-      h('section', { className: 'box pp-ask' },
+      lvlOf(p.user) === 'boss' ? null : h('section', { className: 'box pp-ask' },
         h('label', { className: 'check' }, h('input', { type: 'checkbox', checked: askPassport(db), onChange: function (e) { var v = e.target.checked; p.update(function (d) { d.settings = d.settings || {}; d.settings.passportScan = v; }); } }), t('pp_ask')),
         h('p', { className: 'lor-sm lor-muted', style: { margin: '6px 0 0' } }, t('pp_ask_hint'))),
-      h(StaffImport, p),
-      h(LeadersBox, p),
+      lvlOf(p.user) === 'boss' ? null : h(StaffImport, p),
+      /* logins of the management: CEO — everyone's; SOP manager — only the first CEO, while there is none */
+      lvlOf(p.user) === 'ceo' ? h(LeadersBox, p)
+        : lvlOf(p.user) === 'sop' && !db.users.some(function (u) { return lvlOf(u) === 'ceo'; }) ? h(LeadersBox, Object.assign({}, p, { first: true })) : null,
       h('div', { className: 'seg sp-seg', role: 'tablist' }, [['all', t('all'), emps.length]].concat(L.map(function (lv, i) { return [String(i), lvlShort(lv, p.lang), emps.filter(function (u) { return Math.min(u.level || 0, L.length - 1) === i; }).length]; })).map(function (x) {
         return h('button', { key: x[0], type: 'button', role: 'tab', 'aria-selected': fl === x[0], className: fl === x[0] ? 'is-on' : '', onClick: function () { flt[1](x[0]); } }, x[1], h('span', { className: 'lor-count' }, x[2]));
       })),
@@ -7073,7 +7106,9 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
 
   /* ---------------- admin shell ---------------- */
   function AdminApp(p) {
-    var t = p.t, db = p.db, r = useState({ name: 'inbox' }), route = r[0];
+    var lv = lvlOf(p.user);
+    if (lv === 'boss') p = Object.assign({}, p, { update: roUpdate(p, p.t) });   // the owner: view only
+    var t = p.t, db = p.db, r = useState({ name: lv === 'boss' ? 'monitor' : 'inbox' }), route = r[0];
     var openN = db.requests.filter(function (x) { return x.state === 'open'; }).length + xtReview(db).length;
     function go(x) { r[1](x); window.scrollTo(0, 0); }
     var ai = useState(false), tour = useState(false), pal = useState(false);
@@ -7082,22 +7117,24 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var theme = useThemePref(p.say, t);
     var hint = { on: hintOn, toggle: function (v) { p.update(function (d) { d.users.forEach(function (x) { if (x.id === p.user.id) x.hints = v; }); }); p.say(t(v ? 'hint_said_on' : 'hint_said_off')); } };
 
-    var attnA = (db.assets || []).filter(assetAttn).length, newIni = (db.initiatives || []).filter(function (x) { return !iniTo(x).length && x.status === 'new'; }).length;
+    var attnA = (db.assets || []).filter(assetAttn).length, newIni = (db.initiatives || []).filter(function (x) { var to = iniTo(x); return (!to.length || to.indexOf(p.user.post) >= 0) && x.status === 'new'; }).length;
     var qN = errStats(db, 90).open;
-    var nav = [['inbox', t('nav_inbox'), openN], ['monitor', t('nav_monitor')], ['quality', t('nav_quality'), qN], ['rating', t('nav_rating')], ['levels', t('nav_levels')], ['cms', t('nav_cms')], ['staff', t('nav_staff')], ['assets', t('nav_assets'), attnA], ['feedback', t('nav_feedback'), newIni], ['pay', t('nav_pay'), (db.payCalcs || []).filter(function (c) { return c.status === 'saved'; }).length]].map(function (n) { return { key: n[0], label: n[1], count: n[2], active: route.name === n[0], onClick: function () { go({ name: n[0] }); } }; });
+    var nav = [['inbox', t('nav_inbox'), openN], ['monitor', t('nav_monitor')], ['quality', t('nav_quality'), qN], ['rating', t('nav_rating')], ['levels', t('nav_levels')], ['cms', t('nav_cms')], ['staff', t('nav_staff')], ['assets', t('nav_assets'), attnA], ['feedback', t('nav_feedback'), newIni], ['pay', t('nav_pay'), lv === 'ceo' ? (db.payCalcs || []).filter(function (c) { return c.status === 'saved'; }).length : 0]].filter(function (n) { return n[0] !== 'pay' || lv !== 'sop'; }).map(function (n) { return { key: n[0], label: n[1], count: n[2], active: route.name === n[0], onClick: function () { go({ name: n[0] }); } }; });
     var q = Object.assign({}, p, { goCms: function (lid) { go({ name: 'cms', lessonId: lid }); }, goAssets: function (uid) { go({ name: 'assets', uid: uid }); } });
     var main = route.name === 'monitor' ? h(Monitor, Object.assign({}, q, { tab: route.tab, ym: route.ym })) : route.name === 'rating' ? h(Rating, q) : route.name === 'levels' ? h(LevelsAdmin, q) : route.name === 'cms' ? h(CMS, Object.assign({}, q, { lessonId: route.lessonId, tab: route.tab })) : route.name === 'staff' ? h(Staff, q)
       : route.name === 'assets' ? h(AssetsAdmin, Object.assign({}, q, { uid: route.uid, key: 'as' + (route.uid || '') })) : route.name === 'feedback' ? h(FeedbackAdmin, Object.assign({}, q, { tab: route.tab }))
       : route.name === 'quality' ? h(QualityAdmin, Object.assign({}, q, { tab: route.tab }))
-      : route.name === 'pay' ? h(PayAdmin, Object.assign({}, q, { tab: route.tab }))
+      : route.name === 'pay' && lv !== 'sop' ? h(PayAdmin, Object.assign({}, q, { tab: route.tab }))
       : route.name === 'help' ? h(HelpPage, Object.assign({}, q, { go: go, hint: hint, theme: theme, onTour: function () { tour[1](true); } })) : h(Inbox, Object.assign({}, q, { tab: route.tab }));
     return h(F, null,
-      h(Header, { t: t, lang: p.lang, setLang: p.setLang, onProfile: p.openProfile, user: p.user, nav: nav, wide: true, onLogout: p.logout, onTerms: p.showTerms,
+      h(Header, { t: t, lang: p.lang, setLang: p.setLang, onProfile: p.openProfile, user: p.user, nav: nav, wide: true, onLogout: p.logout, onTerms: p.showTerms, subtitle: t('lvl_' + lv),
         hint: hint, theme: theme, onSearch: function () { pal[1](true); }, onHelp: function () { go({ name: 'help' }); }, links: [{ key: 'help', label: t('nav_help'), onClick: function () { go({ name: 'help' }); } }, { key: 'export', label: t('exp_btn'), onClick: function () { exportAll(p.say, t); } }],
         notifs: db.notifications.filter(function (n) { return n.userId === p.user.id; }), fmtNotif: function (n) { return notifText(n, db, p.lang, t); },
         onReadAll: function () { p.update(function (d) { d.notifications.forEach(function (n) { if (n.userId === p.user.id) n.read = true; }); }); },
         onNotif: function (n) { p.update(function (d) { d.notifications.forEach(function (x) { if (x.id === n.id) x.read = true; }); }); go({ name: n.route === 'mentor' ? 'quality' : (n.route || 'inbox'), tab: n.kind === 'errfix' ? 'err' : (n.tab || null), ym: n.ym || null }); } }),
-      h('div', { className: 'app-body no-side' }, h('main', { className: 'app-main', id: 'main' }, h('div', { className: 'page-anim', key: route.name + (route.id || route.uid || route.lessonId || '') + (route.tab || '') + (route.ym || '') }, main), h(Foot, { t: t, onTerms: p.showTerms, admin: true, say: p.say }))),
+      h('div', { className: 'app-body no-side' }, h('main', { className: 'app-main', id: 'main' },
+        lv === 'boss' ? h('div', { className: 'ro-bar', role: 'note' }, h(Ico, { name: 'lock', size: 16 }), h('span', null, t('ro_bar'))) : null,
+        h('div', { className: 'page-anim', key: route.name + (route.id || route.uid || route.lessonId || '') + (route.tab || '') + (route.ym || '') }, main), h(Foot, { t: t, onTerms: p.showTerms, admin: true, say: p.say }))),
       h(AIMentor, Object.assign({}, p, { open: ai[0], setOpen: ai[1], lessonId: route.name === 'cms' ? route.lessonId : null, openLesson: function (id) { go({ name: 'cms', lessonId: id }); } })),
       hintOn && !tour[0] && p.user.tourDone ? h(HintLayer, { t: t }) : null,
       pal[0] ? h(Palette, Object.assign({}, q, { user: p.user, onClose: function () { pal[1](false); }, go: function (x) { go(x); } })) : null,

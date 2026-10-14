@@ -254,24 +254,27 @@ try {
   assert.equal(srv.g.state().xtasks.find(x => x.uid === emp.id).status, 'review', 'сверхзадача сдана на проверку');
   step('сверхзадача: SOP-менеджер выдал, сотрудник сдал');
 
-  // ---------- адресат идей: SOP-менеджер создаёт вход CEO ----------
+  // ---------- первый вход CEO: создаёт SOP-менеджер, пока CEO нет; зарплаты у SOP-менеджера нет ----------
+  assert.equal(await A.locator('a[href="#pay"]').count(), 0, 'у SOP-менеджера нет «Maosh»');
   await nav(A, 'staff');
+  assert.match(await A.innerText('.ld-box'), /Platformada hali CEO yo‘q/);
   await A.fill('#f-ld-name', 'Sherzod Aliyev'); await A.fill('#f-ld-login', 'ceo'); await A.fill('#f-ld-pw', 'ceo-parol-1');
-  await click(A, 'Kirish yaratish');
+  await click(A, 'CEO kirishini yaratish');
   await settle(A);
   const ceo = srv.g.state().users.find(u => u.login === 'ceo');
-  assert.ok(ceo && ceo.role === 'leader' && ceo.post === 'ceo' && !('password' in ceo) && srv.g.props['cred:' + ceo.id], 'вход CEO на сервере');
-  step('SOP-менеджер создал вход CEO');
+  assert.ok(ceo && ceo.role === 'admin' && ceo.post === 'ceo' && !('password' in ceo) && srv.g.props['cred:' + ceo.id], 'вход CEO на сервере');
+  assert.equal(await A.locator('.ld-box').count(), 0, 'дальше входы руководства — у CEO');
+  step('SOP-менеджер создал первый вход CEO; «Maosh» у него нет');
 
   // ---------- идея (tashabbus) → CEO, уведомления, план адаптации ----------
   await E.reload({ waitUntil: 'networkidle' }); await watchSync(E); await skipTour(E);   // свежие данные: вход CEO уже есть
-  await E.waitForFunction(() => LmsClient.initial().users.some(u => u.role === 'leader'), null, { timeout: 15000 });
+  await E.waitForFunction(() => LmsClient.initial().users.some(u => u.post === 'ceo'), null, { timeout: 15000 });
   await click(E, 'Tashabbus', { wait: 500 });
   await click(E, 'Yuborish', { wait: 300 });                   // без адресата не уходит
   assert.ok((await E.innerText('.ini-modal')).includes('Kamida bitta rahbarni tanlang'), 'нужно выбрать, кому');
   await E.locator('.ini-to-card').nth(0).click(); await E.locator('.ini-to-card').nth(1).click();   // сразу двум
   try { await E.locator('.ini-to-card').nth(0).filter({ hasText: 'Sherzod Aliyev' }).waitFor({ timeout: 10000 }); }   // в карточке — имя CEO (после перерисовки)
-  catch (e) { console.log('карточка CEO:', await E.innerText('.ini-to-card >> nth=0'), await E.evaluate(() => JSON.stringify(LmsClient.initial().users.filter(u => u.role === 'leader')))); throw e; }
+  catch (e) { console.log('карточка CEO:', await E.innerText('.ini-to-card >> nth=0'), await E.evaluate(() => JSON.stringify(LmsClient.initial().users.filter(u => u.post)))); throw e; }
   assert.equal(await E.locator('.ini-to-card[aria-checked="true"]').count(), 2, 'выбраны оба');
   await E.locator('.ini-types:not(.ini-to) .ini-type-card').first().click();
   await E.fill('#f-ini-title', 'Yorliqlarni oldindan chop etish'); await E.fill('#f-ini-text', 'Ertalab navbat kamayadi');
@@ -285,9 +288,10 @@ try {
   assert.ok(srv.g.state().notifications.some(n => n.userId === ceo.id && n.kind === 'ini_in'), 'CEO получил уведомление');
 
   const C = await device('CEO');
-  await signIn(C, 'ceo', 'ceo-parol-1');
-  assert.ok((await C.innerText('main')).includes('Yorliqlarni oldindan chop etish'), 'CEO видит идею');
-  assert.equal(await C.evaluate(() => LmsClient.initial().course.sections.length), 0, 'курса у CEO нет');
+  await signIn(C, 'ceo', 'ceo-parol-1'); await skipTour(C);
+  assert.ok(await C.evaluate(() => LmsClient.initial().course.sections.length) > 0, 'CEO видит всю платформу');
+  await nav(C, 'feedback');
+  assert.ok((await C.innerText('main')).includes('Yorliqlarni oldindan chop etish'), 'CEO видит идею, адресованную ему');
   await C.selectOption('#f-is-' + idea.id, 'accepted');
   await C.fill('#f-ir-' + idea.id, 'Zo‘r, keyingi haftadan boshlaymiz');
   await click(C, 'Saqlash va xabar berish');
@@ -299,7 +303,7 @@ try {
   await A.reload({ waitUntil: 'networkidle' }); await watchSync(A);
   const seen = await A.evaluate(id => LmsClient.initial().initiatives.find(x => x.id === id), idea.id);
   assert.ok(seen && seen.status === 'accepted' && !seen.title && !seen.reply, 'SOP-менеджер видит только статус идеи');
-  step('идея ушла CEO, CEO ответил; SOP-менеджер текста не видит');
+  step('идея ушла CEO, CEO ответил в своём кабинете; SOP-менеджер текста не видит');
   await E.reload({ waitUntil: 'networkidle' }); await watchSync(E); await skipTour(E);
   await E.locator('.bell-wrap button').first().click(); await E.waitForTimeout(300);
   await E.locator('.notif-pop-h button').first().click(); await E.waitForTimeout(300);
@@ -425,24 +429,24 @@ try {
   assert.deepEqual(await rejected(A), [], 'сервер не отклонил обновление');
   step('Excel туда и обратно: таблица скачана, по ID обновлён 1, добавлен 1, занятый логин отклонён');
 
-  // ---------- зарплата: SOP-менеджер задаёт условия, сотрудник считает и сохраняет, SOP-менеджер видит историю и подтверждает ----------
-  await nav(A, 'pay');
-  await A.getByRole('tab', { name: /Shartlar/ }).click(); await A.waitForTimeout(200);
-  await click(A, 'Yangi shart');
-  await A.fill('#f-pay-title', 'Ombor mudiri'); await A.fill('#f-pay-fixed', '4000000'); await A.fill('#f-pay-base', '2000000');
-  await A.locator('.pay-editor .ac-chip', { hasText: /^Ombor mudiri$/ }).click();
-  await A.fill('#f-pk-0-name', 'Shartnomalar'); await A.fill('#f-pk-0-unit', 'ta'); await A.fill('#f-pk-0-plan', '10'); await A.fill('#f-pk-0-w', '60');
-  await A.fill('#f-pk-0-min', '50'); await A.fill('#f-pk-0-cap', '120');
-  await click(A, '+ KPI qo‘shish');
-  await A.fill('#f-pk-1-name', 'Kechikishlar'); await A.selectOption('#f-pk-1-src', 'att_late'); await A.fill('#f-pk-1-plan', '2'); await A.fill('#f-pk-1-w', '40');
-  await A.locator('.pay-ed-kpi').nth(1).locator('label.check input').check();
-  await click(A, '+ KPI qo‘shish');
-  await A.fill('#f-pk-2-name', 'O‘qish soatlari'); await A.selectOption('#f-pk-2-src', 'study_h'); await A.selectOption('#f-pk-2-type', 'unit'); await A.fill('#f-pk-2-rate', '10000');
-  assert.match(await A.innerText('.pay-editor'), /Vaznlar yig‘indisi: 100% ✓/);
-  assert.match(await txt(A, '.pay-example'), /6 000 000 so‘m/, 'пример: все планы на 100 % — фикса + весь KPI-бонус');
-  await shot(A, '18-pay-scheme');
-  await A.locator('.pay-editor').getByRole('button', { name: 'Saqlash' }).click();
-  await settle(A);
+  // ---------- зарплата: CEO задаёт условия, сотрудник считает и сохраняет, CEO видит историю и подтверждает ----------
+  await nav(C, 'pay');
+  await C.getByRole('tab', { name: /Shartlar/ }).click(); await C.waitForTimeout(200);
+  await click(C, 'Yangi shart');
+  await C.fill('#f-pay-title', 'Ombor mudiri'); await C.fill('#f-pay-fixed', '4000000'); await C.fill('#f-pay-base', '2000000');
+  await C.locator('.pay-editor .ac-chip', { hasText: /^Ombor mudiri$/ }).click();
+  await C.fill('#f-pk-0-name', 'Shartnomalar'); await C.fill('#f-pk-0-unit', 'ta'); await C.fill('#f-pk-0-plan', '10'); await C.fill('#f-pk-0-w', '60');
+  await C.fill('#f-pk-0-min', '50'); await C.fill('#f-pk-0-cap', '120');
+  await click(C, '+ KPI qo‘shish');
+  await C.fill('#f-pk-1-name', 'Kechikishlar'); await C.selectOption('#f-pk-1-src', 'att_late'); await C.fill('#f-pk-1-plan', '2'); await C.fill('#f-pk-1-w', '40');
+  await C.locator('.pay-ed-kpi').nth(1).locator('label.check input').check();
+  await click(C, '+ KPI qo‘shish');
+  await C.fill('#f-pk-2-name', 'O‘qish soatlari'); await C.selectOption('#f-pk-2-src', 'study_h'); await C.selectOption('#f-pk-2-type', 'unit'); await C.fill('#f-pk-2-rate', '10000');
+  assert.match(await C.innerText('.pay-editor'), /Vaznlar yig‘indisi: 100% ✓/);
+  assert.match(await txt(C, '.pay-example'), /6 000 000 so‘m/, 'пример: все планы на 100 % — фикса + весь KPI-бонус');
+  await shot(C, '18-pay-scheme');
+  await C.locator('.pay-editor').getByRole('button', { name: 'Saqlash' }).click();
+  await settle(C);
   const sch = srv.g.state().pay.schemes[0];
   assert.equal(sch.title, 'Ombor mudiri'); assert.equal(sch.kpis.length, 3); assert.equal(sch.kpis[1].less, true);
   // сотрудник: «Maosh» в меню, своя схема, факт — и итог считается сразу
@@ -473,39 +477,69 @@ try {
   assert.ok(dr, 'несохранённый расчёт записан'); assert.deepEqual(dr.tries.map(y => y.inputs[sch.kpis[0].id]), [12, 7], 'обе попытки');
   assert.equal(dr.inputs[sch.kpis[0].id], 7, 'итог — последняя попытка');
   assert.deepEqual(await rejected(E), [], 'сервер принял несохранённый расчёт');
-  // SOP-менеджер: история — кто, когда, как посчитал; подтверждает с комментарием
-  await A.reload({ waitUntil: 'networkidle' }); await watchSync(A);
-  await nav(A, 'pay');
-  assert.match(await txt(A, '.pay-who'), /Dilnoza Karimova-Aliyeva\s+Ombor mudiri\s+3\s+1\b/, 'кто сколько считал: 3 расчёта (9 — отправлен, 12 и 7 — нет), отправлен 1');
-  assert.ok(await A.locator('.pay-tlrow', { hasText: 'Yuborilmagan' }).count(), 'несохранённый — в истории');
-  await A.locator('.pay-tlrow', { hasText: 'Tekshiruvda' }).click(); await A.waitForTimeout(300);
-  assert.match(await txt(A, '.pay-hbody'), /9 \/ 10 ta → 90% × 60% × 2 000 000 so‘m = 1 080 000 so‘m/, 'видно, как посчитано');
-  await A.fill('#f-pay-rep', 'Hammasi to‘g‘ri');
-  await shot(A, '20-pay-history');
-  await A.locator('.pay-decide').getByRole('button', { name: 'Tasdiqlash' }).click();
-  await settle(A);
+  // CEO: история — кто, когда, как посчитал; подтверждает с комментарием
+  await C.reload({ waitUntil: 'networkidle' }); await watchSync(C);
+  await nav(C, 'pay');
+  assert.match(await txt(C, '.pay-who'), /Dilnoza Karimova-Aliyeva\s+Ombor mudiri\s+3\s+1\b/, 'кто сколько считал: 3 расчёта (9 — отправлен, 12 и 7 — нет), отправлен 1');
+  assert.ok(await C.locator('.pay-tlrow', { hasText: 'Yuborilmagan' }).count(), 'несохранённый — в истории');
+  await C.locator('.pay-tlrow', { hasText: 'Tekshiruvda' }).click(); await C.waitForTimeout(300);
+  assert.match(await txt(C, '.pay-hbody'), /9 \/ 10 ta → 90% × 60% × 2 000 000 so‘m = 1 080 000 so‘m/, 'видно, как посчитано');
+  await C.fill('#f-pay-rep', 'Hammasi to‘g‘ri');
+  await shot(C, '20-pay-history');
+  await C.locator('.pay-decide').getByRole('button', { name: 'Tasdiqlash' }).click();
+  await settle(C);
   const sent = srv.g.state().payCalcs.find(c => c.id === pc[0].id);
   assert.equal(sent.status, 'approved'); assert.equal(sent.reply, 'Hammasi to‘g‘ri');
   assert.ok(srv.g.state().notifications.some(n => n.kind === 'pay' && n.userId === emp.id && n.pay.s === 'approved'), 'сотруднику — уведомление');
   await E.reload({ waitUntil: 'networkidle' }); await watchSync(E);
   await nav(E, 'pay');
   assert.ok(await E.locator('.pay-hist .pay-st', { hasText: 'Tasdiqlandi' }).count(), 'сотрудник видит «Tasdiqlandi»');
-  assert.deepEqual(await rejected(A), [], 'сервер принял условия и решение');
-  step('зарплата: условия SOP-менеджера, расчёт сотрудника с историей, проверка и подтверждение');
+  assert.deepEqual(await rejected(C), [], 'сервер принял условия и решение');
+  assert.deepEqual(await A.evaluate(() => [LmsClient.initial().payCalcs, LmsClient.initial().pay.schemes]), [[], []], 'SOP-менеджер зарплату не видит');
+  step('зарплата: условия CEO, расчёт сотрудника с историей, проверка и подтверждение CEO; SOP-менеджер её не видит');
+
+  // ---------- руководитель (владелец): вход создаёт CEO; видит всё и зарплату, ничего не меняет ----------
+  await nav(C, 'staff');
+  await C.selectOption('#f-ld-post', 'boss'); await C.fill('#f-ld-name', 'Kompaniya egasi'); await C.fill('#f-ld-login', 'egasi'); await C.fill('#f-ld-pw', 'egasi-parol-1');
+  await click(C, 'Kirish yaratish'); await settle(C);
+  const boss = srv.g.state().users.find(u => u.login === 'egasi');
+  assert.ok(boss && boss.role === 'admin' && boss.post === 'boss', 'вход руководителя на сервере');
+  const B = await device('руководитель');
+  await signIn(B, 'egasi', 'egasi-parol-1'); await skipTour(B);
+  assert.match(await txt(B, '.ro-bar'), /Ko‘rish rejimi/);
+  await nav(B, 'pay');
+  assert.ok(await B.locator('.pay-tlrow').count(), 'видит историю зарплат');
+  await B.locator('.pay-tlrow').first().click(); await B.waitForTimeout(300);
+  assert.equal(await B.locator('.pay-decide').count(), 0, 'подтверждать не может');
+  await B.getByRole('tab', { name: /Shartlar/ }).click(); await B.waitForTimeout(200);
+  assert.equal(await B.getByRole('button', { name: 'Yangi shart' }).count(), 0, 'условий не задаёт');
+  await nav(B, 'staff');
+  assert.equal(await B.locator('#f-n-name').count(), 0, 'сотрудников не создаёт');
+  const st0 = srv.g.state().users.find(u => u.id === emp.id).status, rev0 = srv.g.state().rev;
+  await B.locator('tr', { hasText: 'Dilnoza Karimova-Aliyeva' }).locator('select').last().selectOption(st0 === 'official' ? 'probation' : 'official');
+  await B.waitForFunction(() => document.body.innerText.includes('Faqat ko‘rish'), null, { timeout: 5000 });
+  await settle(B);
+  assert.equal(srv.g.state().users.find(u => u.id === emp.id).status, st0, 'правка не ушла');
+  assert.equal(srv.g.state().rev, rev0, 'на сервере ничего не изменилось');
+  await shot(B, '22-owner');
+  assert.deepEqual(await rejected(B), [], 'сервер ничего не отклонял — страница не отправляла');
+  step('руководитель: вход от CEO; видит всё и зарплату, любая правка — «только просмотр»');
 
   // ---------- подсказки «Tugmalar bo‘yicha izohlar» у новых кнопок: зарплата, Excel, меню ----------
+  await C.click('.help-btn'); await C.waitForTimeout(500); await C.locator('.hint-sw').first().click(); await settle(C);
   await A.click('.help-btn'); await A.waitForTimeout(500); await A.locator('.hint-sw').first().click(); await settle(A);
   // прокрутка закрывает подсказку — сначала прокрутить к кнопке, потом навести
   const hintOf = async (p, sel) => { await p.mouse.move(0, 0); await p.locator(sel).first().scrollIntoViewIfNeeded(); await p.waitForTimeout(300); await p.locator(sel).first().hover(); await p.waitForSelector('.hint-pop', { timeout: 3000 }); return txt(p, '.hint-pop'); };
-  await nav(A, 'pay');
-  assert.match(await hintOf(A, '.pay-who'), /Kim qancha hisobladi/);
-  assert.match(await hintOf(A, '.pay-filters .lor-btn-secondary'), /Qo‘shimcha amal/, 'синяя кнопка — общая подсказка');
-  assert.match(await hintOf(A, 'a[href="#pay"]:visible'), /Belgilangan maosh \+ KPI/);
+  await nav(C, 'pay');
+  assert.match(await hintOf(C, '.pay-who'), /Kim qancha hisobladi/);
+  assert.match(await hintOf(C, '.pay-filters .lor-btn-secondary'), /Qo‘shimcha amal/, 'синяя кнопка — общая подсказка');
+  assert.match(await hintOf(C, 'a[href="#pay"]:visible'), /Belgilangan maosh \+ KPI/);
   await nav(A, 'staff');
   assert.match(await hintOf(A, '.imp-act .lor-btn-secondary'), /Xodimlar, natijalar va rahbarlar/);
   assert.match(await hintOf(A, '.pp-ask'), /pasport fayli/);
   await shot(A, '21-hint');
   await A.click('.help-btn'); await A.waitForTimeout(500); await A.locator('.hint-sw').first().click(); await settle(A);
+  await C.click('.help-btn'); await C.waitForTimeout(500); await C.locator('.hint-sw').first().click(); await settle(C);
   step('подсказки у новых кнопок: зарплата, Excel, скан паспорта, синие кнопки');
 
   // ---------- страница входа: маршрут, приветствие, «Kun hikmati»; свои цитаты SOP-менеджера — из «Kontent» ----------
