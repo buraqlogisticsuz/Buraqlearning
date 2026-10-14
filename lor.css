@@ -3289,3 +3289,68 @@ button.mc-cell.at-cell:hover { outline: 2px solid var(--blue-text); outline-offs
 .ro-bar { display: flex; align-items: center; gap: 10px; max-width: 1180px; margin: 0 auto var(--space-4); padding: 10px var(--space-4); border-radius: var(--radius-md);
   background: var(--blue-soft); color: var(--blue-text); font-size: 13px; line-height: 19px; }
 .ro-bar svg { flex: none; }
+
+/* login glass (app.js Login, NoServer): three soft lights in brand colours drift behind the form, the card is frosted
+   glass over them — blur, a lit rim (white → red corner), a light that follows the mouse, one sheen across on load.
+   Inputs stay near opaque (reading surface), the logo is untouched. Resting frame = the finished look. */
+:root {
+  --lg-o1: rgba(3, 76, 170, .55); --lg-o2: rgba(222, 4, 65, .32); --lg-o3: rgba(14, 46, 84, .30);
+  --lg-card: rgba(255, 255, 255, .26); --lg-tint: rgba(255, 255, 255, .50); --lg-rim: rgba(255, 255, 255, .95); --lg-rim2: rgba(255, 255, 255, .30);
+  --lg-spot: rgba(255, 255, 255, .60); --lg-field: rgba(255, 255, 255, .72); --lg-drop: rgba(14, 46, 84, .30);
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --lg-o1: rgba(3, 76, 170, .80); --lg-o2: rgba(222, 4, 65, .46); --lg-o3: rgba(191, 191, 191, .16);
+  --lg-card: rgba(255, 255, 255, .06); --lg-tint: rgba(255, 255, 255, .13); --lg-rim: rgba(255, 255, 255, .42); --lg-rim2: rgba(255, 255, 255, .07);
+  --lg-spot: rgba(255, 255, 255, .11); --lg-field: rgba(7, 26, 49, .55); --lg-drop: rgba(0, 0, 0, .55);
+} }
+:root[data-theme="dark"] {
+  --lg-o1: rgba(3, 76, 170, .80); --lg-o2: rgba(222, 4, 65, .46); --lg-o3: rgba(191, 191, 191, .16);
+  --lg-card: rgba(255, 255, 255, .06); --lg-tint: rgba(255, 255, 255, .13); --lg-rim: rgba(255, 255, 255, .42); --lg-rim2: rgba(255, 255, 255, .07);
+  --lg-spot: rgba(255, 255, 255, .11); --lg-field: rgba(7, 26, 49, .55); --lg-drop: rgba(0, 0, 0, .55);
+}
+.login-page .lor-login-side { position: relative; overflow: hidden; isolation: isolate; }
+.login-page .login-col { max-width: 440px; }
+.lg-lights { position: absolute; inset: 0; z-index: -1; pointer-events: none; }
+.lg-lights i { position: absolute; left: 50%; top: 50%; border-radius: 50%; }
+.lg-lights i:nth-child(1) { width: 420px; height: 420px; margin: -330px 0 0 -360px; background: radial-gradient(closest-side, var(--lg-o1), transparent); animation: lg-a 19s ease-in-out infinite alternate; }
+.lg-lights i:nth-child(2) { width: 320px; height: 320px; margin: 20px 0 0 -10px; background: radial-gradient(closest-side, var(--lg-o2), transparent); animation: lg-b 23s ease-in-out infinite alternate; }
+.lg-lights i:nth-child(3) { width: 260px; height: 260px; margin: -300px 0 0 60px; background: radial-gradient(closest-side, var(--lg-o3), transparent); animation: lg-c 27s ease-in-out infinite alternate; }
+@keyframes lg-a { to { transform: translate(90px, 70px) scale(1.12); } }
+@keyframes lg-b { to { transform: translate(-110px, -60px) scale(.9); } }
+@keyframes lg-c { to { transform: translate(-40px, 120px) scale(1.2); } }
+
+.lor-login-card.lg-card { position: relative; isolation: isolate; box-sizing: border-box; max-width: 440px; padding: var(--space-8); border-radius: 26px;
+  background: linear-gradient(150deg, var(--lg-tint), transparent 46%), var(--lg-card);
+  -webkit-backdrop-filter: saturate(1.7) blur(28px); backdrop-filter: saturate(1.7) blur(28px);
+  box-shadow: inset 0 1px 0 var(--lg-rim), 0 2px 8px var(--lg-drop), 0 40px 80px -36px var(--lg-drop);
+  animation: lg-in .9s var(--ease-out, cubic-bezier(.16, 1, .3, 1)) .15s both; }
+/* the rim: 1px, lit at the top left, a touch of red at the far corner */
+.lg-card::before { content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1px; pointer-events: none;
+  background: linear-gradient(140deg, var(--lg-rim), var(--lg-rim2) 38%, var(--lg-rim2) 72%, rgba(222, 4, 65, .55));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; }
+/* the light under the mouse (--mx, --my from app.js glassLight), behind the text */
+.lg-card::after { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none;
+  background: radial-gradient(280px circle at var(--mx, 18%) var(--my, 0%), var(--lg-spot), transparent 72%); }
+.lg-shine { position: absolute; inset: 0; z-index: -1; border-radius: inherit; overflow: hidden; pointer-events: none; }
+.lg-shine::before { content: ""; position: absolute; top: -30%; bottom: -30%; left: -60%; width: 45%; transform: rotate(14deg) translateX(0);
+  background: linear-gradient(100deg, transparent, var(--lg-tint), transparent); opacity: 0; animation: lg-shine 1.6s cubic-bezier(.5, 0, .2, 1) 1s both; }
+@keyframes lg-shine { 0% { opacity: 0; transform: rotate(14deg) translateX(0); } 20% { opacity: 1; } 100% { opacity: 0; transform: rotate(14deg) translateX(420%); } }
+@keyframes lg-in { from { opacity: 0; transform: translateY(18px) scale(.98); } to { opacity: 1; transform: none; } }
+
+.lg-card .lor-input { background: var(--lg-field); box-shadow: inset 0 1px 2px var(--lg-drop); transition: border-color var(--t-sm, .16s), box-shadow var(--t-sm, .16s), background-color var(--t-sm, .16s); }
+.lg-card .lor-input:hover { border-color: var(--blue-text); }
+.lg-card .lor-input:focus-visible { box-shadow: var(--focus-ring), 0 0 0 9px rgba(3, 76, 170, .16); }
+.lg-card .lor-btn-primary { height: 48px; background-image: linear-gradient(180deg, rgba(255, 255, 255, .16), rgba(255, 255, 255, 0) 60%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .38), 0 12px 26px -12px rgba(222, 4, 65, .75); }
+.lg-card .lor-btn-primary:hover:not(:disabled) { transform: translateY(-1px); filter: none; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .38), 0 16px 34px -12px rgba(222, 4, 65, .95); }
+.lg-card .lor-btn-primary:active:not(:disabled) { transform: none; }
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .lor-login-card.lg-card { background: var(--glass-read); }
+}
+@media (max-width: 760px) {
+  .lor-login-card.lg-card { padding: var(--space-6) var(--space-4); border-radius: 22px; }
+  .lg-lights i:nth-child(1) { width: 300px; height: 300px; margin: -240px 0 0 -220px; }
+  .lg-lights i:nth-child(2) { width: 240px; height: 240px; }
+}
+@media (prefers-reduced-motion: reduce) { .lg-lights i, .lor-login-card.lg-card, .lg-shine::before { animation: none; } }
