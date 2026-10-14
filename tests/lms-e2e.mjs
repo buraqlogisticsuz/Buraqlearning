@@ -531,7 +531,7 @@ try {
   const W = await device('вход: своя цитата');
   await W.waitForSelector('.wz blockquote');
   assert.equal(await W.innerText('.wz blockquote'), 'Birgalikda har qanday yukni yetkazamiz.', 'без стандартных — только своя');
-  assert.equal(await W.innerText('.wz figcaption'), '— Kompaniya rahbari');
+  assert.equal(await W.innerText('.wz figcaption'), 'Kompaniya rahbari');
   assert.equal(await W.locator('.wz-next').count(), 0, 'одна цитата — без стрелки');
   await W.waitForTimeout(5200); await shot(W, '17-login-intro');
   await W.context().close();

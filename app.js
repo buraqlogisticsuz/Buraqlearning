@@ -5960,13 +5960,20 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var list = (srv[0].std !== false ? wzStd(t, p.lang) : []).concat((srv[0].list || []).map(function (x) { return { text: x.text, by: x.by }; }));
     if (!list.length) return h('div', { className: 'wz is-none', 'aria-hidden': true });
     var day = Math.floor((Date.now() - new Date().getTimezoneOffset() * 6e4) / 864e5), i = (day + off[0]) % list.length, q = list[i];
+    /* the words come in one by one: on the first show after the intro, on «next» at once */
+    var d0 = off[0] ? 0 : 2400, words = q.text.split(/\s+/);
     return h('figure', { className: 'wz' },
+      h('span', { className: 'wz-mark', 'aria-hidden': true }, '“'),
       h('div', { className: 'wz-head' }, h('span', { className: 'lor-eyebrow' }, t('wz_title')),
-        list.length > 1 ? h('button', { type: 'button', className: 'wz-next', 'aria-label': t('wz_next'), title: t('wz_next'), onClick: function () { off[1](off[0] + 1); } }, h(Arrow, { length: 18 })) : null),
+        list.length > 1 ? h('span', { className: 'wz-nav' },
+          h('span', { className: 'wz-n' }, (i + 1) + ' / ' + list.length),
+          h('button', { type: 'button', className: 'wz-next', 'aria-label': t('wz_next'), title: t('wz_next'), onClick: function () { off[1](off[0] + 1); } }, h(Arrow, { length: 20 }))) : null),
       h('div', { key: i, className: 'wz-body' },
-        h('blockquote', { lang: 'uz' }, q.text),
-        q.tr ? h('p', { className: 'wz-tr' }, q.tr) : null,
-        q.by ? h('figcaption', null, '— ' + q.by) : null));
+        h('blockquote', { lang: 'uz' }, words.map(function (w, k) {
+          return h(F, { key: k }, k ? ' ' : null, h('span', { className: 'wz-w', style: { animationDelay: (d0 + k * 55) + 'ms' } }, w));
+        })),
+        q.tr ? h('p', { className: 'wz-tr', style: { animationDelay: (d0 + words.length * 55 + 120) + 'ms' } }, q.tr) : null,
+        q.by ? h('figcaption', { style: { animationDelay: (d0 + words.length * 55 + 220) + 'ms' } }, q.by) : null));
   }
   /* greeting by the time of day on this device */
   function Hello(p) {

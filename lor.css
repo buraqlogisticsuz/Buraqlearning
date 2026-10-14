@@ -3108,23 +3108,42 @@ button.mc-cell.at-cell:hover { outline: 2px solid var(--blue-text); outline-offs
 @keyframes ir-drift { from { transform: translate(0, 0) scale(1); } to { transform: translate(14%, 12%) scale(1.15); } }
 @media (max-width: 760px), (max-height: 640px) { .intro-road { display: none; } }
 
-/* «Kun hikmati» under the ladder (app.js Wisdom): a hairline card; the next saying slides in */
-.wz { margin: var(--space-12) 0 auto; max-width: 440px; padding: var(--space-4) var(--space-6) var(--space-6); border: var(--hairline) solid #ffffff2e; border-radius: var(--radius-md);
-  background: #ffffff0a; animation: rise-in .8s var(--ease-out, ease-out) 2.1s both; }
-.wz.is-wait { visibility: hidden; min-height: 150px; animation: none; }
+/* «Kun hikmati» under the ladder (app.js Wisdom): a big glassy card — a large red quote mark, a thin red line on the
+   left, the words come in one by one, a soft light runs across it now and then */
+.wz { position: relative; overflow: hidden; margin: var(--space-12) 0 auto; max-width: 600px; padding: var(--space-6) var(--space-8) 28px 40px;
+  border: var(--hairline) solid #ffffff33; border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, #ffffff21, #ffffff08 60%);
+  box-shadow: 0 28px 60px -28px #000000a6, inset 0 1px 0 #ffffff2e;
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  animation: rise-in .9s var(--ease-out, ease-out) 2.1s both; transition: border-color var(--t-md, .24s), transform var(--t-md, .24s); }
+.wz:hover { border-color: #ffffff59; transform: translateY(-2px); }
+.wz::before { content: ""; position: absolute; left: 0; top: 28px; bottom: 28px; width: 2px; background: var(--red); border-radius: 0 2px 2px 0; }
+.wz::after { content: ""; position: absolute; top: -40%; bottom: -40%; left: -45%; width: 35%; pointer-events: none;
+  background: linear-gradient(100deg, #ffffff00, #ffffff1f, #ffffff00); transform: rotate(8deg) translateX(0); animation: wz-shine 9s ease-in-out 4.5s infinite; }
+.wz.is-wait { visibility: hidden; min-height: 210px; animation: none; }
 .wz.is-none { visibility: hidden; height: 0; padding: 0; border: 0; margin-top: 0; animation: none; }
-.wz-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-3); }
-.wz-head .lor-eyebrow { color: #ffffffb3; display: inline-flex; align-items: center; gap: 10px; }
-.wz-head .lor-eyebrow::before { content: ""; width: 24px; height: var(--hairline); background: var(--red); }
-.wz-next { width: 32px; height: 32px; flex: none; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; border: var(--hairline) solid #ffffff47;
-  background: none; color: var(--white); cursor: pointer; transition: border-color var(--t-md, .2s), color var(--t-md, .2s); }
-.wz-next:hover { border-color: var(--red); color: var(--red); }
+.wz.is-wait::before, .wz.is-wait::after, .wz.is-none::before, .wz.is-none::after { display: none; }
+.wz-mark { position: absolute; top: -26px; right: 22px; font-size: 168px; line-height: 1; color: var(--red); opacity: .9; pointer-events: none;
+  animation: wz-mark .8s var(--ease-out, ease-out) 2.3s both; }
+.wz-head { position: relative; display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-4); }
+.wz-head .lor-eyebrow { color: #ffffffcc; display: inline-flex; align-items: center; gap: 10px; letter-spacing: .14em; }
+.wz-head .lor-eyebrow::before { content: ""; width: 32px; height: var(--hairline); background: var(--red); }
+.wz-nav { display: inline-flex; align-items: center; gap: var(--space-3); margin-right: 64px; }
+.wz-n { font-size: 12px; color: #ffffff99; font-variant-numeric: tabular-nums; letter-spacing: .04em; }
+.wz-next { width: 40px; height: 40px; flex: none; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; border: var(--hairline) solid #ffffff59;
+  background: #ffffff0f; color: var(--white); cursor: pointer; transition: background var(--t-md, .24s), border-color var(--t-md, .24s), transform var(--t-md, .24s); }
+.wz-next:hover { background: var(--red); border-color: var(--red); transform: translateX(2px); }
 .wz-next:focus-visible { outline: none; box-shadow: var(--focus-ring); }
-.wz-body { animation: wz-in .55s var(--ease-out, ease-out) both; }
-.wz blockquote { margin: 0; font-size: 19px; line-height: 27px; color: var(--white); }
-.wz-tr { margin: var(--space-2) 0 0; font-size: 13px; line-height: 19px; color: #ffffffb3; }
-.wz figcaption { margin-top: var(--space-3); font-size: 12px; line-height: 16px; letter-spacing: .04em; color: #ffffff99; }
-@keyframes wz-in { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: none; } }
+.wz-body { position: relative; }
+.wz blockquote { margin: 0; font-size: 28px; line-height: 36px; letter-spacing: -.01em; color: var(--white); text-wrap: balance; }
+.wz-w { display: inline-block; animation: wz-word .6s var(--ease-out, ease-out) both; }
+.wz-tr { margin: var(--space-3) 0 0; font-size: 15px; line-height: 22px; color: #ffffffbf; animation: fade-in .6s ease both; }
+.wz figcaption { display: flex; align-items: center; gap: 10px; margin-top: var(--space-4); font-size: 13px; line-height: 18px; letter-spacing: .04em; color: #ffffffb3; animation: fade-in .6s ease both; }
+.wz figcaption::before { content: ""; width: 20px; height: var(--hairline); background: var(--red); }
+@keyframes wz-word { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes wz-mark { from { opacity: 0; transform: translateY(-14px) scale(.85); } to { opacity: .9; transform: none; } }
+@keyframes wz-shine { 0% { transform: rotate(8deg) translateX(0); } 28%, 100% { transform: rotate(8deg) translateX(520%); } }
+@media (max-height: 820px) { .wz { margin-top: var(--space-8); padding-top: var(--space-4); padding-bottom: var(--space-6); } .wz blockquote { font-size: 23px; line-height: 30px; } .wz-mark { font-size: 130px; } }
 
 /* greeting over the sign-in title (app.js Hello) */
 .hello { display: flex; align-items: center; gap: 10px; margin: 0 0 calc(-1 * var(--space-2)); font-size: 15px; line-height: 22px; color: var(--ink-muted); animation: rise-in .7s var(--ease-out, ease-out) .3s both; }
