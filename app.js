@@ -6039,14 +6039,6 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           return h('li', { key: i }, h('div', null, h('p', { lang: 'uz' }, x.text), x.tr ? h('small', null, x.tr) : null, h('small', null, '— ' + x.by)));
         }))));
   }
-  /* login on glass (lor.css «login glass»): soft brand-coloured lights drift behind the card, the card blurs them;
-     a light follows the mouse over the card */
-  function GlassLights() { return h('span', { className: 'lg-lights', 'aria-hidden': true }, h('i'), h('i'), h('i')); }
-  function glassLight(ev) {
-    if (ev.pointerType !== 'mouse') return;
-    var el = ev.currentTarget, r = el.getBoundingClientRect();
-    el.style.setProperty('--mx', Math.round(ev.clientX - r.left) + 'px'); el.style.setProperty('--my', Math.round(ev.clientY - r.top) + 'px');
-  }
   function Login(p) {
     var t = p.t, a = useState(''), b = useState(''), e = useState(''), th = useThemePref(), busy = useState(false), from = useState(introFrom)[0];
     function submit(ev) {
@@ -6068,10 +6060,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           h(IntroRoad, { from: from }),
           h('div', { className: 'lor-login-foot' }, h('span', null, t('app_full')), h('span', null, 'BIRGALIKDA MUVAFFAQIYATGA'))),
         h('div', { className: 'lor-login-side' },
-          h(GlassLights),
           h('div', { className: 'login-col' },
-            h('form', { className: 'lor-login-card lg-card', onSubmit: submit, noValidate: true, onPointerMove: glassLight },
-              h('span', { className: 'lg-shine', 'aria-hidden': true }),
+            h('form', { className: 'lor-login-card lg-card', onSubmit: submit, noValidate: true },
               h('div', { className: 'lor-login-top' }, h('span', { className: 'lor-eyebrow' }, t('app_full')), h('span', { className: 'login-prefs' }, h(ThemeSwitch, { t: t, value: th.v, onChange: th.set, compact: true }), h(LOR.LangSwitch, { value: p.lang, onChange: p.setLang }))),
               h(Hello, { t: t }),
               h('h1', { className: 'lor-title' }, t('login_title')),
@@ -7296,10 +7286,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           h('img', { src: LOGO_W, alt: 'BURAQ logistics', width: 116, height: 40 }),
           h('div', { className: 'lor-login-foot' }, h('span', null, t('app_full')), h('span', null, 'BIRGALIKDA MUVAFFAQIYATGA'))),
         h('div', { className: 'lor-login-side' },
-          h(GlassLights),
           h('div', { className: 'login-col' },
-            h('section', { className: 'lor-login-card lg-card', onPointerMove: glassLight },
-              h('span', { className: 'lg-shine', 'aria-hidden': true }),
+            h('section', { className: 'lor-login-card lg-card' },
               h('span', { className: 'lor-eyebrow' }, t('app_full')),
               h('h1', { className: 'lor-title' }, t('srv_none_t')),
               h('p', { className: 'lor-muted', style: { margin: 0 } }, t('srv_none_p')))))));
