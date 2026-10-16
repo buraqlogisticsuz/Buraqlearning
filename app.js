@@ -6511,9 +6511,43 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   }
 
   /* ---------------- employee shell ---------------- */
+  /* the open page lives in the address (#cms, #lesson?id=b2-1): after a reload the same page opens, not the start one.
+     Only the pages of this cabinet; numbers come back as numbers (employee ids); a running test reopens as its lesson */
+  var ROUTE_KEYS = ['id', 'tab', 'ym', 'uid', 'lessonId'];
+  var EMP_ROUTES = ['home', 'lesson', 'path', 'assets', 'ideas', 'tasks', 'drill', 'cases', 'base', 'report', 'pay', 'mentor', 'help'];
+  var ADM_ROUTES = ['inbox', 'monitor', 'quality', 'rating', 'levels', 'cms', 'staff', 'assets', 'feedback', 'pay', 'help'];
+  function routeToHash(r) {
+    var q = ROUTE_KEYS.filter(function (k) { return r[k] != null && r[k] !== ''; }).map(function (k) { return k + '=' + encodeURIComponent(r[k]); }).join('&');
+    return '#' + r.name + (q ? '?' + q : '');
+  }
+  function routeFromHash(names) {
+    var m = /^#([a-z]+)(?:\?(.*))?$/.exec(window.location.hash || '');
+    if (!m || names.indexOf(m[1]) < 0) return null;
+    var r = { name: m[1] };
+    (m[2] || '').split('&').forEach(function (kv) {
+      var i = kv.indexOf('='); if (i < 1) return;
+      var k = kv.slice(0, i), v; try { v = decodeURIComponent(kv.slice(i + 1)); } catch (e) { return; }
+      if (ROUTE_KEYS.indexOf(k) >= 0) r[k] = /^\d{1,15}$/.test(v) ? +v : v;
+    });
+    return r;
+  }
+  function useHashRoute(names, def) {
+    var r = useState(function () { return routeFromHash(names) || def; }), cur = useRef(r[0]); cur.current = r[0];
+    // the address typed or pasted in the same tab: open that page; a page of another cabinet — back to the current one
+    useEffect(function () {
+      function onHash() { var x = routeFromHash(names); if (x) r[1](x); else { try { window.history.replaceState(null, '', routeToHash(cur.current)); } catch (e) {} } }
+      window.addEventListener('hashchange', onHash);
+      return function () { window.removeEventListener('hashchange', onHash); };
+    }, []);
+    useEffect(function () {
+      var x = r[0].name === 'quiz' ? { name: 'lesson', id: r[0].id } : r[0], hs = routeToHash(x);
+      if (window.location.hash !== hs) { try { window.history.replaceState(null, '', hs); } catch (e) {} }
+    }, [r[0]]);
+    return r;
+  }
   function EmployeeApp(p) {
     var t = p.t, db = p.db, u = p.user;
-    var r = useState({ name: 'home' }), route = r[0], dr = useState(false), ai = useState(false);
+    var r = useHashRoute(EMP_ROUTES, { name: 'home' }), route = r[0], dr = useState(false), ai = useState(false);
     var ini = useState(false), sv = useState(false), pHide = useState(false), tour = useState(false);
     var pal = useState(false); usePalette(pal[0], pal[1]);
     var hintOn = !!u.hints;
@@ -7217,7 +7251,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   function AdminApp(p) {
     var lv = lvlOf(p.user);
     if (lv === 'boss') p = Object.assign({}, p, { update: roUpdate(p, p.t) });   // the owner: view only
-    var t = p.t, db = p.db, r = useState({ name: lv === 'boss' ? 'monitor' : 'inbox' }), route = r[0];
+    var t = p.t, db = p.db, r = useHashRoute(ADM_ROUTES, { name: lv === 'boss' ? 'monitor' : 'inbox' }), route = r[0];
     var openN = db.requests.filter(function (x) { return x.state === 'open'; }).length + xtReview(db).length;
     function go(x) { r[1](x); window.scrollTo(0, 0); }
     var ai = useState(false), tour = useState(false), pal = useState(false);

@@ -639,6 +639,24 @@ try {
   assert.deepEqual(await rejected(A), [], 'сервер принял раздел и назначение');
   step('раздел из файла: окно «Qayerga / Kimlar o‘qiydi», 2-bob перед 4-bob, замена на месте, отказ при чужих номерах; раздел — выбранному сотруднику');
 
+  // ---------- обновление страницы: открывается тот же раздел, а не стартовый ----------
+  await nav(A, 'staff');
+  assert.equal(new URL(A.url()).hash, '#staff', 'раздел — в адресе');
+  await A.reload({ waitUntil: 'networkidle' }); await A.waitForSelector('a[href="#staff"].is-on:visible', { timeout: 10000 });
+  assert.ok(await A.locator('#f-n-name').count(), 'после обновления — снова «Xodimlar»');
+  await nav(E, 'path'); await E.reload({ waitUntil: 'networkidle' }); await E.waitForSelector('a[href="#path"].is-on:visible', { timeout: 10000 });
+  await E.getByText('4.1. Test standarti').first().click(); await E.waitForTimeout(600);
+  assert.match(new URL(E.url()).hash, /^#lesson\?id=b4-1$/);
+  await E.reload({ waitUntil: 'networkidle' }); await E.waitForTimeout(800);
+  assert.match(new URL(E.url()).hash, /^#lesson\?id=b4-1$/, 'урок — тот же после обновления');
+  assert.ok((await E.innerText('main')).includes('4.1. Test standarti'));
+  await E.evaluate(() => { location.hash = '#path'; }); await E.waitForSelector('a[href="#path"].is-on:visible', { timeout: 5000 });
+  await E.evaluate(() => { location.hash = '#cms'; }); await E.waitForTimeout(400);
+  assert.equal(new URL(E.url()).hash, '#path', 'адрес из чужого кабинета в той же вкладке — остаётся текущий раздел');
+  await E.evaluate(() => history.replaceState(null, '', '#cms')); await E.reload({ waitUntil: 'networkidle' }); await E.waitForTimeout(600);
+  assert.equal(new URL(E.url()).hash, '#home', 'чужой раздел (кабинет SOP-менеджера) после обновления — стартовая страница');
+  step('обновление страницы: тот же раздел и тот же урок; чужой адрес — стартовая страница');
+
   // ---------- демо больше нет: ?demo=1 — тот же вход на сервер; без адреса сервера — «Server ulanmagan» ----------
   const D = await device('бывшее демо', '?demo=1');
   assert.equal(await D.locator('.demo-box').count(), 0, 'демо-входов нет');
