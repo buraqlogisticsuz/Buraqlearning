@@ -414,7 +414,7 @@ const pickN = n => ({ userId: n.userId, kind: n.kind, route: n.route, err: n.err
 test('since: та же версия — без данных; после правки — новое состояние', () => {
   const { D, A } = platform();
   const v = D({ action: 'load' });
-  assert.deepEqual(D({ action: 'since', rev: v.rev }), { ok: true, v: 10, ai: false, rev: v.rev, same: true });
+  assert.deepEqual(D({ action: 'since', rev: v.rev }), { ok: true, v: 11, ai: false, rev: v.rev, same: true });
   A({ action: 'patch', ops: [{ op: 'set', path: ['notifications', { id: 9 }], value: { id: 9, userId: 10427, text: 'yangi' }, after: null }] });
   const n = D({ action: 'since', rev: v.rev });
   assert.equal(n.rev, v.rev + 1); assert.equal(n.state.notifications[0].text, 'yangi');
@@ -696,4 +696,18 @@ test('tools/lms-gs/Code.gs и lms-gs-script.js собраны из Server.gs и 
   const src = buildLmsGs();
   assert.equal(readFileSync(new URL('../tools/lms-gs/Code.gs', import.meta.url), 'utf8'), src);
   assert.equal(readFileSync(new URL('../lms-gs-script.js', import.meta.url), 'utf8'), pageScript(src));
+});
+
+test('раздел для выбранных сотрудников (section.users): только им, без чужих номеров; ответы теста не уходят', () => {
+  const { A, D, Z } = platform();
+  const sec = { id: 'b2', title: '2-bob. Test', officialOnly: false, users: [10427], lessons: [{ id: 'b2-1', title: '2.1', html: '<p>x</p>', quiz }] };
+  assert.deepEqual(A({ action: 'patch', ops: [{ op: 'set', path: ['course', 'sections', { id: 'b2' }], value: sec }] }).rejected, []);
+  const mine = D({ action: 'load' }).state.course.sections.find(s => s.id === 'b2');
+  assert.deepEqual(mine.users, [10427], 'назначенный сотрудник видит раздел');
+  assert.equal(mine.lessons[0].quiz[0].answer, undefined, 'без правильных ответов');
+  assert.equal(Z({ action: 'load' }).state.course.sections.some(s => s.id === 'b2'), false, 'остальным раздел не отдаётся');
+  assert.deepEqual(A({ action: 'load' }).state.course.sections.find(s => s.id === 'b2').users, [10427], 'SOP-менеджер видит, кому назначен');
+  // назначили ещё одного — второй видит в списке только себя
+  A({ action: 'patch', ops: [{ op: 'set', path: ['course', 'sections', { id: 'b2' }, 'users'], value: [10427, 10391] }] });
+  assert.deepEqual(Z({ action: 'load' }).state.course.sections.find(s => s.id === 'b2').users, [10391]);
 });

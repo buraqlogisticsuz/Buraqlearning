@@ -3854,7 +3854,9 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   function trackTitle(t, lang) { return !t ? '' : (typeof t.title === 'string' ? t.title : (t.title[lang] || t.title.uz || '')); }
   function trackDesc(t, lang) { return !t || !t.desc ? '' : (typeof t.desc === 'string' ? t.desc : (t.desc[lang] || t.desc.uz || '')); }
   function trackSecIds(db, u) { var t = trackOf(db, u); return t && (t.sections || []).length ? t.sections : null; }
-  function courseSections(db, u) { var ids = trackSecIds(db, u); return db.course.sections.filter(function (s) { return !ids || ids.indexOf(s.id) >= 0; }); }
+  /* a section with a list of employees (s.users) is only theirs; otherwise the programme decides */
+  function secFor(s, u, ids) { var only = s.users || []; return only.length ? only.some(function (x) { return String(x) === String(u.id); }) : !ids || ids.indexOf(s.id) >= 0; }
+  function courseSections(db, u) { var ids = trackSecIds(db, u); return db.course.sections.filter(function (s) { return secFor(s, u, ids); }); }
   /* flat(), but only the sections that belong to this employee’s programme */
   function trackFlat(db, u) {
     var out = [];
@@ -3922,6 +3924,103 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
 
   /* ---------- admin: programmes ---------- */
   function blankTrack() { return { id: null, title: { uz: '', ru: '', en: '', zh: '' }, desc: { uz: '', ru: '', en: '', zh: '' }, positions: [], sections: [] }; }
+  /* who studies a section: all employees, chosen programmes (tracks[].sections) or chosen employees (section.users) */
+  function secAudience(db, s) {
+    if ((s.users || []).length) return { mode: 'users', users: s.users.map(String), tracks: [] };
+    var trs = tracksOf(db).filter(function (x) { return (x.sections || []).length; }), inT = trs.filter(function (x) { return x.sections.indexOf(s.id) >= 0; }).map(function (x) { return x.id; });
+    return { mode: inT.length === trs.length ? 'all' : 'tracks', tracks: inT, users: [] };
+  }
+  function applyAudience(d, sid, a) {
+    d.course.sections.forEach(function (s) {
+      if (s.id !== sid) return;
+      if (a.mode === 'users') s.users = a.users.map(function (x) { var n = +x; return isFinite(n) && String(n) === String(x) ? n : x; }); else delete s.users;
+    });
+    (d.tracks || []).forEach(function (tr) {
+      if (!(tr.sections || []).length) return;   // a programme without a list = the whole course
+      var i = tr.sections.indexOf(sid), want = a.mode === 'all' || (a.mode === 'tracks' && a.tracks.indexOf(tr.id) >= 0);
+      if (want && i < 0) tr.sections.push(sid);
+      if (!want && i >= 0) tr.sections.splice(i, 1);
+    });
+  }
+  function audText(a, t) { return a.mode === 'users' ? tpl(t('aud_users_n'), { n: a.users.length }) : a.mode === 'tracks' ? tpl(t('aud_tracks_n'), { n: a.tracks.length }) : t('aud_all'); }
+  function AudiencePicker(p) {
+    var t = p.t, db = p.db, v = p.value, q = useState('');
+    var trs = tracksOf(db).filter(function (x) { return (x.sections || []).length; });
+    var emps = db.users.filter(function (u) { return u.role === 'employee'; }), qq = q[0].trim().toLowerCase();
+    var shown = emps.filter(function (u) { return !qq || ((u.name || '') + ' ' + (u.position || '') + ' ' + (u.department || '')).toLowerCase().indexOf(qq) >= 0; });
+    function set(fn) { var n = { mode: v.mode, tracks: v.tracks.slice(), users: v.users.slice() }; fn(n); p.onChange(n); }
+    function toggle(list, x) { var i = list.indexOf(x); if (i < 0) list.push(x); else list.splice(i, 1); }
+    var opts = [['all', t('aud_all')], ['tracks', t('aud_tracks')], ['users', t('aud_users')]];
+    return h('div', { className: 'aud' },
+      h('div', { className: 'aud-modes', role: 'radiogroup', 'aria-label': t('aud_label') }, opts.map(function (o) {
+        return h('label', { key: o[0], className: cx('aud-mode', v.mode === o[0] && 'is-on') },
+          h('input', { type: 'radio', name: p.name || 'aud', checked: v.mode === o[0], onChange: function () { set(function (n) { n.mode = o[0]; }); } }), o[1]);
+      })),
+      v.mode === 'tracks' ? h('div', null,
+        h('div', { className: 'ac-chips' }, trs.map(function (tr) {
+          var on = v.tracks.indexOf(tr.id) >= 0;
+          return h('label', { key: tr.id, className: cx('ac-chip', on && 'is-on') }, h('input', { type: 'checkbox', checked: on, onChange: function () { set(function (n) { toggle(n.tracks, tr.id); }); } }), trackTitle(tr, p.lang));
+        })),
+        h('p', { className: 'lor-sm lor-muted' }, t('aud_hint_tracks'))) : null,
+      v.mode === 'users' ? h('div', null,
+        h('input', { className: 'lor-input slim', id: (p.name || 'aud') + '-q', placeholder: t('aud_search'), 'aria-label': t('aud_search'), value: q[0], onChange: function (e) { q[1](e.target.value); } }),
+        emps.length ? h('ul', { className: 'aud-users' }, shown.map(function (u) {
+          var on = v.users.indexOf(String(u.id)) >= 0;
+          return h('li', { key: u.id }, h('label', { className: cx('check', on && 'is-on') },
+            h('input', { type: 'checkbox', checked: on, onChange: function () { set(function (n) { toggle(n.users, String(u.id)); }); } }),
+            h('span', null, h('b', null, u.name), h('small', null, [u.position, u.department].filter(Boolean).join(' · ')))));
+        })) : h('p', { className: 'lor-sm lor-muted' }, t('aud_none_emp')),
+        h('p', { className: 'lor-sm lor-muted' }, tpl(t('aud_users_n'), { n: v.users.length }) + ' · ' + t('aud_hint_users'))) : null);
+  }
+  function audOk(a) { return a.mode !== 'users' || a.users.length > 0; }
+  /* «Kimlar o‘qiydi» of one section in Kontent */
+  function AudienceModal(p) {
+    var t = p.t, s = p.section, a = useState(function () { return secAudience(p.db, s); }), err = useState('');
+    function save() {
+      if (!audOk(a[0])) { err[1](t('aud_pick_one')); return; }
+      p.update(function (d) { applyAudience(d, s.id, a[0]); });
+      p.say(tpl(t('aud_saved'), { x: audText(a[0], t) })); p.onClose();
+    }
+    return h(Modal, { t: t, hid: 'aud-h', className: 'aud-modal', onClose: p.onClose },
+      h('h2', { className: 'lor-h', id: 'aud-h' }, t('aud_title')),
+      h('p', { className: 'lor-muted' }, s.title),
+      h(AudiencePicker, { t: t, db: p.db, lang: p.lang, name: 'aud-sec', value: a[0], onChange: function (v) { a[1](v); err[1](''); } }),
+      err[0] ? h('p', { className: 'lor-field-error' }, err[0]) : null,
+      h('div', { className: 'lor-modal-actions' }, h(Btn, { variant: 'ghost', onClick: p.onClose }, t('cancel')), h(Btn, { variant: 'primary', onClick: save }, t('save'))));
+  }
+  /* after a section file is chosen: where it goes (new / replace / add to a section) and who studies it */
+  function ImportDialog(p) {
+    var t = p.t, db = p.db, ch = p.ch, sec = ch.section, secs = db.course.sections, same = secs.some(function (s) { return s.id === sec.id; });
+    var wh = useState(same ? 'replace' : 'new'), tg = useState(same ? sec.id : (secs[0] ? secs[0].id : '')), err = useState('');
+    var a = useState(function () {
+      if (same) return secAudience(db, secs.filter(function (s) { return s.id === sec.id; })[0]);
+      var ids = tracksOf(db).map(function (x) { return x.id; });
+      return ch.tracks === 'all' ? { mode: 'all', tracks: [], users: [] } : { mode: 'tracks', tracks: ch.tracks.filter(function (x) { return ids.indexOf(x) >= 0; }), users: [] };
+    });
+    var q = sec.lessons.reduce(function (n, l) { return n + l.quiz.length; }, 0);
+    function go() {
+      if (wh[0] !== 'new' && !tg[0]) { err[1](t('imp_pick_sec')); return; }
+      if (!audOk(a[0])) { err[1](t('aud_pick_one')); return; }
+      if (importChapter(p, ch, { where: wh[0], target: tg[0], aud: a[0] })) p.onClose();
+    }
+    var where = [['new', t('imp_w_new'), same], ['replace', t('imp_w_replace'), !secs.length], ['append', t('imp_w_append'), !secs.length]];
+    return h(Modal, { t: t, hid: 'imp-h', className: 'imp-dlg', onClose: p.onClose },
+      h('h2', { className: 'lor-h', id: 'imp-h' }, t('imp_dlg_t')),
+      h('div', { className: 'imp-sum' }, h('b', null, sec.title), h('span', { className: 'lor-sm lor-muted' }, tpl(t('imp_dlg_sum'), { n: sec.lessons.length, q: q }))),
+      h('section', { className: 'imp-part' }, h('span', { className: 'lor-eyebrow' }, t('imp_where')),
+        h('div', { className: 'aud-modes', role: 'radiogroup', 'aria-label': t('imp_where') }, where.map(function (w) {
+          return h('label', { key: w[0], className: cx('aud-mode', wh[0] === w[0] && 'is-on', w[2] && 'is-off') },
+            h('input', { type: 'radio', name: 'imp-where', disabled: w[2], checked: wh[0] === w[0], onChange: function () { wh[1](w[0]); err[1](''); } }), w[1]);
+        })),
+        same ? h('p', { className: 'lor-sm lor-muted' }, t('imp_w_new_dis')) : null,
+        wh[0] !== 'new' ? h('select', { className: 'lor-input slim', id: 'imp-target', 'aria-label': t('imp_where'), value: tg[0], onChange: function (e) { tg[1](e.target.value); } },
+          secs.map(function (s) { return h('option', { key: s.id, value: s.id }, (s.title || '—') + ' · ' + s.lessons.length); })) : null),
+      h('section', { className: 'imp-part' }, h('span', { className: 'lor-eyebrow' }, t('aud_label')),
+        h(AudiencePicker, { t: t, db: db, lang: p.lang, name: 'aud-imp', value: a[0], onChange: function (v) { a[1](v); err[1](''); } })),
+      err[0] ? h('p', { className: 'lor-field-error' }, err[0]) : null,
+      h('div', { className: 'lor-modal-actions' }, h(Btn, { variant: 'ghost', onClick: p.onClose }, t('cancel')), h(Btn, { variant: 'primary', arrow: true, onClick: go }, t('imp_go'))));
+  }
+
   function TracksAdmin(p) {
     var t = p.t, db = p.db, list = tracksOf(db), ed = useState(null), draft = ed[0], er = useState(''), del = useState(false);
     var POS = uniq(db.users.filter(function (u) { return u.role === 'employee'; }).map(function (u) { return u.position; })).concat(['Ombor mudiri']).filter(function (x, i, a) { return a.indexOf(x) === i; }).sort();
@@ -4123,6 +4222,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
 
   /* selector → [title key, body key]; the first match wins, so the specific ones come first */
   var HINTS = [
+    ['.cms-aud', 'hint_aud_t', 'hint_aud'],
     /* salary (Maosh) — the employee */
     ['.pay-months', 'hint_paym_t', 'hint_paym'],
     ['.pay-input', 'hint_payin_t', 'hint_payin'],
@@ -6675,7 +6775,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var t = p.t, db = p.db, first = flat(db.course)[0];
     var sel = useState(p.lessonId || (first && first.id)), id = sel[0];
     var lesson = findLesson(db.course, id);
-    var dr = useState(null), draft = dr[0], cf = useState(false), notif = useState(null), baseRef = useRef(''), tab = useState(p.tab || 'lessons');
+    var dr = useState(null), draft = dr[0], cf = useState(false), notif = useState(null), baseRef = useRef(''), tab = useState(p.tab || 'lessons'), audSec = useState(null);
     useEffect(function () { if (p.tab) tab[1](p.tab); }, [p.tab]);
     useEffect(function () {
       var l = findLesson(db.course, id);
@@ -6719,16 +6819,22 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       tab[0] === 'plan' ? h(PlanAdmin, p) :
       tab[0] === 'wisdom' ? h(WisdomAdmin, p) :
       h('div', { className: 'cms' },
+        audSec[0] && db.course.sections.some(function (s) { return s.id === audSec[0]; }) ? h(AudienceModal, Object.assign({}, p, { section: db.course.sections.filter(function (s) { return s.id === audSec[0]; })[0], onClose: function () { audSec[1](null); } })) : null,
         h('aside', { className: 'cms-tree' },
           db.course.sections.map(function (s, si) {
             return h('div', { key: s.id, className: 'cms-sec' },
               h('input', { className: 'lor-input cms-sec-title', 'aria-label': t('sec_title'), value: s.title, onChange: function (e) { var v = e.target.value; secUpdate(s.id, function (x) { x.title = v; }); } }),
               h('label', { className: 'check' }, h('input', { type: 'checkbox', checked: !!s.officialOnly, onChange: function (e) { var v = e.target.checked; secUpdate(s.id, function (x) { x.officialOnly = v; }); } }), t('official_only')),
+              h('button', { type: 'button', className: 'cms-aud', onClick: function () { audSec[1](s.id); } }, h('span', null, t('aud_label') + ':'), ' ', h('b', null, audText(secAudience(db, s), t))),
               h('ul', null, s.lessons.map(function (l) { return h('li', { key: l.id }, h('button', { type: 'button', className: cx('cms-l', l.id === id && 'is-on'), onClick: function () { sel[1](l.id); } }, l.title || '—')); })),
-              h('button', { type: 'button', className: 'app-link', onClick: function () { addLesson(s.id); } }, '+ ' + t('add_lesson')));
+              h('button', { type: 'button', className: 'app-link', onClick: function () { addLesson(s.id); } }, '+ ' + t('add_lesson')),
+              // only an empty section can go: lessons (and the results on them) are deleted one by one, on purpose
+              s.lessons.length ? null : h('button', { type: 'button', className: 'app-link danger cms-sec-del', onClick: function () {
+                p.update(function (d) { d.course.sections = d.course.sections.filter(function (x) { return x.id !== s.id; }); (d.tracks || []).forEach(function (tr) { tr.sections = (tr.sections || []).filter(function (x) { return x !== s.id; }); }); });
+              } }, t('del_section')));
           }),
           h(Btn, { variant: 'outline', size: 'sm', onClick: addSection }, '+ ' + t('add_section')),
-          h(CourseImport, { t: t, db: p.db, update: p.update, say: p.say })),
+          h(CourseImport, { t: t, db: p.db, lang: p.lang, update: p.update, say: p.say })),
         draft && lesson ? h('section', { className: 'box cms-edit' },
           openQ.length ? h('div', { className: 'status-box is-fail' }, h('div', null, h('b', null, '? ' + openQ.length + ' · ' + t('tab_q')), openQ.map(function (r) { return h('p', { key: r.id }, userOf(db, r.userId).name + ': ' + r.text); }))) : null,
           notif[0] ? h(SopNotifyPanel, Object.assign({}, p, { key: notif[0].lessonId + notif[0].title, x: notif[0], onDone: function () { notif[1](null); } })) : null,
@@ -7216,35 +7322,40 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       tracks: x.tracks === 'all' ? 'all' : Array.isArray(x.tracks) ? x.tracks.filter(function (t) { return typeof t === 'string'; }) : [] };
   }
   function chapNo(title) { var m = /^(\d+)\s*-\s*bob\b/i.exec(title || ''); return m ? +m[1] : null; }
-  /* the same section is replaced in place; a new one goes before the first chapter with a higher number
-     (2-bob before 4-bob; the intro without a number stays first) and into the programmes */
-  function importChapter(p, ch) {
-    var t = p.t, sec = ch.section, ids = {};
+  /* where: 'new' — before the first chapter with a higher number (2-bob before 4-bob; the intro without a number stays
+     first); 'replace' — the chosen section gets the file's title and lessons; 'append' — the lessons are added to it.
+     aud — who studies it (applyAudience). Lesson numbers used in another section — refused, nothing changes */
+  function importChapter(p, ch, cfg) {
+    var t = p.t, sec = JSON.parse(JSON.stringify(ch.section)), target = cfg.where === 'new' ? sec.id : cfg.target, ids = {};
     sec.lessons.forEach(function (l) { ids[l.id] = 1; });
-    var clash = p.db.course.sections.some(function (s) { return s.id !== sec.id && s.lessons.some(function (l) { return ids[l.id]; }); });
-    if (clash) { p.say(t('imp_clash')); return; }
+    var clash = p.db.course.sections.some(function (s) { return s.id !== target && s.lessons.some(function (l) { return ids[l.id]; }); });
+    if (clash) { p.say(t('imp_clash')); return false; }
+    var title = sec.title;
     p.update(function (d) {
-      var list = d.course.sections, copy = JSON.parse(JSON.stringify(sec)), i = list.findIndex(function (x) { return x.id === sec.id; });
-      if (i >= 0) list[i] = copy;
-      else {
+      var list = d.course.sections, i = list.findIndex(function (x) { return x.id === target; });
+      if (cfg.where === 'new' || i < 0) {
         var n = chapNo(sec.title), j = n === null ? -1 : list.findIndex(function (x) { var m = chapNo(x.title); return m !== null && m > n; });
-        if (j < 0) list.push(copy); else list.splice(j, 0, copy);
+        sec.id = target; if (j < 0) list.push(sec); else list.splice(j, 0, sec);
+      } else if (cfg.where === 'replace') {
+        list[i].title = sec.title; list[i].officialOnly = sec.officialOnly; list[i].lessons = sec.lessons;
+      } else {
+        title = list[i].title;
+        sec.lessons.forEach(function (l) { var k = list[i].lessons.findIndex(function (x) { return x.id === l.id; }); if (k >= 0) list[i].lessons[k] = l; else list[i].lessons.push(l); });
       }
-      (d.tracks || []).forEach(function (tr) {
-        if ((ch.tracks === 'all' || ch.tracks.indexOf(tr.id) >= 0) && (tr.sections || []).length && tr.sections.indexOf(sec.id) < 0) tr.sections.push(sec.id);
-      });
+      applyAudience(d, target, cfg.aud);
     });
-    p.say(tpl(t('imp_sec_ok'), { x: sec.title, n: sec.lessons.length, q: sec.lessons.reduce(function (a, l) { return a + l.quiz.length; }, 0) }));
+    p.say(tpl(t('imp_sec_ok'), { x: title, n: sec.lessons.length, q: sec.lessons.reduce(function (a, l) { return a + l.quiz.length; }, 0) }) + ' · ' + audText(cfg.aud, t));
+    return true;
   }
   function CourseImport(p) {
-    var t = p.t;
+    var t = p.t, pend = useState(null);
     function pick(e) {
       var f = e.target.files && e.target.files[0]; e.target.value = '';
       if (!f) return;
       var rd = new FileReader();
       rd.onload = function () {
         var text = String(rd.result || ''), ch = parseChapter(text);
-        if (ch) { importChapter(p, ch); return; }
+        if (ch) { pend[1](ch); return; }
         var list = parseCh4(text);
         if (list === 'demo') { p.say(t('imp_demo')); return; }
         if (!list) { p.say(t('imp_bad')); return; }
@@ -7257,6 +7368,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       rd.readAsText(f);
     }
     return h('div', { className: 'cms-import' },
+      pend[0] ? h(ImportDialog, Object.assign({}, p, { ch: pend[0], onClose: function () { pend[1](null); } })) : null,
       h('input', { id: 'cms-import', type: 'file', accept: '.json,.html,application/json,text/html', className: 'sr-only', onChange: pick }),
       h('label', { className: 'lor-btn lor-btn-outline lor-btn-sm', htmlFor: 'cms-import' }, t('imp_btn')),
       h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('imp_hint')));

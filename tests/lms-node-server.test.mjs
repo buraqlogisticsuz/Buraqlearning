@@ -40,7 +40,7 @@ test('сайт: страница, адрес сервера, только фай
     for (const p of ['/js/..%2ftools/lms-gs/Code.gs', '/js/..%2f..%2fetc/passwd', '/fonts/%2e%2e/README.md'])
       assert.equal(await new Promise(r => http.get(s.url.slice(0, -1) + p, res => { res.resume(); r(res.statusCode); })), 404, p);
     const ping = await (await fetch(s.url + 'api')).json();
-    assert.equal(ping.ok, true); assert.equal(ping.ready, true); assert.equal(ping.v, 10);
+    assert.equal(ping.ok, true); assert.equal(ping.ready, true); assert.equal(ping.v, 11);
     assert.equal((await s.api(null, 'не json')).code, 'bad');
   } finally { await s.close(); rmSync(dir, { recursive: true, force: true }); }
 });

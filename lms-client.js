@@ -9,7 +9,7 @@
 (function (root) {
   'use strict';
   var S = root.LmsSync;
-  var SERVER_V = 10;                      // версия сервера (tools/lms-gs), под которую написана эта страница
+  var SERVER_V = 11;                      // версия сервера (tools/lms-gs), под которую написана эта страница
   var URL_ = String(root.LMS_SERVER || '').trim();
   var DEMO = !URL_;                      // адреса нет — страница пишет «Server ulanmagan» (демо больше нет)
   var K = { token: 'lor-lms-token', cache: 'lor-lms-cache', queue: 'lor-lms-queue', lang: 'lor-lms-lang' };
