@@ -572,6 +572,40 @@ try {
   assert.deepEqual(await rejected(A), [], 'сервер принял «Kun hikmati»');
   step('страница входа: маршрут, приветствие, «Kun hikmati» с переводом; своя цитата SOP-менеджера видна до входа');
 
+  // ---------- раздел курса из файла (.json): встаёт по номеру главы, попадает в программы, лишние теги и ответы — нет ----------
+  // в репозитории — выдуманный раздел; настоящие главы стандартов загружаются только на сервер
+  const chap = (sec, tracks) => ({ name: 'bob.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({ app: 'buraq-lms-chapter', v: 1, tracks, section: sec })) });
+  const b2 = { id: 'b2', title: '2-bob. Test bo‘limi', lessons: [
+    { id: 'b2-1', title: '2.1. Test darsi', html: '<h3>Maqsad</h3><p onclick="x()">Matn</p><script>alert(1)</script><div class="ilova"><b>ILOVA-2.1</b><span>Menyu</span></div>', quiz: [{ q: 'Savol?', options: ['A', 'B', 'C'], answer: 2 }, { q: 'Yomon', options: ['A'], answer: 0 }] },
+    { id: 'b2-2', title: '2.2. Ikkinchi dars', html: '<p>Matn 2</p>', quiz: [] }] };
+  await nav(A, 'cms'); await A.locator('main .lor-tabs [role="tab"]').first().click(); await A.waitForTimeout(300);   // вкладка уроков
+  await A.setInputFiles('#cms-import', chap(b2, ['tr_mgr']));
+  await settle(A);
+  let secs = srv.g.state().course.sections;
+  const bi = secs.findIndex(x => x.id === 'b2');
+  assert.ok(bi >= 0 && bi < secs.findIndex(x => x.id === 's2'), '2-bob — перед 4-bob');
+  assert.equal(secs[bi].lessons[0].html.includes('script') || secs[bi].lessons[0].html.includes('onclick'), false, 'лишнее из HTML убрано');
+  assert.ok(secs[bi].lessons[0].html.includes('class="ilova"'));
+  assert.deepEqual(secs[bi].lessons[0].quiz, [{ q: 'Savol?', options: ['A', 'B', 'C'], answer: 2 }], 'неверный вопрос отброшен');
+  assert.deepEqual(srv.g.state().tracks.filter(x => x.sections.includes('b2')).map(x => x.id), ['tr_mgr'], 'раздел — только в указанной программе');
+  assert.match(await txt(A, 'body'), /«2-bob\. Test bo‘limi» yuklandi: 2 ta dars, 1 ta test savoli/);
+  await E.evaluate(() => LmsClient.sync()); await E.waitForTimeout(400);
+  const eq = await E.evaluate(() => (LmsClient.initial().course.sections.find(x => x.id === 'b2') || { lessons: [{ quiz: [] }] }).lessons[0].quiz);
+  assert.ok(eq.every(q => q.answer === undefined), 'сотруднику ответы теста не приходят');
+  // тот же раздел ещё раз — заменяется на месте; номера уроков из чужого раздела — отказ
+  await A.setInputFiles('#cms-import', chap(Object.assign({}, b2, { title: '2-bob. Yangi nom' }), 'all'));
+  await settle(A);
+  secs = srv.g.state().course.sections;
+  assert.equal(secs.filter(x => x.id === 'b2').length, 1); assert.equal(secs.findIndex(x => x.id === 'b2'), bi);
+  assert.equal(secs[bi].title, '2-bob. Yangi nom');
+  const rev1 = srv.g.state().rev;
+  await A.setInputFiles('#cms-import', chap({ id: 'bx', title: '3-bob. X', lessons: [{ id: 'b4-1', title: 'X', html: '<p>x</p>' }] }, 'all'));
+  await A.waitForFunction(() => document.body.innerText.includes('boshqa bo‘limda band'), null, { timeout: 5000 });
+  await settle(A);
+  assert.equal(srv.g.state().rev, rev1, 'при совпадении номеров уроков ничего не меняется');
+  assert.deepEqual(await rejected(A), [], 'сервер принял раздел');
+  step('раздел из файла: 2-bob перед 4-bob, в программе, без лишнего HTML; повторная загрузка заменяет, чужие номера уроков — отказ');
+
   // ---------- демо больше нет: ?demo=1 — тот же вход на сервер; без адреса сервера — «Server ulanmagan» ----------
   const D = await device('бывшее демо', '?demo=1');
   assert.equal(await D.locator('.demo-box').count(), 0, 'демо-входов нет');

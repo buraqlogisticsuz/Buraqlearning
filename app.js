@@ -6725,7 +6725,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
               h('button', { type: 'button', className: 'app-link', onClick: function () { addLesson(s.id); } }, '+ ' + t('add_lesson')));
           }),
           h(Btn, { variant: 'outline', size: 'sm', onClick: addSection }, '+ ' + t('add_section')),
-          h(CourseImport, { t: t, update: p.update, say: p.say })),
+          h(CourseImport, { t: t, db: p.db, update: p.update, say: p.say })),
         draft && lesson ? h('section', { className: 'box cms-edit' },
           openQ.length ? h('div', { className: 'status-box is-fail' }, h('div', null, h('b', null, '? ' + openQ.length + ' · ' + t('tab_q')), openQ.map(function (r) { return h('p', { key: r.id }, userOf(db, r.userId).name + ': ' + r.text); }))) : null,
           notif[0] ? h(SopNotifyPanel, Object.assign({}, p, { key: notif[0].lessonId + notif[0].title, x: notif[0], onDone: function () { notif[1](null); } })) : null,
@@ -7189,6 +7189,50 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     if (!Array.isArray(list) || !list.length || list.some(function (x) { return !x || !x.id || !x.title || typeof x.html !== 'string'; })) return null;
     return list.some(function (x) { return x.html.indexOf('Namuna (demo)') >= 0; }) ? 'demo' : list;
   }
+  /* a section file (.json) — a chapter of the standards made outside the repo (the texts stay on the server only):
+     { app: 'buraq-lms-chapter', v: 1, tracks: 'all' | [track ids],
+       section: { id, title: '2-bob. …', officialOnly, lessons: [{ id, title, html, quiz: [{ q, options, answer }], source }] } } */
+  var SEC_ID = /^[\w-]{1,40}$/;
+  function parseChapter(text) {
+    var x; try { x = JSON.parse(text); } catch (e) { return null; }
+    var s = x && x.app === 'buraq-lms-chapter' ? x.section : null, seen = {}, bad = false;
+    if (!s || !SEC_ID.test(s.id || '') || typeof s.title !== 'string' || !s.title.trim() || !Array.isArray(s.lessons) || !s.lessons.length) return null;
+    var lessons = s.lessons.map(function (l) {
+      if (!l || !SEC_ID.test(l.id || '') || seen[l.id] || typeof l.title !== 'string' || !l.title.trim() || typeof l.html !== 'string') { bad = true; return null; }
+      seen[l.id] = 1;
+      var quiz = (Array.isArray(l.quiz) ? l.quiz : []).filter(function (q) {
+        return q && typeof q.q === 'string' && q.q.trim() && Array.isArray(q.options) && q.options.length >= 2 && q.options.every(function (o) { return typeof o === 'string'; })
+          && q.answer === Math.floor(q.answer) && q.answer >= 0 && q.answer < q.options.length;
+      }).map(function (q) { return { q: q.q.trim(), options: q.options.slice(), answer: q.answer }; });
+      var out = { id: l.id, title: l.title.trim(), html: sanitize(l.html), quiz: quiz };
+      if (typeof l.source === 'string') out.source = l.source;
+      return out;
+    });
+    if (bad) return null;
+    return { section: { id: s.id, title: s.title.trim(), officialOnly: !!s.officialOnly, lessons: lessons },
+      tracks: x.tracks === 'all' ? 'all' : Array.isArray(x.tracks) ? x.tracks.filter(function (t) { return typeof t === 'string'; }) : [] };
+  }
+  function chapNo(title) { var m = /^(\d+)\s*-\s*bob\b/i.exec(title || ''); return m ? +m[1] : null; }
+  /* the same section is replaced in place; a new one goes before the first chapter with a higher number
+     (2-bob before 4-bob; the intro without a number stays first) and into the programmes */
+  function importChapter(p, ch) {
+    var t = p.t, sec = ch.section, ids = {};
+    sec.lessons.forEach(function (l) { ids[l.id] = 1; });
+    var clash = p.db.course.sections.some(function (s) { return s.id !== sec.id && s.lessons.some(function (l) { return ids[l.id]; }); });
+    if (clash) { p.say(t('imp_clash')); return; }
+    p.update(function (d) {
+      var list = d.course.sections, copy = JSON.parse(JSON.stringify(sec)), i = list.findIndex(function (x) { return x.id === sec.id; });
+      if (i >= 0) list[i] = copy;
+      else {
+        var n = chapNo(sec.title), j = n === null ? -1 : list.findIndex(function (x) { var m = chapNo(x.title); return m !== null && m > n; });
+        if (j < 0) list.push(copy); else list.splice(j, 0, copy);
+      }
+      (d.tracks || []).forEach(function (tr) {
+        if ((ch.tracks === 'all' || ch.tracks.indexOf(tr.id) >= 0) && (tr.sections || []).length && tr.sections.indexOf(sec.id) < 0) tr.sections.push(sec.id);
+      });
+    });
+    p.say(tpl(t('imp_sec_ok'), { x: sec.title, n: sec.lessons.length, q: sec.lessons.reduce(function (a, l) { return a + l.quiz.length; }, 0) }));
+  }
   function CourseImport(p) {
     var t = p.t;
     function pick(e) {
@@ -7196,7 +7240,9 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       if (!f) return;
       var rd = new FileReader();
       rd.onload = function () {
-        var list = parseCh4(String(rd.result || ''));
+        var text = String(rd.result || ''), ch = parseChapter(text);
+        if (ch) { importChapter(p, ch); return; }
+        var list = parseCh4(text);
         if (list === 'demo') { p.say(t('imp_demo')); return; }
         if (!list) { p.say(t('imp_bad')); return; }
         var secs = ch4Sections(list);
@@ -7208,7 +7254,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       rd.readAsText(f);
     }
     return h('div', { className: 'cms-import' },
-      h('input', { id: 'cms-import', type: 'file', accept: '.html,text/html', className: 'sr-only', onChange: pick }),
+      h('input', { id: 'cms-import', type: 'file', accept: '.json,.html,application/json,text/html', className: 'sr-only', onChange: pick }),
       h('label', { className: 'lor-btn lor-btn-outline lor-btn-sm', htmlFor: 'cms-import' }, t('imp_btn')),
       h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('imp_hint')));
   }
