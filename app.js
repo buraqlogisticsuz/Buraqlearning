@@ -4566,8 +4566,10 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     return { T: T, W: W, short: W < 7, mins: mins, mpd: mpd, lpd: lpd, xpd: xpWin / W, goalShare: goalD / W, passed: passed, total: total, left: left, eta: eta, etaAt: etaAt, deadline: deadline, start: start, v: v, scen: sc,
       next: { min: Math.round(mpd * nd), lessons: Math.min(left, Math.round(lpd * nd)), goal: Math.round(goalD / W * nd) } };
   }
-  var V_RANK = { done: -1, early: 0, ok: 0, risk: 1, behind: 2 };
+  var V_RANK = { none: -1, done: -1, early: 0, ok: 0, risk: 1, behind: 2 };
+  /* none — in the programme there are no lessons yet (the course is not uploaded): not «course passed» */
   function verdictOf(ms, fc) {
+    if (!fc.total) return 'none';
     if (fc.left === 0) return 'done';
     if (fc.short) return 'early';
     var a = ms ? ms.att : null, av = a == null ? 'ok' : a >= 80 ? 'ok' : a >= 60 ? 'risk' : 'behind';
@@ -4575,7 +4577,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   }
   function verdictNotes(ms, fc, t) {
     var out = [];
-    if (fc.left === 0) out.push(t('mv_done_p'));
+    if (!fc.total) out.push(t('mv_none_p'));
+    else if (fc.left === 0) out.push(t('mv_done_p'));
     else if (fc.short) out.push(t('mr_r_short'));
     else if (fc.eta == null) out.push(t('mr_r_stall'));
     else out.push(tpl(t(fc.etaAt <= fc.deadline ? 'mr_r_eta_ok' : fc.T > fc.deadline ? 'mr_r_eta_past' : 'mr_r_eta_late'), { d: fmtDate(fc.etaAt), dl: fmtDate(fc.deadline) }));
@@ -4665,7 +4668,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var marks = [['now', T, p.live ? t('mr_today') : t('mr_month_end')], ['dl', fc.deadline, t('mr_deadline')]];
     if (fin) marks.push(['eta', fin, t('mr_finish')]);
     return h('div', { className: 'cl' },
-      h('div', { className: 'cl-head' }, h('b', null, tpl(t('mr_course_n'), { k: fc.passed, n: fc.total })), h('span', { className: 'lor-sm lor-muted' }, fc.left ? tpl(t('mr_left_n'), { n: fc.left }) : '✓ ' + t('mv_done'))),
+      h('div', { className: 'cl-head' }, h('b', null, tpl(t('mr_course_n'), { k: fc.passed, n: fc.total })), h('span', { className: 'lor-sm lor-muted' }, fc.left ? tpl(t('mr_left_n'), { n: fc.left }) : fc.total ? '✓ ' + t('mv_done') : t('mv_none'))),
       h('div', { className: 'cl-track', role: 'img', 'aria-label': marks.map(function (m) { return m[2] + ' ' + fmtDate(m[1]); }).join(', ') },
         h('i', { className: 'cl-past', style: { width: x(T) + '%' } }),
         fin ? h('i', { className: cx('cl-proj', 'mv-' + p.v), style: { left: x(T) + '%', width: Math.max(0, x(fin) - x(T)) + '%' } }) : null,
@@ -4687,7 +4690,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       { k: 'xp', ico: 'xp', label: t('mr_xp'), big: '+' + ms.xp, sub: tpl(t('mr_xp_sub'), { d: ms.drills, i: ms.inis }), d: hasPrev ? h(Delta, { t: t, cur: ms.xp, prev: pv.xp }) : null }];
     return h('div', { className: 'mr-body' },
       h('section', { className: cx('box mr-verdict', 'mv-' + v) },
-        h('span', { className: 'mr-v-ico', 'aria-hidden': true }, v === 'ok' || v === 'done' ? '✓' : v === 'early' ? '…' : '!'),
+        h('span', { className: 'mr-v-ico', 'aria-hidden': true }, v === 'ok' || v === 'done' ? '✓' : v === 'early' || v === 'none' ? '…' : '!'),
         h('div', { className: 'mr-v-main' },
           h('span', { className: 'lor-eyebrow' }, ms.live ? tpl(t('mr_asof'), { d: fmtDate(Date.now()) }) : tpl(t('mr_closed'), { d: fmtDate(ymEndTs(ym)) })),
           h('h2', { className: 'lor-h' }, t('mv_' + v + '_t')),
@@ -4784,7 +4787,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         h('div', { className: 'mr-t-stats' }, [[ms.att == null ? '—' : ms.att + '%', t('mr_att')], [fmtH(ms.minutes, t), t('mr_time')], [String(ms.lessons), t('mr_lessons')]].map(function (x) { return h('div', { key: x[1] }, h('b', null, x[0]), h('span', null, x[1])); }))),
       h('div', { className: 'mr-t-side' },
         h(MiniStrip, { ms: ms }),
-        h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, fc.left ? (fc.etaAt ? tpl(t('mr_t_eta'), { d: fmtDate(fc.etaAt) }) : t('mr_r_stall')) : t('mv_done_p')),
+        h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, fc.left ? (fc.etaAt ? tpl(t('mr_t_eta'), { d: fmtDate(fc.etaAt) }) : t('mr_r_stall')) : t(fc.total ? 'mv_done_p' : 'mv_none_p')),
         h('div', null, h(Btn, { variant: fresh ? 'primary' : 'outline', size: 'sm', arrow: true, onClick: function () { p.go({ name: 'report', ym: ym }); } }, fresh ? t('mr_open_fresh') : t('mr_open')))));
   }
 
@@ -6378,7 +6381,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         h('section', { className: 'box box-next' },
           h('span', { className: 'lor-eyebrow' }, cur ? t('continue') : t('next_lesson')),
           cur ? h(F, null, h('h2', { className: 'lor-h' }, cur.title), h('span', { className: 'lor-sm lor-muted' }, cur.sectionTitle), h('div', { className: 'box-row' }, h(Badge, { status: cur.status, lang: p.lang }), h(Btn, { variant: 'primary', arrow: true, onClick: function () { p.go({ name: 'lesson', id: cur.id }); } }, t('continue'))))
-            : h('p', { className: 'lor-muted', style: { margin: 0 } }, t('all_done'))),
+            : h('p', { className: 'lor-muted', style: { margin: 0 } }, t(m.total ? 'all_done' : 'mv_none_p'))),
         h('section', { className: 'box' },
           h(Progress, { value: m.pct, lang: p.lang }),
           h('div', { className: 'mini-stats' },
