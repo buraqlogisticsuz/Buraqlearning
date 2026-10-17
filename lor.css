@@ -3338,3 +3338,33 @@ button.mc-cell.at-cell:hover { outline: 2px solid var(--blue-text); outline-offs
 .aud-users span { display: grid; min-width: 0; }
 .aud-users b { font-weight: 500; font-size: 14px; }
 .aud-users small { color: var(--ink-muted); font-size: 12px; }
+
+/* Kontent → Darslar: chapter cards (app.js CMS), who studies a chapter, the upload dialog */
+.ch-acts { display: grid; gap: 8px; padding-bottom: var(--space-4); border-bottom: var(--hairline) solid var(--line); }
+.ch-acts .cms-import { margin: 0; }
+.ch-empty { margin: 0; }
+.ch-card { display: grid; gap: 8px; padding: 12px; border: var(--hairline) solid var(--line); border-radius: var(--radius-md); background: var(--surface-raised); }
+.ch-card.is-open { border-color: var(--blue-text); box-shadow: inset 0 0 0 1px var(--blue-text); }
+.ch-head { all: unset; box-sizing: border-box; cursor: pointer; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; }
+.ch-head:focus-visible { outline: 2px solid var(--blue-text); outline-offset: 2px; border-radius: 6px; }
+.ch-no { grid-column: 1; font-size: 12px; line-height: 16px; letter-spacing: .08em; color: var(--red-text); font-weight: 500; }
+.ch-title { grid-column: 1; font-weight: 500; font-size: 15px; line-height: 20px; }
+.ch-meta { grid-column: 1; font-size: 13px; line-height: 18px; color: var(--ink-muted); }
+.ch-chev { grid-column: 2; grid-row: 1 / span 3; align-self: center; color: var(--ink-muted); }
+.ch-body { display: grid; gap: 8px; padding-top: 8px; border-top: var(--hairline) solid var(--line); }
+.ch-lessons { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.ch-lessons .cms-l { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; width: 100%; text-align: left; }
+.ch-noq { color: var(--ink-muted); font-size: 11px; white-space: nowrap; }
+.ch-set { display: grid; gap: 6px; padding-top: 8px; border-top: var(--hairline) dashed var(--line); }
+.ch-guide ol { margin: 0; padding-left: 20px; display: grid; gap: 10px; line-height: 22px; }
+.aud-grp { display: grid; gap: 6px; }
+.aud-mode span { display: grid; }
+.aud-mode small { color: var(--ink-muted); font-size: 12px; }
+.aud-sum { font-size: 13px; line-height: 18px; color: var(--blue-text); margin: 0; }
+.aud-sum.is-empty { color: var(--red-text); }
+.imp-lessons { margin: 0; padding-left: 22px; max-height: 220px; overflow-y: auto; font-size: 13px; line-height: 20px; }
+
+.imp-lessons { list-style: none; padding-left: 0; display: grid; gap: 2px; }
+.imp-lessons li { padding: 4px 6px; border-radius: var(--radius-sm); }
+.imp-lessons li.is-merged { padding-left: 26px; color: var(--ink-muted); }
+.imp-lessons small { color: var(--ink-muted); }

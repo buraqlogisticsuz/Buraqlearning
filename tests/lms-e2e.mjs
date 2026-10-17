@@ -587,7 +587,7 @@ try {
   await upload(chap(b2, ['tr_mgr']), { check: async () => {
     assert.match(await txt(A, '.imp-dlg'), /2-bob\. Test bo‘limi\s+2 ta dars · 1 ta test savoli/);
     assert.ok(await A.locator('.imp-dlg input[name="imp-where"]').first().isChecked(), 'новый раздел — по умолчанию');
-    assert.ok(await A.locator('.imp-dlg .ac-chip.is-on', { hasText: 'Menejer' }).count(), 'программа из файла отмечена');
+    assert.ok(await A.locator('.imp-dlg .ac-chip.is-on', { hasText: 'Logistika menejeri' }).count(), 'должности программы из файла отмечены');
     await shot(A, '23-import-dialog');
   } });
   let secs = srv.g.state().course.sections;
@@ -596,8 +596,8 @@ try {
   assert.equal(secs[bi].lessons[0].html.includes('script') || secs[bi].lessons[0].html.includes('onclick'), false, 'лишнее из HTML убрано');
   assert.ok(secs[bi].lessons[0].html.includes('class="ilova"'));
   assert.deepEqual(secs[bi].lessons[0].quiz, [{ q: 'Savol?', options: ['A', 'B', 'C'], answer: 2 }], 'неверный вопрос отброшен');
-  assert.deepEqual(srv.g.state().tracks.filter(x => x.sections.includes('b2')).map(x => x.id), ['tr_mgr'], 'раздел — только в выбранной программе');
-  assert.match(await txt(A, 'body'), /«2-bob\. Test bo‘limi» yuklandi: 2 ta dars, 1 ta test savoli · 1 ta dastur/);
+  assert.deepEqual(secs[bi].aud, { positions: ['Mijozlar menejeri', 'Logistika menejeri'], depts: [], users: [] }, 'глава — должностям программы из файла');
+  assert.match(await txt(A, 'body'), /«2-bob\. Test bo‘limi» yuklandi: 2 ta dars, 1 ta test savoli · Mijozlar menejeri, Logistika menejeri/);
   await E.evaluate(() => LmsClient.sync()); await E.waitForTimeout(400);
   const eq = await E.evaluate(() => (LmsClient.initial().course.sections.find(x => x.id === 'b2') || { lessons: [{ quiz: [] }] }).lessons[0].quiz);
   assert.ok(eq.every(q => q.answer === undefined), 'сотруднику ответы теста не приходят');
@@ -613,31 +613,69 @@ try {
   const rev1 = srv.g.state().rev;
   await A.setInputFiles('#cms-import', chap({ id: 'bx', title: '3-bob. X', lessons: [{ id: 'b4-1', title: 'X', html: '<p>x</p>' }] }, 'all'));
   await A.waitForSelector('.imp-dlg'); await A.locator('.imp-dlg').getByRole('button', { name: 'Yuklash' }).click();
-  await A.waitForFunction(() => document.body.innerText.includes('boshqa bo‘limda band'), null, { timeout: 5000 });
+  await A.waitForFunction(() => document.body.innerText.includes('boshqa bobda band'), null, { timeout: 5000 });
   await A.locator('.imp-dlg').getByRole('button', { name: 'Bekor qilish' }).click(); await settle(A);
   assert.equal(srv.g.state().rev, rev1, 'при совпадении номеров уроков ничего не меняется');
-  // «Kimlar o‘qiydi» у раздела: только выбранный сотрудник — остальным сервер раздел не отдаёт
+  // «Kimlar o‘qiydi» у главы: только выбранный по имени сотрудник — остальным сервер главу не отдаёт
   await A.locator('.cms-aud').nth(bi).click(); await A.waitForSelector('.aud-modal');
-  await A.locator('.aud-modal .aud-mode', { hasText: 'Tanlangan xodimlar' }).click();
+  for (const x of ['Mijozlar menejeri', 'Logistika menejeri']) await A.locator('.aud-modal .ac-chip.is-on', { hasText: x }).click();
+  assert.match(await txt(A, '.aud-modal .aud-sum'), /Kimlar o‘qishini tanlang/, 'никого не выбрано — подсказка');
   await A.fill('#aud-sec-q', 'Dilnoza'); await A.locator('.aud-modal .aud-users input').first().check();
   await shot(A, '24-audience');
   await A.locator('.aud-modal').getByRole('button', { name: 'Saqlash' }).click(); await settle(A);
   const b2s = srv.g.state().course.sections.find(x => x.id === 'b2');
-  assert.deepEqual(b2s.users, [emp.id]); assert.equal(srv.g.state().tracks.some(x => x.sections.includes('b2')), false, 'из программ убран');
+  assert.deepEqual(b2s.aud, { positions: [], depts: [], users: [emp.id] });
   assert.match(await txt(A, '.cms-tree'), /Kimlar o‘qiydi:\s*1 ta xodim/);
   const other = srv.g.state().users.find(u => u.role === 'employee' && u.id !== emp.id);
   assert.equal(srv.g.ctx.viewFor_(srv.g.ctx.readState_(), other).course.sections.some(x => x.id === 'b2'), false, 'другому сотруднику раздел не уходит');
   await E.evaluate(() => LmsClient.sync()); await E.waitForTimeout(500);
   assert.ok(await E.evaluate(() => LmsClient.initial().course.sections.some(x => x.id === 'b2')), 'выбранный сотрудник раздел видит');
-  // пустой раздел («+ Bo‘lim qo‘shish») можно удалить; раздел с уроками — нет
+  // глава из Word (.docx): уроки — после строки «3-BOB …», заголовок можно присоединить к прошлому уроку; кто — по отделу
+  const xq = s => s.replace(/'/g, '&apos;');
+  const para = (txt, o = {}) => '<w:p><w:pPr>' + (o.h ? '<w:pStyle w:val="Heading1"/>' : '') + (o.num ? '<w:numPr><w:ilvl w:val="0"/><w:numId w:val="' + o.num + '"/></w:numPr>' : '') + '</w:pPr>' + txt + '</w:p>';
+  const run = (x, b) => '<w:r>' + (b ? '<w:rPr><w:b/></w:rPr>' : '') + '<w:t xml:space="preserve">' + xq(x) + '</w:t></w:r>';
+  const NS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
+  const docx = zip({
+    'word/styles.xml': '<?xml version="1.0"?><w:styles ' + NS + '><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/></w:style></w:styles>',
+    'word/numbering.xml': '<?xml version="1.0"?><w:numbering ' + NS + '><w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:numFmt w:val="decimal"/></w:lvl></w:abstractNum><w:abstractNum w:abstractNumId="1"><w:lvl w:ilvl="0"><w:numFmt w:val="bullet"/></w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num><w:num w:numId="2"><w:abstractNumId w:val="1"/></w:num></w:numbering>',
+    'word/document.xml': '<?xml version="1.0"?><w:document ' + NS + '><w:body>' + [
+      para(run('Maxfiylik ogohlantirishi'), { h: 1, num: 1 }), para(run('3-BOB. SINOV STANDARTLARI'), { h: 1 }),
+      para(run('SINOV DARSI BIR'), { h: 1, num: 1 }), para(run('Maqsad:', true) + run(" o'quv matni")),
+      para(run('Birinchi band'), { num: 2 }), para(run('Ikkinchi band'), { num: 2 }),
+      '<w:tbl><w:tr><w:tc>' + para(run('Vaziyat')) + '</w:tc><w:tc>' + para(run('Amal')) + '</w:tc></w:tr></w:tbl>', para(run('ILOVA-3.1. Namuna')),
+      para(run('SINOV DARSI IKKI'), { h: 1, num: 1 }), para(run('Ikkinchi dars matni')),
+      para(run("QO'SHIMCHA SKRIPT"), { h: 1, num: 1 }), para(run('Skript matni'))].join('') + '</w:body></w:document>' });
+  const dep = srv.g.state().users.find(u => u.id === emp.id).department;
+  await A.setInputFiles('#cms-import', { name: '3-bob.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', buffer: docx });
+  await A.waitForSelector('.imp-dlg');
+  assert.match(await txt(A, '.imp-dlg .imp-sum'), /3-bob\. Sinov standartlari\s+3 ta dars · 0 ta test savoli · testlar keyin qo‘shiladi/);
+  await A.locator('.imp-dlg .imp-lessons input').nth(1).uncheck();
+  assert.match(await txt(A, '.imp-dlg .imp-sum'), /2 ta dars/, '«Qo‘shimcha skript» — в предыдущий урок');
+  await A.locator('.imp-dlg .aud > .aud-mode input').uncheck();
+  await A.locator('.imp-dlg .ac-chip', { hasText: dep }).click();
+  await shot(A, '25-word-import');
+  await A.locator('.imp-dlg').getByRole('button', { name: 'Yuklash' }).click(); await settle(A);
+  const b3 = srv.g.state().course.sections.find(x => x.id === 'b3');
+  assert.ok(b3, 'глава из Word на сервере'); assert.equal(b3.title, '3-bob. Sinov standartlari');
+  assert.deepEqual(b3.lessons.map(l => l.id + ' ' + l.title), ['b3-1 3.1. Sinov darsi bir', 'b3-2 3.2. Sinov darsi ikki']);
+  const h1 = b3.lessons[0].html, h2 = b3.lessons[1].html;
+  assert.ok(h1.includes('<strong>Maqsad:</strong> o‘quv matni') && h1.includes('<ul><li>Birinchi band</li><li>Ikkinchi band</li></ul>') && h1.includes('<table>') && h1.includes('class="ilova"'), h1);
+  assert.ok(h2.includes('<h3>QO‘SHIMCHA SKRIPT</h3>') && h2.includes('Skript matni'), h2);
+  assert.ok(!JSON.stringify(b3).includes('Maxfiylik'), 'то, что до строки «3-BOB», в уроки не попало');
+  assert.deepEqual(b3.aud, { positions: [], depts: [dep], users: [] });
+  const ss = srv.g.state().course.sections.map(x => x.id);
+  assert.ok(ss.indexOf('b2') < ss.indexOf('b3') && ss.indexOf('b3') < ss.indexOf('s2'), '3-bob — между 2-bob и 4-bob');
+  const odd = srv.g.state().users.find(u => u.role === 'employee' && u.department !== dep);
+  if (odd) assert.equal(srv.g.ctx.viewFor_(srv.g.ctx.readState_(), odd).course.sections.some(x => x.id === 'b3'), false, 'другой отдел главу не получает');
+  // пустую главу («+ Yangi bob») можно удалить; главу с уроками — нет
   const nSec = srv.g.state().course.sections.length;
-  await A.getByRole('button', { name: '+ Bo‘lim qo‘shish' }).click(); await settle(A);
+  await A.getByRole('button', { name: '+ Yangi bob' }).click(); await settle(A);
   assert.equal(srv.g.state().course.sections.length, nSec + 1);
   assert.equal(await A.locator('.cms-sec-del').count(), 1, 'кнопка — только у пустого раздела');
   await A.locator('.cms-sec-del').click(); await settle(A);
   assert.equal(srv.g.state().course.sections.length, nSec);
   assert.deepEqual(await rejected(A), [], 'сервер принял раздел и назначение');
-  step('раздел из файла: окно «Qayerga / Kimlar o‘qiydi», 2-bob перед 4-bob, замена на месте, отказ при чужих номерах; раздел — выбранному сотруднику');
+  step('главы: файл .json и Word (.docx) — окно «Qayerga / Kimlar o‘qiydi», порядок по номеру, замена на месте, отказ при чужих номерах; кто — по должности, отделу, имени');
 
   // ---------- обновление страницы: открывается тот же раздел, а не стартовый ----------
   await nav(A, 'staff');

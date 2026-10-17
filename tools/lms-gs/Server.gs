@@ -20,7 +20,7 @@
  *
  * Запрос — POST с JSON { action, token, … }, ответ — JSON { ok, … } или { ok: false, code, error }.
  */
-var LMS_VERSION = 11;          // 2: файлы — отдельно на Диске, действие file; 3: ИИ через Claude API (действие ai);
+var LMS_VERSION = 12;          // 2: файлы — отдельно на Диске, действие file; 3: ИИ через Claude API (действие ai);
                                // 4: адресаты идей — CEO, Project Manager, руководитель компании (свой вход, role 'leader');
                                // 5: у идеи несколько адресатов (to — список), repliedBy — кто ответил;
                                // 6: свой профиль — имя и фото, смена логина и пароля (действие account);
@@ -29,6 +29,7 @@ var LMS_VERSION = 11;          // 2: файлы — отдельно на Дис
                                // 9: зарплата — фикса + KPI (pay, payCalcs; формула — lms-pay.js, общая со страницей);
                                // 10: уровни доступа — CEO, SOP-менеджер, руководитель (владелец), PM (lvl_)
                                // 11: раздел курса для выбранных сотрудников (section.users) — остальным не отдаётся
+                               // 12: кто проходит главу — section.aud: все, должности, отделы, имена
 var PBKDF2_ITER = 10000;          // пароль хранится только как PBKDF2-SHA256 с солью
 var SESSION_DAYS = 30;            // вход на устройстве живёт 30 дней с последнего запроса
 var FAIL_MAX = 5, FAIL_LOCK_MIN = 15;  // 5 неверных паролей подряд — логин закрыт на 15 минут
@@ -346,12 +347,14 @@ function viewFor_(st, me) {
     return v;
   }
   var uid = String(me.id), official = me.status === 'official';
-  // раздел для выбранных сотрудников (section.users) — только им; список назначенных — без чужих номеров
+  // глава для выбранных (section.aud: все, должности, отделы, имена; section.users — имена, v11) — только тем, кто подходит;
+  // в списке имён каждый видит только себя
   if (v.course) v.course.sections = (v.course.sections || []).filter(function (s) {
-    var only = s.users || [];
-    if (!only.length) return true;
-    if (!only.some(function (x) { return String(x) === uid; })) return false;
-    s.users = [me.id];
+    var a = s.aud || ((s.users || []).length ? { users: s.users } : null), mine = function (x) { return String(x) === uid; };
+    if (!a || !(a.all || (a.positions || []).length || (a.depts || []).length || (a.users || []).length)) return true;
+    if (!(a.all || (a.positions || []).indexOf(me.position) >= 0 || (a.depts || []).indexOf(me.department) >= 0 || (a.users || []).some(mine))) return false;
+    if (s.aud && s.aud.users) s.aud.users = s.aud.users.filter(mine);
+    if (s.users) s.users = s.users.filter(mine);
     return true;
   });
   // уроки: правильные ответы тестов не уходят никому, кроме SOP-менеджера; закрытые разделы — только названия

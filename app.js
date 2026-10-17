@@ -3854,8 +3854,12 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   function trackTitle(t, lang) { return !t ? '' : (typeof t.title === 'string' ? t.title : (t.title[lang] || t.title.uz || '')); }
   function trackDesc(t, lang) { return !t || !t.desc ? '' : (typeof t.desc === 'string' ? t.desc : (t.desc[lang] || t.desc.uz || '')); }
   function trackSecIds(db, u) { var t = trackOf(db, u); return t && (t.sections || []).length ? t.sections : null; }
-  /* a section with a list of employees (s.users) is only theirs; otherwise the programme decides */
-  function secFor(s, u, ids) { var only = s.users || []; return only.length ? only.some(function (x) { return String(x) === String(u.id); }) : !ids || ids.indexOf(s.id) >= 0; }
+  /* who studies a chapter (section.aud): everyone, or whoever matches a position, a department or a name (any of them).
+     No aud — the programme (tracks) decides, as before; section.users of v11 — names */
+  function audOf(s) { return s.aud || ((s.users || []).length ? { users: s.users } : null); }
+  function audHas(a) { return !!(a && (a.all || (a.positions || []).length || (a.depts || []).length || (a.users || []).length)); }
+  function audMatch(a, u) { return !!(a.all || (a.positions || []).indexOf(u.position) >= 0 || (a.depts || []).indexOf(u.department) >= 0 || (a.users || []).some(function (x) { return String(x) === String(u.id); })); }
+  function secFor(s, u, ids) { var a = audOf(s); return audHas(a) ? audMatch(a, u) : !ids || ids.indexOf(s.id) >= 0; }
   function courseSections(db, u) { var ids = trackSecIds(db, u); return db.course.sections.filter(function (s) { return secFor(s, u, ids); }); }
   /* flat(), but only the sections that belong to this employee’s programme */
   function trackFlat(db, u) {
@@ -3924,56 +3928,63 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
 
   /* ---------- admin: programmes ---------- */
   function blankTrack() { return { id: null, title: { uz: '', ru: '', en: '', zh: '' }, desc: { uz: '', ru: '', en: '', zh: '' }, positions: [], sections: [] }; }
-  /* who studies a section: all employees, chosen programmes (tracks[].sections) or chosen employees (section.users) */
+  /* the picker's value for a chapter: its own list, or — for an old chapter — what the programmes gave it */
   function secAudience(db, s) {
-    if ((s.users || []).length) return { mode: 'users', users: s.users.map(String), tracks: [] };
-    var trs = tracksOf(db).filter(function (x) { return (x.sections || []).length; }), inT = trs.filter(function (x) { return x.sections.indexOf(s.id) >= 0; }).map(function (x) { return x.id; });
-    return { mode: inT.length === trs.length ? 'all' : 'tracks', tracks: inT, users: [] };
+    var a = audOf(s);
+    if (audHas(a)) return { all: !!a.all, positions: (a.positions || []).slice(), depts: (a.depts || []).slice(), users: (a.users || []).map(String) };
+    var trs = tracksOf(db).filter(function (x) { return (x.sections || []).length; }), inT = trs.filter(function (x) { return x.sections.indexOf(s.id) >= 0; });
+    var pos = []; inT.forEach(function (x) { (x.positions || []).forEach(function (q) { if (pos.indexOf(q) < 0) pos.push(q); }); });
+    return { all: inT.length === trs.length, positions: inT.length === trs.length ? [] : pos, depts: [], users: [] };
   }
   function applyAudience(d, sid, a) {
     d.course.sections.forEach(function (s) {
       if (s.id !== sid) return;
-      if (a.mode === 'users') s.users = a.users.map(function (x) { var n = +x; return isFinite(n) && String(n) === String(x) ? n : x; }); else delete s.users;
-    });
-    (d.tracks || []).forEach(function (tr) {
-      if (!(tr.sections || []).length) return;   // a programme without a list = the whole course
-      var i = tr.sections.indexOf(sid), want = a.mode === 'all' || (a.mode === 'tracks' && a.tracks.indexOf(tr.id) >= 0);
-      if (want && i < 0) tr.sections.push(sid);
-      if (!want && i >= 0) tr.sections.splice(i, 1);
+      s.aud = a.all ? { all: true } : { positions: a.positions.slice(), depts: a.depts.slice(), users: a.users.map(function (x) { var n = +x; return isFinite(n) && String(n) === String(x) ? n : x; }) };
+      delete s.users;
     });
   }
-  function audText(a, t) { return a.mode === 'users' ? tpl(t('aud_users_n'), { n: a.users.length }) : a.mode === 'tracks' ? tpl(t('aud_tracks_n'), { n: a.tracks.length }) : t('aud_all'); }
+  function audOk(a) { return audHas(a); }
+  function audCount(db, a) { return db.users.filter(function (u) { return u.role === 'employee' && audMatch(a, u); }).length; }
+  function audText(a, t) {
+    if (!audHas(a)) return t('aud_nobody');
+    if (a.all) return t('aud_all');
+    var parts = (a.positions || []).concat(a.depts || []), n = (a.users || []).length;
+    var x = parts.slice(0, 2).join(', ') + (parts.length > 2 ? ' +' + (parts.length - 2) : '');
+    return x + (n ? (x ? ' · ' : '') + tpl(t('aud_users_n'), { n: n }) : '');
+  }
+  /* one picker for every chapter: «Hamma xodimlar», or any mix of positions, departments and names */
   function AudiencePicker(p) {
     var t = p.t, db = p.db, v = p.value, q = useState('');
-    var trs = tracksOf(db).filter(function (x) { return (x.sections || []).length; });
     var emps = db.users.filter(function (u) { return u.role === 'employee'; }), qq = q[0].trim().toLowerCase();
+    function uniq(list) { var out = []; list.forEach(function (x) { if (x && out.indexOf(x) < 0) out.push(x); }); return out; }
+    var pos = uniq(STAFF_POS.concat(emps.map(function (u) { return u.position; }), v.positions));
+    var dep = uniq(STAFF_DEP.concat(emps.map(function (u) { return u.department; }), v.depts));
     var shown = emps.filter(function (u) { return !qq || ((u.name || '') + ' ' + (u.position || '') + ' ' + (u.department || '')).toLowerCase().indexOf(qq) >= 0; });
-    function set(fn) { var n = { mode: v.mode, tracks: v.tracks.slice(), users: v.users.slice() }; fn(n); p.onChange(n); }
+    function set(fn) { var n = { all: v.all, positions: v.positions.slice(), depts: v.depts.slice(), users: v.users.slice() }; fn(n); p.onChange(n); }
     function toggle(list, x) { var i = list.indexOf(x); if (i < 0) list.push(x); else list.splice(i, 1); }
-    var opts = [['all', t('aud_all')], ['tracks', t('aud_tracks')], ['users', t('aud_users')]];
+    function chips(list, key) {
+      return h('div', { className: 'ac-chips' }, list.map(function (x) {
+        var on = v[key].indexOf(x) >= 0, n = emps.filter(function (u) { return (key === 'positions' ? u.position : u.department) === x; }).length;
+        return h('label', { key: x, className: cx('ac-chip', on && 'is-on') }, h('input', { type: 'checkbox', checked: on, onChange: function () { set(function (o) { toggle(o[key], x); }); } }), x, h('small', { className: 'lor-muted' }, ' ' + n));
+      }));
+    }
+    var cnt = audHas(v) ? audCount(db, v) : 0;
     return h('div', { className: 'aud' },
-      h('div', { className: 'aud-modes', role: 'radiogroup', 'aria-label': t('aud_label') }, opts.map(function (o) {
-        return h('label', { key: o[0], className: cx('aud-mode', v.mode === o[0] && 'is-on') },
-          h('input', { type: 'radio', name: p.name || 'aud', checked: v.mode === o[0], onChange: function () { set(function (n) { n.mode = o[0]; }); } }), o[1]);
-      })),
-      v.mode === 'tracks' ? h('div', null,
-        h('div', { className: 'ac-chips' }, trs.map(function (tr) {
-          var on = v.tracks.indexOf(tr.id) >= 0;
-          return h('label', { key: tr.id, className: cx('ac-chip', on && 'is-on') }, h('input', { type: 'checkbox', checked: on, onChange: function () { set(function (n) { toggle(n.tracks, tr.id); }); } }), trackTitle(tr, p.lang));
-        })),
-        h('p', { className: 'lor-sm lor-muted' }, t('aud_hint_tracks'))) : null,
-      v.mode === 'users' ? h('div', null,
-        h('input', { className: 'lor-input slim', id: (p.name || 'aud') + '-q', placeholder: t('aud_search'), 'aria-label': t('aud_search'), value: q[0], onChange: function (e) { q[1](e.target.value); } }),
-        emps.length ? h('ul', { className: 'aud-users' }, shown.map(function (u) {
-          var on = v.users.indexOf(String(u.id)) >= 0;
-          return h('li', { key: u.id }, h('label', { className: cx('check', on && 'is-on') },
-            h('input', { type: 'checkbox', checked: on, onChange: function () { set(function (n) { toggle(n.users, String(u.id)); }); } }),
-            h('span', null, h('b', null, u.name), h('small', null, [u.position, u.department].filter(Boolean).join(' · ')))));
-        })) : h('p', { className: 'lor-sm lor-muted' }, t('aud_none_emp')),
-        h('p', { className: 'lor-sm lor-muted' }, tpl(t('aud_users_n'), { n: v.users.length }) + ' · ' + t('aud_hint_users'))) : null);
+      h('label', { className: cx('aud-mode', v.all && 'is-on') }, h('input', { type: 'checkbox', checked: !!v.all, onChange: function (e) { var on = e.target.checked; set(function (o) { o.all = on; }); } }), h('span', null, h('b', null, t('aud_all')), h('small', null, t('aud_all_sub')))),
+      v.all ? null : h(F, null,
+        h('div', { className: 'aud-grp' }, h('span', { className: 'lor-eyebrow' }, t('aud_by_pos')), chips(pos, 'positions')),
+        h('div', { className: 'aud-grp' }, h('span', { className: 'lor-eyebrow' }, t('aud_by_dep')), chips(dep, 'depts')),
+        h('div', { className: 'aud-grp' }, h('span', { className: 'lor-eyebrow' }, t('aud_by_name') + (v.users.length ? ' · ' + v.users.length : '')),
+          h('input', { className: 'lor-input slim', id: (p.name || 'aud') + '-q', placeholder: t('aud_search'), 'aria-label': t('aud_search'), value: q[0], onChange: function (e) { q[1](e.target.value); } }),
+          emps.length ? h('ul', { className: 'aud-users' }, shown.map(function (u) {
+            var on = v.users.indexOf(String(u.id)) >= 0;
+            return h('li', { key: u.id }, h('label', { className: cx('check', on && 'is-on') },
+              h('input', { type: 'checkbox', checked: on, onChange: function () { set(function (o) { toggle(o.users, String(u.id)); }); } }),
+              h('span', null, h('b', null, u.name), h('small', null, [u.position, u.department].filter(Boolean).join(' · ')))));
+          })) : h('p', { className: 'lor-sm lor-muted' }, t('aud_none_emp')))),
+      h('p', { className: cx('aud-sum', !audHas(v) && 'is-empty') }, audHas(v) ? tpl(t('aud_count'), { n: cnt }) + ' · ' + t('aud_rule') : t('aud_pick_one')));
   }
-  function audOk(a) { return a.mode !== 'users' || a.users.length > 0; }
-  /* «Kimlar o‘qiydi» of one section in Kontent */
+  /* «Kim o‘qiydi» of one chapter in Kontent */
   function AudienceModal(p) {
     var t = p.t, s = p.section, a = useState(function () { return secAudience(p.db, s); }), err = useState('');
     function save() {
@@ -3990,23 +4001,46 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   }
   /* after a section file is chosen: where it goes (new / replace / add to a section) and who studies it */
   function ImportDialog(p) {
-    var t = p.t, db = p.db, ch = p.ch, sec = ch.section, secs = db.course.sections, same = secs.some(function (s) { return s.id === sec.id; });
+    var t = p.t, db = p.db, src = p.ch, isDoc = !!src.doc;
+    // Word: how to cut it into lessons — the first heading level that gives two or more lessons; the text before the first lesson — off
+    var lv = useState(function () {
+      if (!isDoc) return 0;
+      var L = src.doc.levels.filter(function (x) { return docxChapter(src.doc, src.name, x, false).section.lessons.length >= 2; });
+      return L[0] || src.doc.levels[0] || 0;
+    }), fr = useState(false), mg = useState([]);
+    var ch = R.useMemo(function () { return isDoc ? docxChapter(src.doc, src.name, lv[0], fr[0], mg[0]) : src; }, [lv[0], fr[0], mg[0]]);
+    function joinCut(i, on) { var m = mg[0].filter(function (x) { return x !== i; }); if (on) m.push(i); mg[1](m); }
+    var sec = ch.section, secs = db.course.sections, same = secs.some(function (s) { return s.id === sec.id; });
     var wh = useState(same ? 'replace' : 'new'), tg = useState(same ? sec.id : (secs[0] ? secs[0].id : '')), err = useState('');
+    useEffect(function () { if (same && wh[0] === 'new') { wh[1]('replace'); tg[1](sec.id); } }, [sec.id]);
     var a = useState(function () {
       if (same) return secAudience(db, secs.filter(function (s) { return s.id === sec.id; })[0]);
-      var ids = tracksOf(db).map(function (x) { return x.id; });
-      return ch.tracks === 'all' ? { mode: 'all', tracks: [], users: [] } : { mode: 'tracks', tracks: ch.tracks.filter(function (x) { return ids.indexOf(x) >= 0; }), users: [] };
+      if (ch.aud) return { all: !!ch.aud.all, positions: ch.aud.positions || [], depts: ch.aud.depts || [], users: [] };
+      if (ch.tracks === 'all') return { all: true, positions: [], depts: [], users: [] };
+      var pos = []; tracksOf(db).forEach(function (x) { if (ch.tracks.indexOf(x.id) >= 0) (x.positions || []).forEach(function (q) { if (pos.indexOf(q) < 0) pos.push(q); }); });
+      return { all: !pos.length, positions: pos, depts: [], users: [] };
     });
     var q = sec.lessons.reduce(function (n, l) { return n + l.quiz.length; }, 0);
     function go() {
       if (wh[0] !== 'new' && !tg[0]) { err[1](t('imp_pick_sec')); return; }
       if (!audOk(a[0])) { err[1](t('aud_pick_one')); return; }
+      if (!sec.lessons.length) { err[1](t('imp_doc_empty')); return; }
       if (importChapter(p, ch, { where: wh[0], target: tg[0], aud: a[0] })) p.onClose();
     }
     var where = [['new', t('imp_w_new'), same], ['replace', t('imp_w_replace'), !secs.length], ['append', t('imp_w_append'), !secs.length]];
     return h(Modal, { t: t, hid: 'imp-h', className: 'imp-dlg', onClose: p.onClose },
       h('h2', { className: 'lor-h', id: 'imp-h' }, t('imp_dlg_t')),
-      h('div', { className: 'imp-sum' }, h('b', null, sec.title), h('span', { className: 'lor-sm lor-muted' }, tpl(t('imp_dlg_sum'), { n: sec.lessons.length, q: q }))),
+      h('div', { className: 'imp-sum' }, h('b', null, sec.title), h('span', { className: 'lor-sm lor-muted' }, tpl(t('imp_dlg_sum'), { n: sec.lessons.length, q: q }) + (isDoc ? ' · ' + t('imp_doc_noq') : ''))),
+      isDoc ? h('section', { className: 'imp-part' }, h('span', { className: 'lor-eyebrow' }, t('imp_cut')),
+        h('select', { className: 'lor-input slim', id: 'imp-cut', 'aria-label': t('imp_cut'), value: lv[0], onChange: function (e) { lv[1](+e.target.value); mg[1]([]); } },
+          src.doc.levels.map(function (x) { return h('option', { key: x, value: x }, tpl(t('imp_cut_lvl'), { n: x, k: docxChapter(src.doc, src.name, x, false).section.lessons.length })); })
+            .concat(h('option', { key: 0, value: 0 }, t('imp_cut_one')))),
+        h('label', { className: 'check' }, h('input', { type: 'checkbox', checked: fr[0], onChange: function (e) { fr[1](e.target.checked); } }), t('imp_front')),
+        ch.cuts.length > 1 ? h('p', { className: 'lor-sm lor-muted' }, t('imp_join_hint')) : null,
+        h('ul', { className: 'imp-lessons' }, (fr[0] && sec.lessons[0] && sec.lessons[0].title === 'Kirish' ? [h('li', { key: 'intro' }, h('span', null, 'Kirish'))] : []).concat(ch.cuts.map(function (c, i) {
+          return h('li', { key: i, className: cx(c.merged && 'is-merged') }, i === 0 ? h('span', null, c.title)
+            : h('label', { className: 'check' }, h('input', { type: 'checkbox', checked: !c.merged, onChange: function (e) { joinCut(i, !e.target.checked); } }), h('span', null, c.title, c.merged ? h('small', null, ' — ' + t('imp_joined')) : null)));
+        })))) : null,
       h('section', { className: 'imp-part' }, h('span', { className: 'lor-eyebrow' }, t('imp_where')),
         h('div', { className: 'aud-modes', role: 'radiogroup', 'aria-label': t('imp_where') }, where.map(function (w) {
           return h('label', { key: w[0], className: cx('aud-mode', wh[0] === w[0] && 'is-on', w[2] && 'is-off') },
@@ -4049,7 +4083,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         })),
         h(Field, { name: 'trk-d', span: true, multiline: true, rows: 2, label: t('trk_desc') + ' · ' + p.lang.toUpperCase(), value: (draft.desc || {})[p.lang] || '', onChange: function (v) { setD(function (c) { c.desc = c.desc || {}; c.desc[p.lang] = v; }); } }),
         h('h3', { className: 'cms-h' }, t('trk_sections')),
-        h('div', { className: 'ac-chips' }, db.course.sections.map(function (s) {
+        h('div', { className: 'ac-chips' }, db.course.sections.filter(function (s) { return !audHas(audOf(s)); }).map(function (s) {
           return h('label', { key: s.id, className: cx('ac-chip', draft.sections.indexOf(s.id) >= 0 && 'is-on') },
             h('input', { type: 'checkbox', checked: draft.sections.indexOf(s.id) >= 0, onChange: function () { setD(function (c) { var i = c.sections.indexOf(s.id); if (i < 0) c.sections.push(s.id); else c.sections.splice(i, 1); }); } }),
             s.title, h('small', null, ' · ' + s.lessons.length));
@@ -5085,8 +5119,10 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     if (typeof DecompressionStream === 'undefined') return Promise.reject(new Error('nodecomp'));
     return new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer().then(function (ab) { return new Uint8Array(ab); });
   }
-  /* just enough of a zip reader for an .xlsx: the central directory, stored or deflated entries */
-  function unzipXl(buf) {
+  /* just enough of a zip reader for .xlsx and .docx: the central directory, stored or deflated entries.
+     want(name) → 'text' | 'bin' | null (skip) */
+  function unzipXl(buf) { return unzipEntries(buf, function (n) { return /^xl\/(sharedStrings\.xml|workbook\.xml|worksheets\/sheet\d+\.xml|_rels\/workbook\.xml\.rels)$/.test(n) ? 'text' : null; }); }
+  function unzipEntries(buf, want) {
     var b = new Uint8Array(buf), e = -1, files = {}, jobs = [];
     for (var i = b.length - 22; i >= Math.max(0, b.length - 65557); i--) if (u32(b, i) === 0x06054b50) { e = i; break; }
     if (e < 0) return Promise.reject(new Error('zip'));
@@ -5095,11 +5131,148 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       var method = u16(b, off + 10), csize = u32(b, off + 20), nl = u16(b, off + 28), xl = u16(b, off + 30), cl = u16(b, off + 32), lho = u32(b, off + 42);
       var name = new TextDecoder().decode(b.subarray(off + 46, off + 46 + nl));
       off += 46 + nl + xl + cl;
-      if (!/^xl\/(sharedStrings\.xml|workbook\.xml|worksheets\/sheet\d+\.xml|_rels\/workbook\.xml\.rels)$/.test(name)) continue;
+      var kind = want(name); if (!kind) continue;
       var st = lho + 30 + u16(b, lho + 26) + u16(b, lho + 28), data = b.subarray(st, st + csize);
-      jobs.push((function (nm, mt, dt) { return (mt === 0 ? Promise.resolve(dt) : inflateRaw(dt)).then(function (x) { files[nm] = new TextDecoder().decode(x); }); })(name, method, data));
+      jobs.push((function (nm, mt, dt, kd) { return (mt === 0 ? Promise.resolve(dt) : inflateRaw(dt)).then(function (x) { files[nm] = kd === 'bin' ? x : new TextDecoder().decode(x); }); })(name, method, data, kind));
     }
     return Promise.all(jobs).then(function () { return files; });
+  }
+  /* ---------- a chapter from Word (.docx), read in the browser: the text goes only to the server ----------
+     Paragraphs with their heading level (styles: «heading N», outline level), lists (numbering), bold/italic, tables,
+     pictures (data: URI, the server moves them to files). docxChapter() cuts it into lessons by the chosen heading level:
+     if some headings of that level are numbered, only the numbered ones start lessons (the rest stay subheadings inside) */
+  function uzQuotes(x) { return String(x).replace(/([OoGg])['’`ʼ‘]/g, '$1‘').replace(/([A-Za-z])['`ʼ](?=[A-Za-z])/g, '$1’'); }
+  function sentence(x) { x = String(x).trim(); return /[a-zа-я]/.test(x) ? x : x.charAt(0) + x.slice(1).toLowerCase(); }
+  function parseDocx(buf) {
+    return unzipEntries(buf, function (n) { return /^word\/(document|styles|numbering)\.xml$|^word\/_rels\/document\.xml\.rels$/.test(n) ? 'text' : /^word\/media\/[^/]+\.(png|jpe?g|gif)$/i.test(n) ? 'bin' : null; }).then(function (f) {
+      if (!f['word/document.xml']) throw new Error('docx');
+      var P = new DOMParser(), X = function (k) { return f[k] ? P.parseFromString(f[k], 'application/xml') : null; };
+      var doc = X('word/document.xml'), sty = X('word/styles.xml'), num = X('word/numbering.xml'), rel = X('word/_rels/document.xml.rels');
+      var A = function (el, n) { return el ? el.getAttribute(n) : null; }, kid = function (el, n) { if (!el) return null; for (var c = el.firstChild; c; c = c.nextSibling) if (c.nodeName === n) return c; return null; };
+      // styles: id → { lvl (1..9, 0 = title), num (style numbering), base }
+      var styles = {};
+      if (sty) Array.prototype.forEach.call(sty.getElementsByTagName('w:style'), function (st) {
+        var id = A(st, 'w:styleId'), nm = String(A(kid(st, 'w:name'), 'w:val') || '').toLowerCase(), pp = kid(st, 'w:pPr'), ol = A(kid(pp, 'w:outlineLvl'), 'w:val');
+        var m = /^(heading|заголовок|sarlavha)\s*(\d)$/.exec(nm) || /^heading(\d)$/i.exec(id || '');
+        styles[id] = { lvl: nm === 'title' ? 0 : m ? +(m[2] || m[1]) : ol != null && +ol < 9 ? +ol + 1 : null, num: !!kid(pp, 'w:numPr'), base: A(kid(st, 'w:basedOn'), 'w:val') };
+      });
+      function styleOf(id, k) { for (var i = 0; id && styles[id] && i < 10; i++, id = styles[id].base) if (styles[id][k] != null && styles[id][k] !== false) return styles[id][k]; return null; }
+      // numbering: numId → abstract → level formats (bullet = a bulleted list)
+      var fmt = {};
+      if (num) {
+        var abs = {};
+        Array.prototype.forEach.call(num.getElementsByTagName('w:abstractNum'), function (a) { var lv = {}; Array.prototype.forEach.call(a.getElementsByTagName('w:lvl'), function (l) { lv[A(l, 'w:ilvl')] = A(kid(l, 'w:numFmt'), 'w:val'); }); abs[A(a, 'w:abstractNumId')] = lv; });
+        Array.prototype.forEach.call(num.getElementsByTagName('w:num'), function (n) { fmt[A(n, 'w:numId')] = abs[A(kid(n, 'w:abstractNumId'), 'w:val')] || {}; });
+      }
+      var rels = {};
+      if (rel) Array.prototype.forEach.call(rel.getElementsByTagName('Relationship'), function (r) { rels[A(r, 'Id')] = 'word/' + String(A(r, 'Target') || '').replace(/^\.?\//, ''); });
+      function img(id) {
+        var data = f[rels[id]]; if (!data || data.length < 200 || data.length > 1500000) return '';   // tiny placeholders and huge pictures — no
+        var ext = rels[id].split('.').pop().toLowerCase(), bin = '';
+        for (var i = 0; i < data.length; i += 0x8000) bin += String.fromCharCode.apply(null, data.subarray(i, i + 0x8000));
+        return '<img src="data:image/' + (ext === 'jpg' ? 'jpeg' : ext) + ';base64,' + btoa(bin) + '" alt="">';
+      }
+      function own(el, p) { for (var x = el.parentNode; x; x = x.parentNode) if (x.nodeName === 'w:p') return x === p; return false; }
+      function inline(p) {
+        var out = '', cur = '', fb = false, fi = false;
+        function flush() { if (cur) out += (fb ? '<strong>' : '') + (fi ? '<em>' : '') + cur + (fi ? '</em>' : '') + (fb ? '</strong>' : ''); cur = ''; }
+        Array.prototype.forEach.call(p.getElementsByTagName('w:r'), function (r) {
+          if (!own(r, p)) return;
+          var rp = kid(r, 'w:rPr'), on = function (n) { var e = kid(rp, n); return !!e && !/^(0|false|off)$/.test(A(e, 'w:val') || ''); };
+          var b = on('w:b'), i = on('w:i'), txt = '';
+          for (var c = r.firstChild; c; c = c.nextSibling) {
+            if (c.nodeName === 'w:t') txt += esc(c.textContent);
+            else if (c.nodeName === 'w:tab') txt += ' ';
+            else if (c.nodeName === 'w:br' || c.nodeName === 'w:cr') txt += '<br>';
+            else if (c.nodeName === 'w:noBreakHyphen') txt += '-';
+            else if (c.nodeName === 'w:drawing' || c.nodeName === 'w:pict') { var bl = c.getElementsByTagName('a:blip')[0], im = c.getElementsByTagName('v:imagedata')[0]; flush(); out += img(bl ? A(bl, 'r:embed') : A(im, 'r:id')); }
+          }
+          if (!txt) return;
+          if (b !== fb || i !== fi) { flush(); fb = b; fi = i; }
+          cur += txt;
+        });
+        flush();
+        return uzQuotes(out).replace(/<\/strong><strong>|<\/em><em>/g, '').trim();
+      }
+      function plainOf(html) { return html.replace(/<[^>]+>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim(); }
+      var blocks = [];
+      function walk(el) {
+        for (var c = el.firstChild; c; c = c.nextSibling) {
+          if (c.nodeName === 'w:sdt') { var sc = kid(c, 'w:sdtContent'); if (sc) walk(sc); continue; }
+          if (c.nodeName === 'w:tbl') {
+            var rows = Array.prototype.filter.call(c.getElementsByTagName('w:tr'), function (tr) { return tr.parentNode === c; }).map(function (tr) {
+              return '<tr>' + Array.prototype.filter.call(tr.childNodes, function (tc) { return tc.nodeName === 'w:tc'; }).map(function (tc) {
+                return '<td>' + Array.prototype.filter.call(tc.childNodes, function (x) { return x.nodeName === 'w:p'; }).map(inline).filter(Boolean).join('<br>') + '</td>';
+              }).join('') + '</tr>';
+            }).join('');
+            if (rows) blocks.push({ k: 'html', html: '<table>' + rows + '</table>' });
+            continue;
+          }
+          if (c.nodeName !== 'w:p') continue;
+          var pp = kid(c, 'w:pPr'), sid = A(kid(pp, 'w:pStyle'), 'w:val'), np = kid(pp, 'w:numPr'), html = inline(c);
+          var ol = A(kid(pp, 'w:outlineLvl'), 'w:val'), lvl = ol != null && +ol < 9 ? +ol + 1 : styleOf(sid, 'lvl');
+          var numbered = !!np || !!styleOf(sid, 'num'), nid = np ? A(kid(np, 'w:numId'), 'w:val') : null, il = np ? A(kid(np, 'w:ilvl'), 'w:val') || '0' : '0';
+          if (!plainOf(html) && html.indexOf('<img') < 0) continue;
+          if (lvl != null) blocks.push({ k: 'h', lvl: lvl, num: numbered && nid !== '0', text: plainOf(html) });
+          else if (np && nid !== '0') blocks.push({ k: 'li', ul: (fmt[nid] || {})[il] === 'bullet', html: html });
+          else blocks.push({ k: 'p', html: html });
+        }
+      }
+      walk(doc.getElementsByTagName('w:body')[0] || doc);
+      var levels = []; blocks.forEach(function (b) { if (b.k === 'h' && b.lvl > 0 && levels.indexOf(b.lvl) < 0) levels.push(b.lvl); }); levels.sort();
+      return { blocks: blocks, levels: levels };
+    });
+  }
+  /* the cut: lvl — heading level that starts a lesson (0 — the whole file is one lesson); front — the text before the
+     first lesson becomes the lesson «Kirish»; merge — numbers of the cuts that join the previous lesson (their heading
+     becomes a subheading there). Lessons start only after the chapter title line («2-BOB …»): what stands before it —
+     a notice, the table of contents — is the front. Lesson ids: <chapter>-1, -2… (b2-1 for «2-bob»), «Kirish» — <chapter>-0 */
+  function docxChapter(doc, fileName, lvl, front, merge) {
+    var bl = doc.blocks, titleIdx = -1, titleRaw = null;
+    merge = merge || [];
+    function txtOf(b) { return b.k === 'h' ? b.text : b.html ? b.html.replace(/<[^>]+>/g, '').replace(/&quot;/g, '"').replace(/&amp;/g, '&').trim() : ''; }
+    bl.some(function (b, i) { var x = txtOf(b); if ((b.k === 'h' || b.k === 'p') && x.length < 160 && /\b\d+\s*-\s*bob\b/i.test(x)) { titleRaw = x; titleIdx = i; return true; } return false; });
+    var n = titleRaw ? +/(\d+)\s*-\s*bob/i.exec(titleRaw)[1] : null;
+    var title = titleRaw ? n + '-bob. ' + sentence(titleRaw.replace(/^.*?\d+\s*-\s*bob\.?\s*/i, '')) : String(fileName || 'Yangi bob').replace(/\.docx$/i, '');
+    var after = function (i) { return i > titleIdx; };
+    var useNum = bl.some(function (b, i) { return after(i) && b.k === 'h' && b.lvl === lvl && b.num; });
+    function isCut(b, i) { return lvl > 0 && after(i) && b.k === 'h' && b.lvl === lvl && (!useNum || b.num) && b.text.length <= 160; }
+    function norm(x) { return String(x).toUpperCase().replace(/[^A-ZА-Я0-9]+/g, ''); }
+    function list(it) { return (it.ul ? '<ul>' : '<ol>') + it.li.join('') + (it.ul ? '</ul>' : '</ol>'); }
+    function build(head, body) {
+      var out = [], items = null;
+      body.forEach(function (b) {
+        if (b.k !== 'li' && items) { out.push(list(items)); items = null; }
+        if (b.k === 'li') { if (items && items.ul !== b.ul) { out.push(list(items)); items = null; } items = items || { ul: b.ul, li: [] }; items.li.push('<li>' + b.html + '</li>'); return; }
+        if (b.k === 'html') { out.push(b.html); return; }
+        var tx = txtOf(b);
+        if (!out.length && head && norm(tx) && norm(head).indexOf(norm(tx)) >= 0) return;   // the lesson title repeated under itself
+        var il = /^ILOVA[- ]?(\d+(?:\.\d+)?)\.?\s*(.*?)\.?$/i.exec(tx);
+        if (il) { out.push('<div class="ilova"><b>ILOVA-' + il[1] + '</b><span>' + esc(sentence(il[2])) + '</span></div>'); return; }
+        if (b.k === 'h') out.push(b.lvl <= lvl + 1 ? '<h3>' + esc(tx) + '</h3>' : '<h4>' + esc(tx) + '</h4>');
+        else out.push('<p>' + b.html + '</p>');
+      });
+      if (items) out.push(list(items));
+      return sanitize(out.join('\n'));
+    }
+    var id = n ? 'b' + n : 'c' + Date.now().toString(36), parts = [], pre = [], cur = null;
+    bl.forEach(function (b, i) {
+      if (i === titleIdx) return;
+      if (isCut(b, i)) { cur = { head: b.text, body: [] }; parts.push(cur); return; }
+      (cur ? cur.body : pre).push(b);
+    });
+    var keep = [];
+    parts.forEach(function (x, i) {
+      if (i > 0 && merge.indexOf(i) >= 0) { var pv = keep[keep.length - 1]; pv.body = pv.body.concat([{ k: 'h', lvl: lvl, text: x.head }], x.body); x.merged = true; }
+      else keep.push({ head: x.head, body: x.body.slice() });
+    });
+    var lessons = keep.map(function (x, i) { return { id: id + '-' + (i + 1), title: (n ? n + '.' + (i + 1) + '. ' : '') + sentence(x.head), html: build(x.head, x.body), quiz: [] }; });
+    if (pre.length && (front || !lessons.length)) {
+      var intro = build(null, pre);
+      if (intro) lessons.unshift({ id: id + (lessons.length ? '-0' : '-1'), title: lessons.length ? 'Kirish' : title.replace(/^\d+-bob\.\s*/, ''), html: intro, quiz: [] });
+    }
+    return { section: { id: id, title: title, officialOnly: false, lessons: lessons }, aud: null, tracks: [],
+      cuts: parts.map(function (x) { return { title: sentence(x.head), merged: !!x.merged }; }) };
   }
   function colIdx(ref) { var m = /^([A-Z]+)/.exec(ref || ''); if (!m) return -1; var n = 0; for (var i = 0; i < m[1].length; i++) n = n * 26 + m[1].charCodeAt(i) - 64; return n - 1; }
   function parseXLSX(buf) {
@@ -6380,7 +6553,9 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
 
     var ls = flat(db.course), idx = ls.findIndex(function (x) { return x.id === l.id; }), nxt = ls[idx + 1];
     var statusBox = null;
-    if (st === 'exam-ready') statusBox = pr.score == null
+    if (st === 'exam-ready') statusBox = pr.score == null && !(l.quiz || []).length
+      ? h('div', { className: 'status-box is-info' }, h('div', null, h('b', null, t('no_test_t')), h('p', null, t('wait_oral'))), h(Badge, { status: 'exam-ready', lang: p.lang }))
+      : pr.score == null
       ? h('div', { className: 'status-box is-info' }, h('div', null, h('b', null, t('test_stage')), h('p', null, t('test_stage_sub'))), h(Btn, { variant: 'primary', arrow: true, onClick: function () { p.go({ name: 'quiz', id: l.id }); } }, t('start_test')))
       : h('div', { className: 'status-box is-info' }, h('div', null, h('b', null, t('test_done') + ': ' + pr.score + '%'), h('p', null, t('wait_oral'))), h(Badge, { status: 'exam-ready', lang: p.lang }));
     else if (st === 'passed') statusBox = h('div', { className: 'status-box is-info' }, h('div', null, h('b', null, '✓ ' + t('st_passed')), pr.comment ? h('p', null, t('comment') + ': ' + pr.comment) : null), nxt && lessonStatus(db, u, nxt.id) !== 'locked' ? h(Btn, { variant: 'primary', arrow: true, onClick: function () { p.go({ name: 'lesson', id: nxt.id }); } }, t('go_next')) : null);
@@ -6810,6 +6985,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var sel = useState(p.lessonId || (first && first.id)), id = sel[0];
     var lesson = findLesson(db.course, id);
     var dr = useState(null), draft = dr[0], cf = useState(false), notif = useState(null), baseRef = useRef(''), tab = useState(p.tab || 'lessons'), audSec = useState(null);
+    var openCh = useState(function () { var c = db.course.sections.filter(function (s) { return s.lessons.some(function (l) { return l.id === id; }); })[0]; return c ? c.id : null; });
+    useEffect(function () { var c = db.course.sections.filter(function (s) { return s.lessons.some(function (l) { return l.id === id; }); })[0]; if (c) openCh[1](c.id); }, [id]);
     useEffect(function () { if (p.tab) tab[1](p.tab); }, [p.tab]);
     useEffect(function () {
       var l = findLesson(db.course, id);
@@ -6822,7 +6999,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     function setD(fn) { var d = clone(draft); fn(d); dr[1](d); }
     function secUpdate(sid, fn) { p.update(function (d) { d.course.sections.forEach(function (s) { if (s.id === sid) fn(s); }); }); }
     function addLesson(sid) { var nid = 'l' + Date.now().toString(36); p.update(function (d) { d.course.sections.forEach(function (s) { if (s.id === sid) s.lessons.push({ id: nid, title: 'Yangi dars', intro: '', html: '<p></p>', steps: [], limit: '', video: { title: '', duration: '05:00' }, quiz: [] }); }); }); sel[1](nid); }
-    function addSection() { p.update(function (d) { d.course.sections.push({ id: 's' + Date.now().toString(36), title: 'Yangi bo‘lim', officialOnly: false, lessons: [] }); }); }
+    function addSection() { var nid = 's' + Date.now().toString(36); p.update(function (d) { d.course.sections.push({ id: nid, title: 'Yangi bob', officialOnly: false, lessons: [] }); }); openCh[1](nid); }
     function save() {
       var n = 0, clean = clone(draft); delete clean._v;
       clean.html = sanitize(clean.html); clean.steps = clean.steps.filter(function (x) { return x.text && x.text.trim(); });
@@ -6855,20 +7032,35 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       h('div', { className: 'cms' },
         audSec[0] && db.course.sections.some(function (s) { return s.id === audSec[0]; }) ? h(AudienceModal, Object.assign({}, p, { section: db.course.sections.filter(function (s) { return s.id === audSec[0]; })[0], onClose: function () { audSec[1](null); } })) : null,
         h('aside', { className: 'cms-tree' },
-          db.course.sections.map(function (s, si) {
-            return h('div', { key: s.id, className: 'cms-sec' },
-              h('input', { className: 'lor-input cms-sec-title', 'aria-label': t('sec_title'), value: s.title, onChange: function (e) { var v = e.target.value; secUpdate(s.id, function (x) { x.title = v; }); } }),
-              h('label', { className: 'check' }, h('input', { type: 'checkbox', checked: !!s.officialOnly, onChange: function (e) { var v = e.target.checked; secUpdate(s.id, function (x) { x.officialOnly = v; }); } }), t('official_only')),
+          // the two ways in: a file (Word or .json) or an empty chapter to write by hand
+          h('div', { className: 'ch-acts' },
+            h(CourseImport, { t: t, db: p.db, lang: p.lang, update: p.update, say: p.say }),
+            h(Btn, { variant: 'outline', size: 'sm', onClick: addSection }, '+ ' + t('add_section'))),
+          db.course.sections.length ? null : h('p', { className: 'lor-sm lor-muted ch-empty' }, t('ch_none')),
+          db.course.sections.map(function (s) {
+            var n = chapNo(s.title), q = s.lessons.reduce(function (a, l) { return a + (l.quiz || []).length; }, 0), isOpen = openCh[0] === s.id;
+            return h('div', { key: s.id, className: cx('ch-card', isOpen && 'is-open') },
+              h('button', { type: 'button', className: 'ch-head', 'aria-expanded': isOpen, onClick: function () { openCh[1](isOpen ? null : s.id); } },
+                h('span', { className: 'ch-no' }, n ? n + '-BOB' : t('ch_word')),
+                h('b', { className: 'ch-title' }, chTitle(s)),
+                h('span', { className: 'ch-meta' }, tpl(t('ch_meta'), { n: s.lessons.length, q: q }) + (s.officialOnly ? ' · ' + t('ch_official') : '')),
+                h('span', { className: 'ch-chev', 'aria-hidden': true }, isOpen ? '▴' : '▾')),
               h('button', { type: 'button', className: 'cms-aud', onClick: function () { audSec[1](s.id); } }, h('span', null, t('aud_label') + ':'), ' ', h('b', null, audText(secAudience(db, s), t))),
-              h('ul', null, s.lessons.map(function (l) { return h('li', { key: l.id }, h('button', { type: 'button', className: cx('cms-l', l.id === id && 'is-on'), onClick: function () { sel[1](l.id); } }, l.title || '—')); })),
-              h('button', { type: 'button', className: 'app-link', onClick: function () { addLesson(s.id); } }, '+ ' + t('add_lesson')),
-              // only an empty section can go: lessons (and the results on them) are deleted one by one, on purpose
-              s.lessons.length ? null : h('button', { type: 'button', className: 'app-link danger cms-sec-del', onClick: function () {
-                p.update(function (d) { d.course.sections = d.course.sections.filter(function (x) { return x.id !== s.id; }); (d.tracks || []).forEach(function (tr) { tr.sections = (tr.sections || []).filter(function (x) { return x !== s.id; }); }); });
-              } }, t('del_section')));
-          }),
-          h(Btn, { variant: 'outline', size: 'sm', onClick: addSection }, '+ ' + t('add_section')),
-          h(CourseImport, { t: t, db: p.db, lang: p.lang, update: p.update, say: p.say })),
+              isOpen ? h('div', { className: 'ch-body' },
+                s.lessons.length ? h('ul', { className: 'ch-lessons' }, s.lessons.map(function (l) {
+                  return h('li', { key: l.id }, h('button', { type: 'button', className: cx('cms-l', l.id === id && 'is-on'), onClick: function () { sel[1](l.id); } },
+                    h('span', null, l.title || '—'), (l.quiz || []).length ? null : h('small', { className: 'ch-noq' }, t('ch_noq'))));
+                })) : h('p', { className: 'lor-sm lor-muted' }, t('ch_empty')),
+                h('button', { type: 'button', className: 'app-link', onClick: function () { addLesson(s.id); } }, '+ ' + t('add_lesson')),
+                h('div', { className: 'ch-set' },
+                  h('label', { className: 'lor-sm', htmlFor: 'ch-t-' + s.id }, t('sec_title')),
+                  h('input', { id: 'ch-t-' + s.id, className: 'lor-input slim cms-sec-title', value: s.title, onChange: function (e) { var v = e.target.value; secUpdate(s.id, function (x) { x.title = v; }); } }),
+                  h('label', { className: 'check' }, h('input', { type: 'checkbox', checked: !!s.officialOnly, onChange: function (e) { var v = e.target.checked; secUpdate(s.id, function (x) { x.officialOnly = v; }); } }), t('official_only')),
+                  // only an empty chapter can go: lessons (and the results on them) are deleted one by one, on purpose
+                  s.lessons.length ? null : h('button', { type: 'button', className: 'app-link danger cms-sec-del', onClick: function () {
+                    p.update(function (d) { d.course.sections = d.course.sections.filter(function (x) { return x.id !== s.id; }); (d.tracks || []).forEach(function (tr) { tr.sections = (tr.sections || []).filter(function (x) { return x !== s.id; }); }); });
+                  } }, t('del_section')))) : null);
+          })),
         draft && lesson ? h('section', { className: 'box cms-edit' },
           openQ.length ? h('div', { className: 'status-box is-fail' }, h('div', null, h('b', null, '? ' + openQ.length + ' · ' + t('tab_q')), openQ.map(function (r) { return h('p', { key: r.id }, userOf(db, r.userId).name + ': ' + r.text); }))) : null,
           notif[0] ? h(SopNotifyPanel, Object.assign({}, p, { key: notif[0].lessonId + notif[0].title, x: notif[0], onDone: function () { notif[1](null); } })) : null,
@@ -6913,7 +7105,9 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           h('div', { className: 'cms-foot' },
             cf[0] ? h('span', { className: 'cms-confirm' }, t('confirm_del'), ' ', h(Btn, { variant: 'ghost', size: 'sm', onClick: function () { cf[1](false); } }, t('cancel')), h(Btn, { variant: 'outline', size: 'sm', onClick: del }, t('yes_del')))
               : h('button', { type: 'button', className: 'app-link danger', onClick: function () { cf[1](true); } }, t('del_lesson')),
-            h(Btn, { variant: 'primary', arrow: true, disabled: !draft.title.trim(), onClick: save }, t('save')))) : h('section', { className: 'box' }, h('p', { className: 'lor-muted' }, '—'))));
+            h(Btn, { variant: 'primary', arrow: true, disabled: !draft.title.trim(), onClick: save }, t('save')))) : h('section', { className: 'box ch-guide' },
+          h('h2', { className: 'lor-h' }, t('ch_guide_t')),
+          h('ol', null, ['ch_guide_1', 'ch_guide_2', 'ch_guide_3'].map(function (k) { return h('li', { key: k }, t(k)); })))));
   }
 
   /* ---------------- admin: staff ---------------- */
@@ -7352,9 +7546,13 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       return out;
     });
     if (bad) return null;
+    var strs = function (l) { return Array.isArray(l) ? l.filter(function (q) { return typeof q === 'string' && q.trim(); }) : []; };
+    var fa = x.aud && typeof x.aud === 'object' ? { all: !!x.aud.all, positions: strs(x.aud.positions), depts: strs(x.aud.depts) } : null;
     return { section: { id: s.id, title: s.title.trim(), officialOnly: !!s.officialOnly, lessons: lessons },
+      aud: fa && (fa.all || fa.positions.length || fa.depts.length) ? fa : null,
       tracks: x.tracks === 'all' ? 'all' : Array.isArray(x.tracks) ? x.tracks.filter(function (t) { return typeof t === 'string'; }) : [] };
   }
+  function chTitle(s) { return String(s.title || '').replace(/^\s*\d+\s*-\s*bob\.?\s*/i, '') || '—'; }
   function chapNo(title) { var m = /^(\d+)\s*-\s*bob\b/i.exec(title || ''); return m ? +m[1] : null; }
   /* where: 'new' — before the first chapter with a higher number (2-bob before 4-bob; the intro without a number stays
      first); 'replace' — the chosen section gets the file's title and lessons; 'append' — the lessons are added to it.
@@ -7386,6 +7584,12 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     function pick(e) {
       var f = e.target.files && e.target.files[0]; e.target.value = '';
       if (!f) return;
+      if (/\.docx$/i.test(f.name)) {
+        var rb = new FileReader();
+        rb.onload = function () { parseDocx(rb.result).then(function (doc) { if (!doc.blocks.length) { p.say(t('imp_doc_empty')); return; } pend[1]({ doc: doc, name: f.name }); }, function () { p.say(t('imp_doc_bad')); }); };
+        rb.readAsArrayBuffer(f);
+        return;
+      }
       var rd = new FileReader();
       rd.onload = function () {
         var text = String(rd.result || ''), ch = parseChapter(text);
@@ -7403,8 +7607,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     }
     return h('div', { className: 'cms-import' },
       pend[0] ? h(ImportDialog, Object.assign({}, p, { ch: pend[0], onClose: function () { pend[1](null); } })) : null,
-      h('input', { id: 'cms-import', type: 'file', accept: '.json,.html,application/json,text/html', className: 'sr-only', onChange: pick }),
-      h('label', { className: 'lor-btn lor-btn-outline lor-btn-sm', htmlFor: 'cms-import' }, t('imp_btn')),
+      h('input', { id: 'cms-import', type: 'file', accept: '.docx,.json,.html,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/json,text/html', className: 'sr-only', onChange: pick }),
+      h('label', { className: 'lor-btn lor-btn-primary lor-btn-sm', htmlFor: 'cms-import' }, '⇪ ' + t('imp_btn')),
       h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('imp_hint')));
   }
   /* bottom-left: no connection, changes the server did not take, outdated server code (SOP manager) */

@@ -414,7 +414,7 @@ const pickN = n => ({ userId: n.userId, kind: n.kind, route: n.route, err: n.err
 test('since: та же версия — без данных; после правки — новое состояние', () => {
   const { D, A } = platform();
   const v = D({ action: 'load' });
-  assert.deepEqual(D({ action: 'since', rev: v.rev }), { ok: true, v: 11, ai: false, rev: v.rev, same: true });
+  assert.deepEqual(D({ action: 'since', rev: v.rev }), { ok: true, v: 12, ai: false, rev: v.rev, same: true });
   A({ action: 'patch', ops: [{ op: 'set', path: ['notifications', { id: 9 }], value: { id: 9, userId: 10427, text: 'yangi' }, after: null }] });
   const n = D({ action: 'since', rev: v.rev });
   assert.equal(n.rev, v.rev + 1); assert.equal(n.state.notifications[0].text, 'yangi');
@@ -710,4 +710,21 @@ test('раздел для выбранных сотрудников (section.use
   // назначили ещё одного — второй видит в списке только себя
   A({ action: 'patch', ops: [{ op: 'set', path: ['course', 'sections', { id: 'b2' }, 'users'], value: [10427, 10391] }] });
   assert.deepEqual(Z({ action: 'load' }).state.course.sections.find(s => s.id === 'b2').users, [10391]);
+});
+
+test('кто проходит главу (section.aud): должность, отдел, имя или все — остальным глава не уходит', () => {
+  const { A, D, Z, M } = platform();   // D — Mijozlar menejeri (Logistika bo‘limi), Z — Omborchi (Ombor (Yiwu)), M — Logistika menejeri (Logistika bo‘limi)
+  const sec = aud => ({ id: 'b3', title: '3-bob. Test', officialOnly: false, aud, lessons: [{ id: 'b3-1', title: '3.1', html: '<p>x</p>', quiz }] });
+  const sees = who => who({ action: 'load' }).state.course.sections.some(s => s.id === 'b3');
+  const put = aud => assert.deepEqual(A({ action: 'patch', ops: [{ op: 'set', path: ['course', 'sections', { id: 'b3' }], value: sec(aud) }] }).rejected, []);
+  put({ positions: ['Omborchi'] });
+  assert.deepEqual([sees(D), sees(Z), sees(M)], [false, true, false], 'по должности');
+  put({ depts: ['Logistika bo‘limi'] });
+  assert.deepEqual([sees(D), sees(Z), sees(M)], [true, false, true], 'по отделу');
+  put({ positions: ['Omborchi'], users: [10288] });
+  assert.deepEqual([sees(D), sees(Z), sees(M)], [false, true, true], 'должность или имя');
+  assert.deepEqual(Z({ action: 'load' }).state.course.sections.find(s => s.id === 'b3').aud.users, [], 'чужие имена не уходят');
+  put({ all: true });
+  assert.deepEqual([sees(D), sees(Z), sees(M)], [true, true, true], 'все');
+  assert.equal(A({ action: 'load' }).state.course.sections.some(s => s.id === 'b3'), true);
 });
