@@ -5564,6 +5564,21 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   /* отметка прихода/ухода в программе: включена по умолчанию, SOP-менеджер может выключить (settings.selfClock.on) */
   function selfClockOn(db) { var s = (db.settings || {}).selfClock; return s ? s.on !== false : true; }
   var CLK_ERR = { done: 'clk_e_done', bad: 'clk_e_bad', off: 'clk_e_off', forbidden: 'clk_e_forbidden', net: 'srv_net', busy: 'srv_busy' };
+  /* заметное напоминание наверху главной: висит, пока сотрудник не отметил приход (не пропадает — «спрашивает постоянно») */
+  function ClockBanner(p) {
+    var t = p.t, db = p.db, u = p.user, busy = useState(false);
+    if (!(selfClockOn(db) && u.role === 'employee')) return null;
+    var o = attDay(db, u, dayKey(Date.now()), workWeek(db));
+    if (!(!o.rec || o.rec.src === 'app') || (o.rec && o.rec.in)) return null;   // турникет закрыл день или приход уже отмечен
+    function clockIn() {
+      if (busy[0]) return; busy[1](true);
+      SV.clock('in').then(function () { busy[1](false); SAY('clk_in_ok'); }, function (e) { busy[1](false); SAY(CLK_ERR[e && e.code] || 'clk_err'); });
+    }
+    return h('section', { className: 'clock-banner' },
+      h('svg', { className: 'cb-ico', width: 24, height: 24, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true }, h('circle', { cx: 12, cy: 12, r: 9 }), h('path', { d: 'M12 7.5V12l3 1.8' })),
+      h('div', { className: 'cb-body' }, h('b', null, t('clk_banner_t')), h('span', null, t('clk_banner_sub'))),
+      h(Btn, { variant: 'primary', arrow: true, disabled: busy[0], onClick: clockIn }, busy[0] ? t('clk_wait') : t('clk_in')));
+  }
   function AttHome(p) {
     var t = p.t, db = p.db, u = p.user, k = dayKey(Date.now()), week = workWeek(db), o = attDay(db, u, k, week), c = attMonth(db, u, ymOf(Date.now())), sc = schedOf(db, u);
     var busy = useState('');
@@ -5578,12 +5593,12 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var shown = o.in != null || o.st === 'absent' || o.st === 'excused' ? o : null;
     return h('section', { className: 'box at-home' },
       h('div', { className: 'at-home-h' }, h('span', { className: 'lor-eyebrow' }, t('at_home_t')), h('span', { className: 'lor-sm lor-muted' }, sc.start + '–' + sc.end)),
-      canClock ? h('div', { className: 'at-clock' },
-          !inT ? h(Btn, { variant: 'primary', arrow: true, disabled: !!busy[0], onClick: function () { clock('in'); } }, busy[0] === 'in' ? t('clk_wait') : t('clk_in'))
-          : !outT ? h(F, null,
+      canClock && inT ? h('div', { className: 'at-clock' },
+          !outT ? h(F, null,
               h('div', { className: 'at-clock-st' }, h('b', null, inT), h('span', null, t('clk_came'))),
               h(Btn, { variant: 'outline', disabled: !!busy[0], onClick: function () { clock('out'); } }, busy[0] === 'out' ? t('clk_wait') : t('clk_out')))
           : h('div', { className: 'at-clock-done' }, h('b', null, inT + ' → ' + outT), h('span', null, t('clk_done'))))
+        : canClock ? h('div', { className: 'at-today is-wait' }, h('span', null, t('clk_not_started')))
         : shown ? h('div', { className: 'at-today' }, h('b', null, shown.in != null ? m2hm(shown.in) : '—'), h('span', null, t('at_today')), h(AttChip, { t: t, o: shown }))
         : h('div', { className: 'at-today is-wait' }, h('span', null, o.st === 'pending' ? t('at_today_pending') : t('at_today_none')),
           last ? h('small', null, tpl(t('at_last'), { d: fmtKs(last.k), x: last.in != null ? m2hm(last.in) : t('at_st_' + last.st) }), ' ', h(AttChip, { t: t, o: last })) : null),
@@ -6660,6 +6675,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       h('div', { className: 'page-head' },
         h('div', null, h('span', { className: 'lor-eyebrow' }, u.position + ' · ' + u.department), h('h1', { className: 'lor-title' }, t('welcome') + ', ' + firstName(u), h(PageTip, { t: t, id: 'home' }))),
         h(Badge, { status: u.status, lang: p.lang })),
+      h(ClockBanner, p),
       (function () {
         var iss = assetsOf(db, u.id).filter(function (a) { return a.status === 'issued'; });
         return iss.length ? h('section', { className: 'lor-notice as-notice' },
