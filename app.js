@@ -5564,20 +5564,81 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   /* отметка прихода/ухода в программе: включена по умолчанию, SOP-менеджер может выключить (settings.selfClock.on) */
   function selfClockOn(db) { var s = (db.settings || {}).selfClock; return s ? s.on !== false : true; }
   var CLK_ERR = { done: 'clk_e_done', bad: 'clk_e_bad', off: 'clk_e_off', forbidden: 'clk_e_forbidden', net: 'srv_net', busy: 'srv_busy' };
+  /* нужно ли сотруднику ещё отметить приход сегодня (приход не отмечен и день не закрыт турникетом) */
+  function clockDue(db, u) {
+    if (!(selfClockOn(db) && u && u.role === 'employee')) return false;
+    var o = attDay(db, u, dayKey(Date.now()), workWeek(db));
+    return (!o.rec || o.rec.src === 'app') && !(o.rec && o.rec.in);
+  }
   /* заметное напоминание наверху главной: висит, пока сотрудник не отметил приход (не пропадает — «спрашивает постоянно») */
   function ClockBanner(p) {
-    var t = p.t, db = p.db, u = p.user, busy = useState(false);
-    if (!(selfClockOn(db) && u.role === 'employee')) return null;
-    var o = attDay(db, u, dayKey(Date.now()), workWeek(db));
-    if (!(!o.rec || o.rec.src === 'app') || (o.rec && o.rec.in)) return null;   // турникет закрыл день или приход уже отмечен
-    function clockIn() {
-      if (busy[0]) return; busy[1](true);
-      SV.clock('in').then(function () { busy[1](false); SAY('clk_in_ok'); }, function (e) { busy[1](false); SAY(CLK_ERR[e && e.code] || 'clk_err'); });
-    }
+    var t = p.t;
+    if (!clockDue(p.db, p.user)) return null;
     return h('section', { className: 'clock-banner' },
       h('svg', { className: 'cb-ico', width: 24, height: 24, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true }, h('circle', { cx: 12, cy: 12, r: 9 }), h('path', { d: 'M12 7.5V12l3 1.8' })),
       h('div', { className: 'cb-body' }, h('b', null, t('clk_banner_t')), h('span', null, t('clk_banner_sub'))),
-      h(Btn, { variant: 'primary', arrow: true, disabled: busy[0], onClick: clockIn }, busy[0] ? t('clk_wait') : t('clk_in')));
+      h(Btn, { variant: 'primary', arrow: true, onClick: p.openClock }, t('clk_in')));
+  }
+  /* модальное окно отметки прихода: простое фото (не биометрия) с камеры по согласию, видимый индикатор, фото — только на сервер.
+     Нет камеры/согласия — можно отметиться без фото, по времени. Окно всегда закрывается («Keyinroq»), чтобы никого не запереть. */
+  function ClockGate(p) {
+    var t = p.t;
+    var cam = useState('init'), busy = useState(false), videoRef = useRef(null), streamRef = useRef(null);
+    useEffect(function () {
+      var dead = false;
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { cam[1]('nocam'); return; }
+      navigator.mediaDevices.getUserMedia({ video: { width: 480, height: 360, facingMode: 'user' }, audio: false }).then(function (s) {
+        if (dead) { s.getTracks().forEach(function (tr) { tr.stop(); }); return; }
+        streamRef.current = s; cam[1]('live');
+      }, function () { cam[1]('nocam'); });
+      return function () { dead = true; if (streamRef.current) { streamRef.current.getTracks().forEach(function (tr) { tr.stop(); }); streamRef.current = null; } };
+    }, []);
+    useEffect(function () { if (cam[0] === 'live' && videoRef.current && streamRef.current) { videoRef.current.srcObject = streamRef.current; videoRef.current.play().catch(function () {}); } }, [cam[0]]);
+    function stop() { if (streamRef.current) { streamRef.current.getTracks().forEach(function (tr) { tr.stop(); }); streamRef.current = null; } }
+    function capture() {
+      var v = videoRef.current; if (!v || !v.videoWidth) return null;
+      var w = 320, hh = Math.round(w * v.videoHeight / v.videoWidth) || 240, c = document.createElement('canvas');
+      c.width = w; c.height = hh; c.getContext('2d').drawImage(v, 0, 0, w, hh);
+      try { return c.toDataURL('image/jpeg', 0.7); } catch (e) { return null; }
+    }
+    function start(withPhoto) {
+      if (busy[0]) return; busy[1](true);
+      SV.clock('in', withPhoto ? capture() : null).then(function () { busy[1](false); stop(); SAY('clk_in_ok'); p.onClose(); },
+        function (e) { busy[1](false); SAY(CLK_ERR[e && e.code] || 'clk_err'); });
+    }
+    function close() { stop(); p.onClose(); }
+    return h('div', { className: 'lor-scrim', onClick: function (e) { if (e.target === e.currentTarget) close(); } },
+      h('div', { className: 'lor-modal clock-modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': t('clk_gate_t') },
+        h('button', { type: 'button', className: 'lor-modal-x', 'aria-label': t('close'), onClick: close }, '×'),
+        h('span', { className: 'lor-eyebrow' }, t('at_sec_t')),
+        h('h3', { className: 'lor-h', style: { marginTop: 4 } }, t('clk_gate_t')),
+        h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('clk_gate_note')),
+        cam[0] === 'live' ? h('div', { className: 'clk-cam' }, h('video', { ref: videoRef, autoPlay: true, playsInline: true, muted: true }), h('span', { className: 'clk-cam-rec' }, '● ' + t('clk_rec')))
+          : cam[0] === 'init' ? h('div', { className: 'clk-cam is-wait' }, h('span', null, t('clk_cam_wait')))
+          : h('div', { className: 'clk-cam is-off' }, h('span', null, t('clk_cam_off'))),
+        h('div', { className: 'lor-modal-actions' },
+          h(Btn, { variant: 'ghost', onClick: close }, t('clk_later')),
+          cam[0] === 'live' ? h(Btn, { variant: 'primary', arrow: true, disabled: busy[0], onClick: function () { start(true); } }, busy[0] ? t('clk_wait') : t('clk_shot_start'))
+            : h(Btn, { variant: 'primary', arrow: true, disabled: busy[0] || cam[0] === 'init', onClick: function () { start(false); } }, busy[0] ? t('clk_wait') : t('clk_nocam_start')))));
+  }
+  /* снимок отметки прихода: по клику берёт файл с сервера и показывает в лайтбоксе. Своё фото видит сотрудник,
+     любое — CEO и SOP-менеджер (сервер проверяет доступ к файлу в file_). Грузится лениво — только при открытии. */
+  function ClockPhoto(p) {
+    var id = String(p.fid || '').replace(/^lmsfile:/, '');
+    var src = useState(null), open = useState(false), busy = useState(false);
+    function show() {
+      if (!id) return; open[1](true);
+      if (!src[0] && !busy[0]) { busy[1](true); SV.file(id).then(function (r) { src[1]('data:' + (r.type || 'image/jpeg') + ';base64,' + r.data); busy[1](false); }, function () { busy[1](false); }); }
+    }
+    if (!id) return null;
+    return h(F, null,
+      h('button', { type: 'button', className: 'clk-thumb', title: p.title || '', 'aria-label': (p.title || '') + ' — surat', onClick: show },
+        h('svg', { width: 15, height: 15, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true }, h('path', { d: 'M4 7h3l1.5-2h7L17 7h3v12H4z' }), h('circle', { cx: 12, cy: 13, r: 3.4 }))),
+      open[0] ? h('div', { className: 'lightbox clk-lightbox', onClick: function () { open[1](false); } },
+        h('div', { className: 'clk-lb-box', onClick: function (e) { e.stopPropagation(); } },
+          busy[0] || !src[0] ? h('span', { className: 'clk-lb-wait' }, '…') : h('img', { src: src[0], alt: p.title || '' }),
+          p.title ? h('span', { className: 'clk-lb-cap' }, p.title) : null,
+          h('button', { type: 'button', className: 'lor-modal-x', 'aria-label': '×', onClick: function (e) { e.stopPropagation(); open[1](false); } }, '×'))) : null);
   }
   function AttHome(p) {
     var t = p.t, db = p.db, u = p.user, k = dayKey(Date.now()), week = workWeek(db), o = attDay(db, u, k, week), c = attMonth(db, u, ymOf(Date.now())), sc = schedOf(db, u);
@@ -5596,8 +5657,9 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       canClock && inT ? h('div', { className: 'at-clock' },
           !outT ? h(F, null,
               h('div', { className: 'at-clock-st' }, h('b', null, inT), h('span', null, t('clk_came'))),
+              o.rec && o.rec.inPhoto ? h(ClockPhoto, { fid: o.rec.inPhoto, title: t('clk_came') + ' · ' + inT }) : null,
               h(Btn, { variant: 'outline', disabled: !!busy[0], onClick: function () { clock('out'); } }, busy[0] === 'out' ? t('clk_wait') : t('clk_out')))
-          : h('div', { className: 'at-clock-done' }, h('b', null, inT + ' → ' + outT), h('span', null, t('clk_done'))))
+          : h('div', { className: 'at-clock-done' }, h('b', null, inT + ' → ' + outT), h('span', null, t('clk_done')), o.rec && o.rec.inPhoto ? h(ClockPhoto, { fid: o.rec.inPhoto, title: inT }) : null))
         : canClock ? h('div', { className: 'at-today is-wait' }, h('span', null, t('clk_not_started')))
         : shown ? h('div', { className: 'at-today' }, h('b', null, shown.in != null ? m2hm(shown.in) : '—'), h('span', null, t('at_today')), h(AttChip, { t: t, o: shown }))
         : h('div', { className: 'at-today is-wait' }, h('span', null, o.st === 'pending' ? t('at_today_pending') : t('at_today_none')),
@@ -5777,6 +5839,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
             h(Av, { name: x.u.name, src: x.u.avatar, size: 34 }),
             h('span', { className: 'at-who' }, h('b', null, x.u.name), h('small', null, x.u.department + ' · ' + o.sc.start + '–' + o.sc.end)),
             h('span', { className: 'at-in' }, h('b', null, o.in != null ? m2hm(o.in) : '—'), h('small', null, t('at_in'))),
+            o.rec && o.rec.inPhoto ? h(ClockPhoto, { fid: o.rec.inPhoto, title: x.u.name + ' · ' + (o.in != null ? m2hm(o.in) : '') }) : null,
             h(AttChip, { t: t, o: o }),
             h('span', { className: 'at-out' }, h('b', null, o.out != null ? m2hm(o.out) : '—'), h('small', null, o.early ? tpl(t('at_early_n'), { n: o.early }) : t('at_out'))),
             h('span', { className: 'at-wk' }, o.worked != null ? fmtMin(o.worked, t) : ''),
@@ -6756,7 +6819,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   function EmployeeApp(p) {
     var t = p.t, db = p.db, u = p.user;
     var r = useHashRoute(EMP_ROUTES, { name: 'home' }), route = r[0], dr = useState(false), ai = useState(false);
-    var ini = useState(false), sv = useState(false), pHide = useState(false), tour = useState(false);
+    var ini = useState(false), sv = useState(false), pHide = useState(false), tour = useState(false), gate = useState(false), gateInit = useRef(false);
     var pal = useState(false); usePalette(pal[0], pal[1]);
     var hintOn = !!u.hints;
     var theme = useThemePref(p.say, t);
@@ -6765,6 +6828,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var leaveRef = useRef(null), dbRef = useRef(db); dbRef.current = db;
     var filled = !!(u.profileComplete && u.assetsDeclaredAt);
     var ready = !!(u.termsAcceptedAt && filled);
+    /* при открытии программы — модальное окно отметки прихода, если сотрудник ещё не отметился сегодня (один раз за заход) */
+    useEffect(function () { if (gateInit.current || !ready) return; gateInit.current = true; if (clockDue(dbRef.current, u)) gate[1](true); }, [ready]);
     function forceGo(x) { r[1](x); dr[1](false); window.scrollTo(0, 0); }
     function go(x) { if (route.name === 'lesson' && leaveRef.current && leaveRef.current(x)) { dr[1](false); return; } forceGo(x); }
     function openNotif(n) {
@@ -6852,7 +6917,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var sections = courseSections(db, u).map(function (s) {
       return { title: s.title, officialOnly: s.officialOnly && u.status !== 'official', lessons: s.lessons.map(function (l) { var st = lessonStatus(db, u, l.id); return { id: l.id, title: l.title, status: st === 'question' || st === 'updated' ? 'in-progress' : st, active: (route.name === 'lesson' || route.name === 'quiz') && route.id === l.id }; }) };
     });
-    var q = Object.assign({}, p, { go: go, openNotif: openNotif, pulseDue: due, openSurvey: function () { sv[1](true); }, openIni: function () { ini[1](true); } });
+    var q = Object.assign({}, p, { go: go, openNotif: openNotif, pulseDue: due, openSurvey: function () { sv[1](true); }, openIni: function () { ini[1](true); }, openClock: function () { gate[1](true); } });
     var main = !filled ? h(ProfilePage, p)
       : route.name === 'lesson' ? h(LessonView, Object.assign({}, q, { id: route.id, forceGo: forceGo, leaveRef: leaveRef, key: route.id }))
       : route.name === 'quiz' ? h(QuizView, Object.assign({}, q, { id: route.id, key: 'q' + route.id }))
@@ -6886,6 +6951,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       due && !pHide[0] && !sv[0] && !ai[0] && !ini[0] && !u.celebrate && route.name !== 'lesson' && route.name !== 'quiz' && route.name !== 'drill' ? h(PulseBubble, { t: t, db: db, user: u, onStart: function () { sv[1](true); }, onLater: snoozePulse, onClose: function () { pHide[1](true); } }) : null,
       sv[0] ? h(SurveyModal, Object.assign({}, p, { key: 'sv', onClose: function () { sv[1](false); pHide[1](true); }, openIni: function () { ini[1](true); } })) : null,
       ini[0] ? h(IniModal, Object.assign({}, p, { key: 'ini', onClose: function () { ini[1](false); }, onList: function () { go({ name: 'ideas' }); } })) : null,
+      gate[0] ? h(ClockGate, Object.assign({}, q, { key: 'gate', onClose: function () { gate[1](false); } })) : null,
       filled ? h(AIMentor, Object.assign({}, p, { open: ai[0], setOpen: ai[1], lessonId: route.name === 'lesson' ? route.id : null, openLesson: function (id) { go({ name: 'lesson', id: id }); } })) : null,
       hintOn && !tour[0] && u.tourDone ? h(HintLayer, { t: t }) : null,
       pal[0] ? h(Palette, Object.assign({}, q, { onClose: function () { pal[1](false); }, go: function (x) { go(x); } })) : null,

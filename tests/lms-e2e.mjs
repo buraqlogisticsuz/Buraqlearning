@@ -99,6 +99,9 @@ try {
   await settle(A);
   step('SOP-менеджер вошёл, шаблоны уровней и программ на сервере');
   assert.ok(srv.g.state().levels.length > 0 && srv.g.state().tracks.length > 0);
+  // отметка прихода в программе по умолчанию включена; в основных сценариях выключаем, чтобы окно не мешало (отдельный шаг ниже)
+  const setClock = on => { const tk = srv.g.post({ action: 'login', login: srv.admin.login, password: srv.admin.password }).token; srv.g.post({ token: tk, action: 'patch', ops: [{ op: 'set', path: ['settings', 'selfClock'], value: { on: on } }] }); };
+  setClock(false);
 
   // файл «прототипа» с тестовыми уроками (настоящие тексты 4-bob в репозиторий не кладём)
   const quiz = [{ q: 'Savol 1', options: ['A', 'B', 'C'], answer: 1 }, { q: 'Savol 2', options: ['A', 'B'], answer: 0 }];
@@ -163,6 +166,19 @@ try {
   step('анкета со сканом паспорта: скан на Диске сервера');
   await shot(E, '5-home');
   await skipTour(E);
+  // ---- приход в программе: модальное окно + простое фото (не биометрия) ----
+  setClock(true);
+  await E.reload({ waitUntil: 'networkidle' }); await watchSync(E);
+  await E.locator('.clock-modal').waitFor({ timeout: 5000 });
+  await shot(E, '5b-clock-gate');
+  await E.locator('.clock-modal button').filter({ hasText: /Rasmsiz boshlash|Suratga olish va boshlash/ }).first().click();
+  await E.waitForTimeout(800);
+  assert.equal(await E.locator('.clock-modal').count(), 0, 'после отметки окно закрылось');
+  { const rec = Object.values(srv.g.state().attend[String(emp.id)] || {})[0];
+    assert.ok(rec && rec.in && rec.src === 'app', 'приход отмечен сервером'); }
+  step('приход отмечен через модальное окно (без камеры — без фото)');
+  setClock(false);
+  await E.reload({ waitUntil: 'networkidle' }); await watchSync(E); await skipTour(E);
   // урок 4.1 → «Mavzuni yakunlash» → «B: tushundim, testga tayyorman» → тест
   await E.getByText('4.1. Test standarti').first().click(); await E.waitForTimeout(600);
   assert.ok((await E.innerText('main')).includes('Test matni 1'), 'текст урока пришёл с сервера');

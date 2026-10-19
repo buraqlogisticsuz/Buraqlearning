@@ -162,9 +162,9 @@
       return flushAll().then(function () { return call('retest', { errorId: errorId, answers: answers }); })
         .then(function (r) { sync(); return r; });
     },
-    /* приход/уход: сотрудник отмечает, время ставит сервер (kind — 'in' | 'out') */
-    clock: function (kind) {
-      return flushAll().then(function () { return call('clock', { kind: kind }); })
+    /* приход/уход: сотрудник отмечает, время ставит сервер (kind — 'in' | 'out'); photo — data:-снимок (необязательно) */
+    clock: function (kind, photo) {
+      return flushAll().then(function () { return call('clock', { kind: kind, photo: photo || undefined }); })
         .then(function (r) { sync(); return r; });
     },
     file: function (id) { return call('file', { id: id }); },

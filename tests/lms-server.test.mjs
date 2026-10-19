@@ -746,3 +746,20 @@ test('приход/уход в программе: отметку ставит �
   assert.deepEqual(A({ action: 'patch', ops: [{ op: 'set', path: ['settings', 'selfClock'], value: { on: false } }] }).rejected, []);
   assert.equal(Z({ action: 'clock', kind: 'in' }).code, 'off', 'выключено в настройках');
 });
+
+test('фото при отметке прихода — просто снимок (файл на сервере), видно сотруднику и админу', () => {
+  const { A, D } = platform();
+  const img = 'data:image/jpeg;base64,' + 'A'.repeat(3000);
+  const r = D({ action: 'clock', kind: 'in', photo: img });
+  assert.equal(r.ok, true, JSON.stringify(r));
+  const rec = A({ action: 'load' }).state.attend['10427'][r.day];
+  assert.match(rec.inPhoto, /^lmsfile:/, 'в записи ссылка на файл, не сам data:');
+  const id = rec.inPhoto.slice('lmsfile:'.length);
+  const own = D({ action: 'file', id });
+  assert.equal(own.ok, true, JSON.stringify(own));           // сотрудник видит своё фото
+  assert.ok(own.data && own.data.length > 100);
+  assert.equal(A({ action: 'file', id }).ok, true);           // админ видит любое
+  const r2 = D({ action: 'clock', kind: 'out', photo: 'not-an-image' });
+  assert.equal(r2.ok, true);                                  // кривое «фото» не ломает отметку
+  assert.equal(A({ action: 'load' }).state.attend['10427'][r.day].outPhoto, undefined, 'не картинка не сохраняется');
+});

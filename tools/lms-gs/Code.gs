@@ -821,6 +821,13 @@ function retest_(s, req) {
    уже закрытый данными турникета, повторно отметить приход или отметить уход раньше прихода. */
 function pad2_(n) { return (n < 10 ? '0' : '') + n; }
 function tashkent_() { return new Date(now_() + 5 * 36e5); }   // UTC+5
+/* фото при отметке — просто снимок, не биометрия (распознавания и сверки лиц нет): data:-картинка уходит файлом
+   на Диск, в записи остаётся ссылка lmsfile. Фото видит сам сотрудник (своя запись в attend) и CEO/SOP-менеджер;
+   доступ к файлу сервер проверяет (file_). Нет согласия/камеры — отметка проходит по времени, без фото. */
+function clockPhoto_(v, uid) {
+  if (typeof v !== 'string' || !/^data:image\/(jpeg|jpg|png|webp)[;,]/.test(v) || v.length > 400000) return null;
+  return storeFiles_(v, uid, 'ishga-kelish');
+}
 function clockDay_(d) { return d.getUTCFullYear() + '-' + pad2_(d.getUTCMonth() + 1) + '-' + pad2_(d.getUTCDate()); }
 function clockHm_(d) { return pad2_(d.getUTCHours()) + ':' + pad2_(d.getUTCMinutes()); }
 function clock_(s, req) {
@@ -833,8 +840,9 @@ function clock_(s, req) {
     var a = st.attend[uid] = st.attend[uid] || {}, rec = a[day];
     if (rec && (rec.reason || (rec.src && rec.src !== 'app'))) throw err_('bad', 'За этот день уже есть отметка');
     rec = a[day] = rec || { src: 'app' };
-    if (kind === 'in') { if (rec.in) throw err_('done', 'Приход на сегодня уже отмечен'); rec.in = hm; }
-    else { if (!rec.in) throw err_('bad', 'Сначала отметьте приход'); if (rec.out) throw err_('done', 'Уход на сегодня уже отмечен'); rec.out = hm; }
+    var photo = clockPhoto_(req.photo, me.id);
+    if (kind === 'in') { if (rec.in) throw err_('done', 'Приход на сегодня уже отмечен'); rec.in = hm; if (photo) rec.inPhoto = photo; }
+    else { if (!rec.in) throw err_('bad', 'Сначала отметьте приход'); if (rec.out) throw err_('done', 'Уход на сегодня уже отмечен'); rec.out = hm; if (photo) rec.outPhoto = photo; }
     rec.src = 'app';
     st.rev = (+st.rev || 0) + 1;
     writeState_(st);
