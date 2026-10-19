@@ -414,7 +414,7 @@ const pickN = n => ({ userId: n.userId, kind: n.kind, route: n.route, err: n.err
 test('since: та же версия — без данных; после правки — новое состояние', () => {
   const { D, A } = platform();
   const v = D({ action: 'load' });
-  assert.deepEqual(D({ action: 'since', rev: v.rev }), { ok: true, v: 12, ai: false, rev: v.rev, same: true });
+  assert.deepEqual(D({ action: 'since', rev: v.rev }), { ok: true, v: 13, ai: false, rev: v.rev, same: true });
   A({ action: 'patch', ops: [{ op: 'set', path: ['notifications', { id: 9 }], value: { id: 9, userId: 10427, text: 'yangi' }, after: null }] });
   const n = D({ action: 'since', rev: v.rev });
   assert.equal(n.rev, v.rev + 1); assert.equal(n.state.notifications[0].text, 'yangi');
@@ -727,4 +727,22 @@ test('кто проходит главу (section.aud): должность, от
   put({ all: true });
   assert.deepEqual([sees(D), sees(Z), sees(M)], [true, true, true], 'все');
   assert.equal(A({ action: 'load' }).state.course.sections.some(s => s.id === 'b3'), true);
+});
+
+test('приход/уход в программе: отметку ставит сотрудник, время — сервер (v13)', () => {
+  const { A, D, Z } = platform();
+  const r1 = D({ action: 'clock', kind: 'in' });
+  assert.equal(r1.ok, true, JSON.stringify(r1));
+  assert.match(r1.time, /^\d\d:\d\d$/);
+  assert.match(r1.day, /^\d{4}-\d\d-\d\d$/);
+  assert.equal(D({ action: 'clock', kind: 'in' }).code, 'done', 'повторный приход — ошибка');
+  const r2 = D({ action: 'clock', kind: 'out' });
+  assert.equal(r2.ok, true, JSON.stringify(r2));
+  assert.equal(D({ action: 'clock', kind: 'out' }).code, 'done', 'повторный уход — ошибка');
+  const rec = A({ action: 'load' }).state.attend['10427'][r1.day];
+  assert.deepEqual({ src: rec.src, in: rec.in, out: rec.out }, { src: 'app', in: r1.time, out: r2.time });
+  assert.equal(Z({ action: 'clock', kind: 'out' }).code, 'bad', 'уход без прихода — ошибка');
+  assert.equal(A({ action: 'clock', kind: 'in' }).code, 'forbidden', 'не сотрудник — нельзя');
+  assert.deepEqual(A({ action: 'patch', ops: [{ op: 'set', path: ['settings', 'selfClock'], value: { on: false } }] }).rejected, []);
+  assert.equal(Z({ action: 'clock', kind: 'in' }).code, 'off', 'выключено в настройках');
 });

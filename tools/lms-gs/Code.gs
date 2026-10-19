@@ -20,7 +20,7 @@
  *
  * Запрос — POST с JSON { action, token, … }, ответ — JSON { ok, … } или { ok: false, code, error }.
  */
-var LMS_VERSION = 12;          // 2: файлы — отдельно на Диске, действие file; 3: ИИ через Claude API (действие ai);
+var LMS_VERSION = 13;          // 2: файлы — отдельно на Диске, действие file; 3: ИИ через Claude API (действие ai);
                                // 4: адресаты идей — CEO, Project Manager, руководитель компании (свой вход, role 'leader');
                                // 5: у идеи несколько адресатов (to — список), repliedBy — кто ответил;
                                // 6: свой профиль — имя и фото, смена логина и пароля (действие account);
@@ -30,6 +30,7 @@ var LMS_VERSION = 12;          // 2: файлы — отдельно на Дис
                                // 10: уровни доступа — CEO, SOP-менеджер, руководитель (владелец), PM (lvl_)
                                // 11: раздел курса для выбранных сотрудников (section.users) — остальным не отдаётся
                                // 12: кто проходит главу — section.aud: все, должности, отделы, имена
+                               // 13: приход/уход сотрудник отмечает в программе (действие clock), время ставит сервер
 var PBKDF2_ITER = 10000;          // пароль хранится только как PBKDF2-SHA256 с солью
 var SESSION_DAYS = 30;            // вход на устройстве живёт 30 дней с последнего запроса
 var FAIL_MAX = 5, FAIL_LOCK_MIN = 15;  // 5 неверных паролей подряд — логин закрыт на 15 минут
@@ -100,6 +101,7 @@ function route_(req) {
   if (a === 'patch') return patch_(s, req.ops);
   if (a === 'quiz') return quiz_(s, req);
   if (a === 'retest') return retest_(s, req);
+  if (a === 'clock') return clock_(s, req);
   if (a === 'ai') return ai_(s, req);
   if (a === 'password') return password_(s, req);
   if (a === 'account') return account_(s, req);
@@ -809,6 +811,34 @@ function retest_(s, req) {
       writeState_(st);
     }
     return { ok: true, rev: st.rev, score: sc, passMark: PASS_MARK };
+  });
+}
+
+/* ---------------- приход/уход: отметку ставит сотрудник, время — сервер ----------------
+   Время и дата — по Ташкенту (UTC+5, без перехода на летнее время), считаются вручную, чтобы совпадать
+   и в Apps Script, и на Node (server/). Запись — attend[uid][день] = { in, out, src:'app' }: тот же формат,
+   что у выгрузки турникета, поэтому «Monitoring» показывает её без изменений. Сервер не даёт переписать день,
+   уже закрытый данными турникета, повторно отметить приход или отметить уход раньше прихода. */
+function pad2_(n) { return (n < 10 ? '0' : '') + n; }
+function tashkent_() { return new Date(now_() + 5 * 36e5); }   // UTC+5
+function clockDay_(d) { return d.getUTCFullYear() + '-' + pad2_(d.getUTCMonth() + 1) + '-' + pad2_(d.getUTCDate()); }
+function clockHm_(d) { return pad2_(d.getUTCHours()) + ':' + pad2_(d.getUTCMinutes()); }
+function clock_(s, req) {
+  return withLock_(function () {
+    var st = readState_(), me = me_(st, s);
+    if (me.role !== 'employee') throw err_('forbidden', 'Приход отмечают сотрудники');
+    if (((st.settings || {}).selfClock || {}).on === false) throw err_('off', 'Отметка в программе выключена');
+    var kind = req.kind === 'out' ? 'out' : 'in', d = tashkent_(), day = clockDay_(d), hm = clockHm_(d), uid = String(me.id);
+    st.attend = st.attend || {};
+    var a = st.attend[uid] = st.attend[uid] || {}, rec = a[day];
+    if (rec && (rec.reason || (rec.src && rec.src !== 'app'))) throw err_('bad', 'За этот день уже есть отметка');
+    rec = a[day] = rec || { src: 'app' };
+    if (kind === 'in') { if (rec.in) throw err_('done', 'Приход на сегодня уже отмечен'); rec.in = hm; }
+    else { if (!rec.in) throw err_('bad', 'Сначала отметьте приход'); if (rec.out) throw err_('done', 'Уход на сегодня уже отмечен'); rec.out = hm; }
+    rec.src = 'app';
+    st.rev = (+st.rev || 0) + 1;
+    writeState_(st);
+    return { ok: true, v: LMS_VERSION, rev: st.rev, day: day, kind: kind, time: hm };
   });
 }
 

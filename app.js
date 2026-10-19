@@ -5561,13 +5561,30 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   }
 
   /* employee home: today at the door, and the month so far */
+  /* отметка прихода/ухода в программе: включена по умолчанию, SOP-менеджер может выключить (settings.selfClock.on) */
+  function selfClockOn(db) { var s = (db.settings || {}).selfClock; return s ? s.on !== false : true; }
+  var CLK_ERR = { done: 'clk_e_done', bad: 'clk_e_bad', off: 'clk_e_off', forbidden: 'clk_e_forbidden', net: 'srv_net', busy: 'srv_busy' };
   function AttHome(p) {
     var t = p.t, db = p.db, u = p.user, k = dayKey(Date.now()), week = workWeek(db), o = attDay(db, u, k, week), c = attMonth(db, u, ymOf(Date.now())), sc = schedOf(db, u);
+    var busy = useState('');
+    var appRec = !o.rec || o.rec.src === 'app', canClock = selfClockOn(db) && u.role === 'employee' && appRec;
+    var inT = o.rec && o.rec.in, outT = o.rec && o.rec.out;
+    function clock(kind) {
+      if (busy[0]) return; busy[1](kind);
+      SV.clock(kind).then(function () { busy[1](''); SAY(kind === 'in' ? 'clk_in_ok' : 'clk_out_ok'); },
+        function (e) { busy[1](''); SAY(CLK_ERR[e && e.code] || 'clk_err'); });
+    }
     var last = null; for (var i = 1; i < 40 && !last; i++) { var x = attDay(db, u, shiftK(k, -i), week); if (x.in != null || x.st === 'absent' || x.st === 'excused') last = x; }
     var shown = o.in != null || o.st === 'absent' || o.st === 'excused' ? o : null;
     return h('section', { className: 'box at-home' },
       h('div', { className: 'at-home-h' }, h('span', { className: 'lor-eyebrow' }, t('at_home_t')), h('span', { className: 'lor-sm lor-muted' }, sc.start + '–' + sc.end)),
-      shown ? h('div', { className: 'at-today' }, h('b', null, shown.in != null ? m2hm(shown.in) : '—'), h('span', null, t('at_today')), h(AttChip, { t: t, o: shown }))
+      canClock ? h('div', { className: 'at-clock' },
+          !inT ? h(Btn, { variant: 'primary', arrow: true, disabled: !!busy[0], onClick: function () { clock('in'); } }, busy[0] === 'in' ? t('clk_wait') : t('clk_in'))
+          : !outT ? h(F, null,
+              h('div', { className: 'at-clock-st' }, h('b', null, inT), h('span', null, t('clk_came'))),
+              h(Btn, { variant: 'outline', disabled: !!busy[0], onClick: function () { clock('out'); } }, busy[0] === 'out' ? t('clk_wait') : t('clk_out')))
+          : h('div', { className: 'at-clock-done' }, h('b', null, inT + ' → ' + outT), h('span', null, t('clk_done'))))
+        : shown ? h('div', { className: 'at-today' }, h('b', null, shown.in != null ? m2hm(shown.in) : '—'), h('span', null, t('at_today')), h(AttChip, { t: t, o: shown }))
         : h('div', { className: 'at-today is-wait' }, h('span', null, o.st === 'pending' ? t('at_today_pending') : t('at_today_none')),
           last ? h('small', null, tpl(t('at_last'), { d: fmtKs(last.k), x: last.in != null ? m2hm(last.in) : t('at_st_' + last.st) }), ' ', h(AttChip, { t: t, o: last })) : null),
       c.has ? h('div', { className: 'at-home-stats' },
@@ -6663,7 +6680,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
             h('div', null, h('b', null, m.passed + '/' + m.total), h('span', null, t('passed_n'))),
             h('div', null, h('b', null, mine.filter(function (r) { return r.type === 'exam'; }).length), h('span', null, t('waiting_exam'))),
             h('div', null, h('b', null, mine.filter(function (r) { return r.type === 'question'; }).length), h('span', null, t('open_q')))))),
-      attHas(db, u) ? h('div', { className: 'home-grid at-pair' }, h(DailyGoal, p), h(AttHome, p)) : h(DailyGoal, p),
+      (attHas(db, u) || (selfClockOn(db) && u.role === 'employee')) ? h('div', { className: 'home-grid at-pair' }, h(DailyGoal, p), h(AttHome, p)) : h(DailyGoal, p),
       h(MonthTeaser, p),
       h('div', { className: 'home-grid three' },
         h(IniHomeCard, { t: t, db: db, user: u, onNew: p.openIni, onList: function () { p.go({ name: 'ideas' }); } }),
@@ -7418,7 +7435,9 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           h(Btn, { variant: 'primary', arrow: true, onClick: create }, t('create')))),
       lvlOf(p.user) === 'boss' ? null : h('section', { className: 'box pp-ask' },
         h('label', { className: 'check' }, h('input', { type: 'checkbox', checked: askPassport(db), onChange: function (e) { var v = e.target.checked; p.update(function (d) { d.settings = d.settings || {}; d.settings.passportScan = v; }); } }), t('pp_ask')),
-        h('p', { className: 'lor-sm lor-muted', style: { margin: '6px 0 0' } }, t('pp_ask_hint'))),
+        h('p', { className: 'lor-sm lor-muted', style: { margin: '6px 0 0' } }, t('pp_ask_hint')),
+        h('label', { className: 'check', style: { marginTop: 'var(--space-4)' } }, h('input', { type: 'checkbox', checked: selfClockOn(db), onChange: function (e) { var v = e.target.checked; p.update(function (d) { d.settings = d.settings || {}; d.settings.selfClock = { on: v }; }); } }), t('clk_set')),
+        h('p', { className: 'lor-sm lor-muted', style: { margin: '6px 0 0' } }, t('clk_set_hint'))),
       lvlOf(p.user) === 'boss' ? null : h(StaffImport, p),
       /* logins of the management: CEO — everyone's; SOP manager — only the first CEO, while there is none */
       lvlOf(p.user) === 'ceo' ? h(LeadersBox, p)
