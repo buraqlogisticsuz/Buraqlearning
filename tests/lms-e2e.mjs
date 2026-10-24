@@ -169,9 +169,11 @@ try {
   // ---- приход в программе: модальное окно + простое фото (не биометрия) ----
   setClock(true);
   await E.reload({ waitUntil: 'networkidle' }); await watchSync(E);
+  await E.locator('.clock-banner, .clock-modal').first().waitFor({ timeout: 8000 });   // плашка или само окно
+  if (!(await E.locator('.clock-modal').count())) await E.locator('.clock-banner button').click();
   await E.locator('.clock-modal').waitFor({ timeout: 5000 });
   await shot(E, '5b-clock-gate');
-  await E.locator('.clock-modal button').filter({ hasText: /Rasmsiz boshlash|Suratga olish va boshlash/ }).first().click();
+  await E.locator('.clock-modal .clk-nophoto').click();   // отметиться без фото (камеру включаем по кнопке — Safari)
   await E.waitForTimeout(800);
   assert.equal(await E.locator('.clock-modal').count(), 0, 'после отметки окно закрылось');
   { const rec = Object.values(srv.g.state().attend[String(emp.id)] || {})[0];

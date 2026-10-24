@@ -5583,18 +5583,18 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
      Нет камеры/согласия — можно отметиться без фото, по времени. Окно всегда закрывается («Keyinroq»), чтобы никого не запереть. */
   function ClockGate(p) {
     var t = p.t;
-    var cam = useState('init'), busy = useState(false), videoRef = useRef(null), streamRef = useRef(null);
-    useEffect(function () {
-      var dead = false;
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { cam[1]('nocam'); return; }
-      navigator.mediaDevices.getUserMedia({ video: { width: 480, height: 360, facingMode: 'user' }, audio: false }).then(function (s) {
-        if (dead) { s.getTracks().forEach(function (tr) { tr.stop(); }); return; }
-        streamRef.current = s; cam[1]('live');
-      }, function () { cam[1]('nocam'); });
-      return function () { dead = true; if (streamRef.current) { streamRef.current.getTracks().forEach(function (tr) { tr.stop(); }); streamRef.current = null; } };
-    }, []);
+    // камера включается по нажатию (так требует Safari — getUserMedia только после действия пользователя), а не сама
+    var cam = useState('idle'), busy = useState(false), videoRef = useRef(null), streamRef = useRef(null);
+    useEffect(function () { return function () { if (streamRef.current) { streamRef.current.getTracks().forEach(function (tr) { tr.stop(); }); streamRef.current = null; } }; }, []);
     useEffect(function () { if (cam[0] === 'live' && videoRef.current && streamRef.current) { videoRef.current.srcObject = streamRef.current; videoRef.current.play().catch(function () {}); } }, [cam[0]]);
     function stop() { if (streamRef.current) { streamRef.current.getTracks().forEach(function (tr) { tr.stop(); }); streamRef.current = null; } }
+    function startCam() {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { cam[1]('nocam'); return; }
+      cam[1]('wait');
+      navigator.mediaDevices.getUserMedia({ video: { width: 480, height: 360, facingMode: 'user' }, audio: false }).then(function (s) {
+        streamRef.current = s; cam[1]('live');
+      }, function () { cam[1]('nocam'); });
+    }
     function capture() {
       var v = videoRef.current; if (!v || !v.videoWidth) return null;
       var w = 320, hh = Math.round(w * v.videoHeight / v.videoWidth) || 240, c = document.createElement('canvas');
@@ -5607,19 +5607,25 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         function (e) { busy[1](false); SAY(CLK_ERR[e && e.code] || 'clk_err'); });
     }
     function close() { stop(); p.onClose(); }
+    var live = cam[0] === 'live';
     return h('div', { className: 'lor-scrim', onClick: function (e) { if (e.target === e.currentTarget) close(); } },
       h('div', { className: 'lor-modal clock-modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': t('clk_gate_t') },
         h('button', { type: 'button', className: 'lor-modal-x', 'aria-label': t('close'), onClick: close }, '×'),
         h('span', { className: 'lor-eyebrow' }, t('at_sec_t')),
         h('h3', { className: 'lor-h', style: { marginTop: 4 } }, t('clk_gate_t')),
         h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('clk_gate_note')),
-        cam[0] === 'live' ? h('div', { className: 'clk-cam' }, h('video', { ref: videoRef, autoPlay: true, playsInline: true, muted: true }), h('span', { className: 'clk-cam-rec' }, '● ' + t('clk_rec')))
-          : cam[0] === 'init' ? h('div', { className: 'clk-cam is-wait' }, h('span', null, t('clk_cam_wait')))
-          : h('div', { className: 'clk-cam is-off' }, h('span', null, t('clk_cam_off'))),
+        live ? h('div', { className: 'clk-cam' }, h('video', { ref: videoRef, autoPlay: true, playsInline: true, muted: true }), h('span', { className: 'clk-cam-rec' }, '● ' + t('clk_rec')))
+          : cam[0] === 'wait' ? h('div', { className: 'clk-cam is-wait' }, h('span', null, t('clk_cam_wait')))
+          : cam[0] === 'nocam' ? h('div', { className: 'clk-cam is-off' }, h('span', null, t('clk_cam_off')))
+          : h('div', { className: 'clk-cam is-idle' },
+              h('svg', { width: 34, height: 34, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true }, h('path', { d: 'M4 7h3l1.5-2h7L17 7h3v12H4z' }), h('circle', { cx: 12, cy: 13, r: 3.4 })),
+              h('span', null, t('clk_cam_idle'))),
+        cam[0] !== 'nocam' ? h('button', { type: 'button', className: 'app-link clk-nophoto', onClick: function () { start(false); } }, t('clk_nophoto')) : null,
         h('div', { className: 'lor-modal-actions' },
           h(Btn, { variant: 'ghost', onClick: close }, t('clk_later')),
-          cam[0] === 'live' ? h(Btn, { variant: 'primary', arrow: true, disabled: busy[0], onClick: function () { start(true); } }, busy[0] ? t('clk_wait') : t('clk_shot_start'))
-            : h(Btn, { variant: 'primary', arrow: true, disabled: busy[0] || cam[0] === 'init', onClick: function () { start(false); } }, busy[0] ? t('clk_wait') : t('clk_nocam_start')))));
+          live ? h(Btn, { variant: 'primary', arrow: true, disabled: busy[0], onClick: function () { start(true); } }, busy[0] ? t('clk_wait') : t('clk_shot_start'))
+            : cam[0] === 'nocam' ? h(Btn, { variant: 'primary', arrow: true, disabled: busy[0], onClick: function () { start(false); } }, busy[0] ? t('clk_wait') : t('clk_nocam_start'))
+            : h(Btn, { variant: 'primary', arrow: true, disabled: cam[0] === 'wait', onClick: startCam }, t('clk_cam_on')))));
   }
   /* снимок отметки прихода: по клику берёт файл с сервера и показывает в лайтбоксе. Своё фото видит сотрудник,
      любое — CEO и SOP-менеджер (сервер проверяет доступ к файлу в file_). Грузится лениво — только при открытии. */

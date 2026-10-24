@@ -2876,7 +2876,8 @@ button.mc-cell.at-cell:hover { outline: 2px solid var(--blue-text); outline-offs
 .clock-modal { max-width: 460px; }
 .clk-cam { position: relative; margin: 4px 0 2px; border-radius: var(--radius-md); overflow: hidden; background: var(--surface-sunken); aspect-ratio: 4 / 3; display: flex; align-items: center; justify-content: center; }
 .clk-cam video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
-.clk-cam.is-wait, .clk-cam.is-off { color: var(--ink-muted); font-size: 13px; text-align: center; padding: var(--space-6); }
+.clk-cam.is-wait, .clk-cam.is-off, .clk-cam.is-idle { color: var(--ink-muted); font-size: 13px; text-align: center; padding: var(--space-6); flex-direction: column; gap: 8px; }
+.clk-nophoto { display: inline-block; margin: 8px 0 0; font-size: 13px; }
 .clk-cam-rec { position: absolute; top: 8px; left: 8px; display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 500; letter-spacing: .04em; text-transform: uppercase; color: #fff; background: rgba(14, 46, 84, .55); padding: 3px 8px; border-radius: var(--radius-pill); }
 .clk-cam-rec::first-letter { color: var(--red); }
 .clk-thumb { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: var(--radius-sm); border: var(--hairline) solid var(--border); background: var(--surface-raised); color: var(--ink-muted); cursor: pointer; flex: none; }

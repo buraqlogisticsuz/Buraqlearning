@@ -2713,3 +2713,9 @@ Object.assign(APP_T.uz, { clk_gate_t: 'Ishni boshlaymizmi?', clk_gate_note: 'Ish
 Object.assign(APP_T.ru, { clk_gate_t: 'Начинаем работу?', clk_gate_note: 'Для подтверждения прихода будет сделано одно фото. Оно хранится только на сервере — его видите вы и руководство. Если камеры нет, можно отметиться без фото.', clk_rec: 'Камера включена', clk_cam_wait: 'Камера открывается…', clk_cam_off: 'Камера не найдена или доступ не дан — можно отметиться без фото.', clk_shot_start: 'Сфотографировать и начать', clk_nocam_start: 'Начать без фото', clk_later: 'Позже' });
 Object.assign(APP_T.en, { clk_gate_t: 'Start work?', clk_gate_note: 'One photo is taken to confirm your arrival. It is stored on the server only — you and management can see it. No camera? You can clock in without a photo.', clk_rec: 'Camera on', clk_cam_wait: 'Opening the camera…', clk_cam_off: 'No camera or access denied — you can clock in without a photo.', clk_shot_start: 'Take a photo and start', clk_nocam_start: 'Start without a photo', clk_later: 'Later' });
 Object.assign(APP_T.zh, { clk_gate_t: '开始工作？', clk_gate_note: '将拍摄一张照片以确认到岗。照片仅保存在服务器上——您和管理层可以查看。若无摄像头，也可不拍照打卡。', clk_rec: '摄像头已开启', clk_cam_wait: '正在开启摄像头…', clk_cam_off: '未找到摄像头或未授予权限——可不拍照打卡。', clk_shot_start: '拍照并开始', clk_nocam_start: '不拍照开始', clk_later: '稍后' });
+
+/* камера включается по нажатию (Safari): кнопка «включить», ссылка «без фото» */
+Object.assign(APP_T.uz, { clk_cam_on: 'Kamerani yoqish', clk_cam_idle: 'Kamera o‘chiq', clk_nophoto: 'Rasmsiz belgilash' });
+Object.assign(APP_T.ru, { clk_cam_on: 'Включить камеру', clk_cam_idle: 'Камера выключена', clk_nophoto: 'Отметиться без фото' });
+Object.assign(APP_T.en, { clk_cam_on: 'Turn on the camera', clk_cam_idle: 'Camera is off', clk_nophoto: 'Clock in without a photo' });
+Object.assign(APP_T.zh, { clk_cam_on: '开启摄像头', clk_cam_idle: '摄像头已关闭', clk_nophoto: '不拍照打卡' });
