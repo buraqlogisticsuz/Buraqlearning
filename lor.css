@@ -3605,3 +3605,19 @@ button.mc-cell.at-cell:hover { outline: 2px solid var(--blue-text); outline-offs
   .qn-res-top { grid-template-columns: 1fr; }
   .qn-tm-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* ---------- «Xodimlar» → «Lavozim va bo‘limlar» (CEO) ---------- */
+.org-modal { max-width: 780px; max-height: calc(100vh - 32px); overflow: auto; }
+.org-cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-6); }
+.org-col { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.org-col .lor-h { margin: 0; display: flex; align-items: center; gap: 8px; font-size: 18px; }
+.org-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.org-item { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 4px 6px 4px 12px; border: var(--hairline) solid var(--line); border-radius: var(--radius-md); background: var(--surface); }
+.org-name { flex: 1; min-width: 0; font-size: 14px; line-height: 20px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+input.org-name { height: 32px; padding: 0 8px; margin-left: -8px; border-color: transparent; background: transparent; }
+input.org-name:hover, input.org-name:focus { border-color: var(--line); background: var(--surface-raised); }
+.org-add { display: flex; gap: 8px; }
+.org-add .lor-input { flex: 1; min-width: 0; height: 36px; }
+.org-extra { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.org-btn { align-self: center; }
+@media (max-width: 640px) { .org-cols { grid-template-columns: 1fr; } }

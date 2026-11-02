@@ -826,6 +826,29 @@ try {
   await A.locator('.lor-tab').filter({ hasText: 'Darslar' }).click();
   step('«Savolnoma»: SOP-менеджер добавил вопросы списком (варианты, раздел, оценка 1–5), сотрудник заполнил обязательные; результаты: шкалы, темперамент, вывод ИИ (сотруднику не виден); вопросы из Word');
 
+  // ---------- «Lavozim va bo‘limlar»: CEO добавляет должность и отдел; SOP-менеджер выбирает их у нового сотрудника, сам список не меняет ----------
+  await C.reload({ waitUntil: 'networkidle' }); await watchSync(C);
+  await nav(C, 'staff'); await C.locator('.org-btn').click();
+  await C.locator('.org-modal').waitFor({ timeout: 5000 });
+  await C.fill('#org-new-positions', 'Haydovchi'); await C.keyboard.press('Enter');
+  await C.fill('#org-new-depts', 'Transport bo‘limi'); await C.locator('.org-col').nth(1).locator('.org-add .lor-btn').click();
+  await C.fill('#org-new-positions', 'haydovchi'); await C.keyboard.press('Enter');
+  assert.match(await C.locator('.org-col').first().locator('.lor-field-error').innerText(), /bor/, 'то же название — нельзя');
+  await shot(C, 'lavozim-bolim');
+  await C.locator('.org-modal .lor-modal-actions .lor-btn-primary').click(); await settle(C);
+  { const st = srv.g.state().settings;
+    assert.ok(st.positions.includes('Haydovchi') && st.positions.includes('Omborchi'), 'новая должность — в списке, старые на месте');
+    assert.ok(st.depts.includes('Transport bo‘limi'), 'новый отдел — в списке'); }
+  assert.deepEqual(await rejected(C), [], 'сервер принял список от CEO');
+  await A.reload({ waitUntil: 'networkidle' }); await watchSync(A);
+  await nav(A, 'staff');
+  assert.ok(await A.locator('#f-n-pos option[value="Haydovchi"]').count(), 'SOP-менеджер видит новую должность у нового сотрудника');
+  assert.ok(await A.locator('#f-n-dep option[value="Transport bo‘limi"]').count(), '…и новый отдел');
+  await A.locator('.org-btn').click(); await A.locator('.org-modal').waitFor({ timeout: 5000 });
+  assert.equal(await A.locator('#org-new-positions').count(), 0, 'у SOP-менеджера список только для просмотра');
+  await A.keyboard.press('Escape');
+  step('«Lavozim va bo‘limlar»: CEO добавил должность и отдел; у SOP-менеджера они в форме сотрудника, список — только просмотр');
+
   // ---------- демо больше нет: ?demo=1 — тот же вход на сервер; без адреса сервера — «Server ulanmagan» ----------
   const D = await device('бывшее демо', '?demo=1');
   assert.equal(await D.locator('.demo-box').count(), 0, 'демо-входов нет');

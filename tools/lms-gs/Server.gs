@@ -20,7 +20,7 @@
  *
  * Запрос — POST с JSON { action, token, … }, ответ — JSON { ok, … } или { ok: false, code, error }.
  */
-var LMS_VERSION = 14;          // 2: файлы — отдельно на Диске, действие file; 3: ИИ через Claude API (действие ai);
+var LMS_VERSION = 15;          // 2: файлы — отдельно на Диске, действие file; 3: ИИ через Claude API (действие ai);
                                // 4: адресаты идей — CEO, Project Manager, руководитель компании (свой вход, role 'leader');
                                // 5: у идеи несколько адресатов (to — список), repliedBy — кто ответил;
                                // 6: свой профиль — имя и фото, смена логина и пароля (действие account);
@@ -32,6 +32,7 @@ var LMS_VERSION = 14;          // 2: файлы — отдельно на Дис
                                // 12: кто проходит главу — section.aud: все, должности, отделы, имена
                                // 13: приход/уход сотрудник отмечает в программе (действие clock), время ставит сервер
                                // 14: вывод по анкете (users[].qaReport) — только CEO, SOP-менеджеру и руководителю, сотрудник его не видит и не пишет
+                               // 15: список должностей и отделов (settings.positions / settings.depts) меняет только CEO
 var PBKDF2_ITER = 10000;          // пароль хранится только как PBKDF2-SHA256 с солью
 var SESSION_DAYS = 30;            // вход на устройстве живёт 30 дней с последнего запроса
 var FAIL_MAX = 5, FAIL_LOCK_MIN = 15;  // 5 неверных паролей подряд — логин закрыт на 15 минут
@@ -602,7 +603,14 @@ function checkAdmin_(st, op, me) {
   if (lv !== 'sop') return null;
   if (p[0] === 'pay' || p[0] === 'payCalcs') return 'зарплату ведёт CEO';
   if (p[0] === 'users') return checkSopUsers_(st, op, me);
+  if (p[0] === 'settings' && orgTouched_(st, op)) return 'должности и отделы меняет CEO';
   return null;
+}
+/* правка задевает список должностей или отделов (settings целиком — только если они в нём изменились) */
+function orgTouched_(st, op) {
+  var p = op.path, cur = st.settings || {};
+  if (p.length === 1) { var v = op.op === 'del' ? {} : op.value || {}; return !LmsSync.equal(v.positions, cur.positions) || !LmsSync.equal(v.depts, cur.depts); }
+  return p[1] === 'positions' || p[1] === 'depts';
 }
 
 /* SOP-менеджер и карточки: сотрудники — да; CEO, руководитель, PM и другие SOP-менеджеры — только CEO.

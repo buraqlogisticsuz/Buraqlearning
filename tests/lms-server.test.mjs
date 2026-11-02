@@ -414,7 +414,7 @@ const pickN = n => ({ userId: n.userId, kind: n.kind, route: n.route, err: n.err
 test('since: та же версия — без данных; после правки — новое состояние', () => {
   const { D, A } = platform();
   const v = D({ action: 'load' });
-  assert.deepEqual(D({ action: 'since', rev: v.rev }), { ok: true, v: 14, ai: false, rev: v.rev, same: true });
+  assert.deepEqual(D({ action: 'since', rev: v.rev }), { ok: true, v: 15, ai: false, rev: v.rev, same: true });
   A({ action: 'patch', ops: [{ op: 'set', path: ['notifications', { id: 9 }], value: { id: 9, userId: 10427, text: 'yangi' }, after: null }] });
   const n = D({ action: 'since', rev: v.rev });
   assert.equal(n.rev, v.rev + 1); assert.equal(n.state.notifications[0].text, 'yangi');
@@ -800,4 +800,19 @@ test('вывод по анкете (users[].qaReport, v14): пишут и вид
   assert.equal(D({ action: 'load' }).state.users.find(u => u.id === 10427).qaReport, undefined, 'сотрудник свой вывод не видит');
   assert.equal(Z({ action: 'load' }).state.users.find(u => u.id === 10427).qaReport, undefined, 'коллега — тоже');
   assert.equal(D({ action: 'patch', ops: [{ op: 'set', path: ['users', { id: 10427 }, 'qaReport'], value: { data: {} } }] }).rejected.length, 1, 'и не пишет его');
+});
+
+test('должности и отделы (settings.positions / settings.depts, v15): меняет только CEO; SOP-менеджер и сотрудник — нет', () => {
+  const pl = platform(), { A, D } = pl, { C, B } = chiefs(pl);
+  const set = (who, k, v) => who({ action: 'patch', ops: [{ op: 'set', path: ['settings', k], value: v }] });
+  assert.deepEqual(rejected(set(C, 'positions', ['Omborchi', 'Haydovchi'])), []);
+  assert.deepEqual(rejected(set(C, 'depts', ['Logistika bo‘limi', 'Transport bo‘limi'])), []);
+  assert.deepEqual(A({ action: 'load' }).state.settings.positions, ['Omborchi', 'Haydovchi'], 'список виден всем');
+  assert.equal(set(A, 'positions', ['Boshqa']).rejected.length, 1, 'SOP-менеджер список не меняет');
+  assert.equal(set(A, 'depts', []).rejected.length, 1);
+  const whole = A({ action: 'load' }).state.settings;
+  assert.deepEqual(rejected(A({ action: 'patch', ops: [{ op: 'set', path: ['settings'], value: Object.assign({}, whole, { passportScan: false }) }] })), [], 'другие настройки SOP-менеджер меняет как раньше');
+  assert.equal(A({ action: 'patch', ops: [{ op: 'set', path: ['settings'], value: Object.assign({}, whole, { positions: [] }) }] }).rejected.length, 1);
+  assert.equal(set(D, 'positions', ['x']).rejected.length, 1, 'сотрудник — нет');
+  assert.equal(set(B, 'positions', ['x']).rejected.length, 1, 'руководитель только смотрит');
 });

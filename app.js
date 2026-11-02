@@ -2356,7 +2356,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   function payKpi() { return { id: 'k' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), name: '', unit: '', src: 'manual', type: 'plan', plan: 100, w: 100, min: 0, cap: 100 }; }
   function PaySchemes(p) {
     var t = p.t, db = p.db, list = (db.pay && db.pay.schemes) || [], ed = useState(null), er = useState('');
-    var allPos = STAFF_POS.concat(db.users.filter(function (u) { return u.role === 'employee' && u.position; }).map(function (u) { return u.position; })).filter(function (x, i, a) { return a.indexOf(x) === i; });
+    var allPos = posOf(db).concat(db.users.filter(function (u) { return u.role === 'employee' && u.position; }).map(function (u) { return u.position; })).filter(function (x, i, a) { return a.indexOf(x) === i; });
     function users(s) { return db.users.filter(function (u) { var m = u.role === 'employee' && LmsPay.schemeFor(db.pay, u); return m && m.scheme.id === s.id; }); }
     function save() {
       var s = ed[0];
@@ -4236,8 +4236,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var t = p.t, db = p.db, v = p.value, q = useState('');
     var emps = db.users.filter(function (u) { return u.role === 'employee'; }), qq = q[0].trim().toLowerCase();
     function uniq(list) { var out = []; list.forEach(function (x) { if (x && out.indexOf(x) < 0) out.push(x); }); return out; }
-    var pos = uniq(STAFF_POS.concat(emps.map(function (u) { return u.position; }), v.positions));
-    var dep = uniq(STAFF_DEP.concat(emps.map(function (u) { return u.department; }), v.depts));
+    var pos = uniq(posOf(db).concat(emps.map(function (u) { return u.position; }), v.positions));
+    var dep = uniq(depOf(db).concat(emps.map(function (u) { return u.department; }), v.depts));
     var shown = emps.filter(function (u) { return !qq || ((u.name || '') + ' ' + (u.position || '') + ' ' + (u.department || '')).toLowerCase().indexOf(qq) >= 0; });
     function set(fn) { var n = { all: v.all, positions: v.positions.slice(), depts: v.depts.slice(), users: v.users.slice() }; fn(n); p.onChange(n); }
     function toggle(list, x) { var i = list.indexOf(x); if (i < 0) list.push(x); else list.splice(i, 1); }
@@ -6364,6 +6364,62 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   var STAFF_DEP = ['Logistika bo‘limi', 'Bojxona bo‘limi', 'Savdo bo‘limi', 'Ombor (Yiwu)', 'Ombor (Zhongshan)'];
   var LOGIN_RE = /^[a-z0-9][a-z0-9._-]{2,31}$/;
   function withCur(list, v) { return v && list.indexOf(v) < 0 ? [v].concat(list) : list; }
+  /* должности и отделы: список ведёт CEO («Xodimlar» → «Lavozim va bo‘limlar», settings.positions / settings.depts);
+     пока не задан — стандартный. У сотрудника может остаться и старое значение, которого уже нет в списке */
+  function posOf(db) { var s = db && db.settings && db.settings.positions; return s && s.length ? s : STAFF_POS; }
+  function depOf(db) { var s = db && db.settings && db.settings.depts; return s && s.length ? s : STAFF_DEP; }
+  /* «Lavozim va bo‘limlar»: CEO добавляет, переименовывает (если никто не занят) и убирает; остальные — смотрят.
+     Убрать из списка — сотрудники сохраняют своё значение; значения сотрудников вне списка — добавить одним кликом */
+  function OrgModal(p) {
+    var t = p.t, db = p.db, can = lvlOf(p.user) === 'ceo', emps = db.users.filter(function (u) { return u.role === 'employee'; });
+    var f = useState(function () { return { positions: posOf(db).slice(), depts: depOf(db).slice() }; }), v = f[0];
+    var nw = useState({ positions: '', depts: '' }), er = useState({});
+    var FIELD = { positions: 'position', depts: 'department' };
+    function used(k, x) { return emps.filter(function (u) { return u[FIELD[k]] === x; }).length; }
+    function setList(k, list) { f[1](function (o) { var n = Object.assign({}, o); n[k] = list; return n; }); er[1]({}); }
+    function clean(x) { return String(x || '').replace(/\s+/g, ' ').trim().slice(0, 60); }
+    function has(k, x, skip) { return v[k].some(function (y, i) { return i !== skip && y.toLowerCase() === x.toLowerCase(); }); }
+    function add(k, raw) {
+      var x = clean(raw == null ? nw[0][k] : raw);
+      if (!x) return;
+      if (has(k, x)) { var e = {}; e[k] = t('org_dup'); er[1](e); return; }
+      setList(k, v[k].concat([x]));
+      if (raw == null) nw[1](function (o) { var n = Object.assign({}, o); n[k] = ''; return n; });
+    }
+    function save() {
+      var a = v.positions.map(clean).filter(Boolean), b = v.depts.map(clean).filter(Boolean);
+      if (!a.length || !b.length) { er[1]({ positions: a.length ? '' : t('org_empty'), depts: b.length ? '' : t('org_empty') }); return; }
+      p.update(function (d) { d.settings = d.settings || {}; d.settings.positions = a; d.settings.depts = b; });
+      p.say(t('org_saved')); p.onClose();
+    }
+    function col(k, title, ph) {
+      var extra = []; emps.forEach(function (u) { var x = u[FIELD[k]]; if (x && v[k].indexOf(x) < 0 && extra.indexOf(x) < 0) extra.push(x); });
+      return h('section', { className: 'org-col' },
+        h('h3', { className: 'lor-h' }, title, h('span', { className: 'lor-count' }, v[k].length)),
+        h('ul', { className: 'org-list' }, v[k].map(function (x, i) {
+          var n = used(k, x);
+          return h('li', { key: k + i, className: 'org-item' },
+            can && !n ? h('input', { className: 'lor-input org-name', value: x, 'aria-label': title + ' ' + (i + 1), onChange: function (e) { var l = v[k].slice(); l[i] = e.target.value; setList(k, l); } }) : h('span', { className: 'org-name' }, x),
+            n ? h('span', { className: 'in-chip' }, tpl(t('org_n'), { n: n })) : null,
+            can ? h('button', { type: 'button', className: 'in-dl-mv qn-del', 'aria-label': t('remove') + ': ' + x, title: n ? t('org_rm_used') : t('remove'), onClick: function () { setList(k, v[k].filter(function (_, z) { return z !== i; })); } }, '×') : null);
+        })),
+        can ? h('div', { className: 'org-add' },
+          h('input', { id: 'org-new-' + k, className: 'lor-input', value: nw[0][k], placeholder: ph, 'aria-label': ph, onChange: function (e) { var val = e.target.value; nw[1](function (o) { var n = Object.assign({}, o); n[k] = val; return n; }); }, onKeyDown: function (e) { if (e.key === 'Enter') { e.preventDefault(); add(k); } } }),
+          h(Btn, { variant: 'outline', size: 'sm', disabled: !clean(nw[0][k]), onClick: function () { add(k); } }, '+ ' + t('org_add'))) : null,
+        er[0][k] ? h('span', { className: 'lor-field-error' }, er[0][k]) : null,
+        extra.length ? h('div', { className: 'org-extra' }, h('span', { className: 'lor-sm lor-muted' }, t('org_extra')), extra.map(function (x) {
+          return can ? h('button', { key: x, type: 'button', className: 'in-chip qn-who', title: t('org_add'), onClick: function () { add(k, x); } }, '+ ' + x + ' · ' + tpl(t('org_n'), { n: used(k, x) })) : h('span', { key: x, className: 'in-chip' }, x);
+        })) : null);
+    }
+    return h(Modal, { t: t, hid: 'org-h', onClose: p.onClose, className: 'org-modal' },
+      h('span', { className: 'lor-eyebrow' }, t('nav_staff')),
+      h('h2', { className: 'lor-h', id: 'org-h' }, t('org_t')),
+      h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, can ? t('org_hint') : t('org_ro')),
+      h('div', { className: 'org-cols' }, col('positions', t('org_pos'), t('org_pos_ph')), col('depts', t('org_dep'), t('org_dep_ph'))),
+      h('div', { className: 'lor-modal-actions' },
+        h(Btn, { variant: 'ghost', onClick: p.onClose }, can ? t('cancel') : t('close')),
+        can ? h(Btn, { variant: 'primary', arrow: true, onClick: save }, t('save')) : null));
+  }
   /* a photo file → a square 128×128 JPEG (data: URL) small enough for the data */
   function pickAvatar(file, ok, fail) {
     if (!file || !/^image\//.test(file.type)) { fail(); return; }
@@ -6499,8 +6555,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       h('div', { className: 'lor-form-grid' },
         h(Field, { name: 'ue-name', label: t('pf_name'), required: true, value: v.name, error: er[0].name, onChange: function (x) { set('name', x); } }),
         h(Field, { name: 'ue-login', label: t('login'), required: true, value: v.login, error: er[0].login, onChange: function (x) { set('login', x); } }),
-        emp ? h(Field, { name: 'ue-pos', label: t('position'), value: v.position, options: withCur(STAFF_POS, u.position), onChange: function (x) { set('position', x); } }) : null,
-        emp ? h(Field, { name: 'ue-dep', label: t('department'), value: v.department, options: withCur(STAFF_DEP, u.department), onChange: function (x) { set('department', x); } }) : null,
+        emp ? h(Field, { name: 'ue-pos', label: t('position'), value: v.position, options: withCur(posOf(p.db), u.position), onChange: function (x) { set('position', x); } }) : null,
+        emp ? h(Field, { name: 'ue-dep', label: t('department'), value: v.department, options: withCur(depOf(p.db), u.department), onChange: function (x) { set('department', x); } }) : null,
         h(Field, { name: 'ue-pw', label: t('ue_pw'), value: v.password, error: er[0].password, hint: t('ue_pw_hint'), onChange: function (x) { set('password', x); } })),
       h('div', { className: 'lor-modal-actions' },
         h(Btn, { variant: 'ghost', onClick: p.onClose }, t('cancel')),
@@ -8043,7 +8099,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         if (x.password) ch.push('password');
         x.changes = ch;
       } else {
-        x.position = x.position || STAFF_POS[0]; x.department = x.department || STAFF_DEP[0];
+        x.position = x.position || posOf(db)[0]; x.department = x.department || depOf(db)[0];
         if (x.login) { if (!LOGIN_RE.test(x.login)) x.err = x.err || 'imp_x_err_login'; else if (!free(x.login)) x.err = x.err || 'imp_x_err_taken'; }
         else { var base = autoLogin(x.name), l = base, n = 2; while (!free(l) || !LOGIN_RE.test(l)) { l = (LOGIN_RE.test(base) ? base : 'xodim') + n; n++; } x.login = l; x.auto = true; }
         if (!x.password) x.password = genPw();
@@ -8128,7 +8184,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   function csvLine(a) { return a.map(function (v) { v = String(v == null ? '' : v); return /[;"\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }).join(';'); }
   function StaffImport(p) {
     var t = p.t, rs = useState(null), rows = rs[0], er = useState(''), done = useState(null), inp = useRef(null);
-    function tpl_() { downloadText('xodimlar-namuna.csv', '\ufeff' + [csvLine(['F.I.Sh.', 'Lavozim', 'Bo‘lim', 'Login', 'Parol']), csvLine(['Dilnoza Karimova', STAFF_POS[1], STAFF_DEP[0], '', ''])].join('\r\n'), 'text/csv;charset=utf-8'); }
+    function tpl_() { downloadText('xodimlar-namuna.csv', '\ufeff' + [csvLine(['F.I.Sh.', 'Lavozim', 'Bo‘lim', 'Login', 'Parol']), csvLine(['Dilnoza Karimova', posOf(p.db)[1] || posOf(p.db)[0], depOf(p.db)[0], '', ''])].join('\r\n'), 'text/csv;charset=utf-8'); }
     function pick(e) {
       var f = e.target.files && e.target.files[0]; e.target.value = '';
       if (!f) return;
@@ -8184,9 +8240,9 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
 
   function Staff(p) {
     var t = p.t, db = p.db;
-    var blank = function () { return { name: '', position: 'Omborchi', department: 'Logistika bo‘limi', login: '', password: genPw() }; };
+    var blank = function () { return { name: '', position: posOf(db)[0], department: depOf(db)[0], login: '', password: genPw() }; };
     var f = useState(blank), form = f[0], er = useState({}), pw = useState({}), made = useState(null);
-    var op = useState(null), flt = useState('all'), ed = useState(null);
+    var op = useState(null), flt = useState('all'), ed = useState(null), org = useState(false);
     function set(k, v) { var o = Object.assign({}, form); o[k] = v; f[1](o); }
     function create() {
       var e = {}; ['name', 'login', 'password'].forEach(function (k) { if (!String(form[k]).trim()) e[k] = t('fill_required'); });
@@ -8243,7 +8299,9 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     }
 
     return h('div', { className: 'app-wrap' },
-      h('div', { className: 'page-head' }, h('div', null, h('span', { className: 'lor-eyebrow' }, 'RBAC'), h('h1', { className: 'lor-title' }, t('nav_staff'), h(PageTip, { t: t, id: 'staff' })))),
+      h('div', { className: 'page-head' }, h('div', null, h('span', { className: 'lor-eyebrow' }, 'RBAC'), h('h1', { className: 'lor-title' }, t('nav_staff'), h(PageTip, { t: t, id: 'staff' }))),
+        h(Btn, { variant: 'outline', size: 'sm', className: 'org-btn', onClick: function () { org[1](true); } }, t('org_btn'))),
+      org[0] ? h(OrgModal, Object.assign({}, p, { onClose: function () { org[1](false); } })) : null,
       h('div', { className: 'tiles' },
         h('div', { className: 'tile' }, h('span', { className: 'lor-eyebrow' }, t('sp_t_emps')), h('b', null, emps.length), h('span', { className: 'lor-sm lor-muted' }, tpl(t('sp_t_levels'), { n: groups.length }))),
         h('div', { className: 'tile' }, h('span', { className: 'lor-eyebrow' }, t('sp_t_new')), h('b', null, emps.filter(function (u) { return u.status === 'probation'; }).length), h('span', { className: 'lor-sm lor-muted' }, t('s_probation'))),
@@ -8262,8 +8320,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         h('h2', { className: 'lor-h' }, t('new_emp')),
         h('div', { className: 'staff-form' },
           h(Field, { name: 'n-name', label: t('fio'), required: true, value: form.name, error: er[0].name, onChange: function (v) { set('name', v); }, placeholder: 'Ism Familiya' }),
-          h(Field, { name: 'n-pos', label: t('position'), value: form.position, onChange: function (v) { set('position', v); }, options: STAFF_POS }),
-          h(Field, { name: 'n-dep', label: t('department'), value: form.department, onChange: function (v) { set('department', v); }, options: STAFF_DEP }),
+          h(Field, { name: 'n-pos', label: t('position'), value: form.position, onChange: function (v) { set('position', v); }, options: withCur(posOf(db), form.position) }),
+          h(Field, { name: 'n-dep', label: t('department'), value: form.department, onChange: function (v) { set('department', v); }, options: withCur(depOf(db), form.department) }),
           h(Field, { name: 'n-login', label: t('login'), required: true, value: form.login, error: er[0].login, onChange: function (v) { set('login', v); }, placeholder: 'i.familiya' }),
           h(Field, { name: 'n-pw', label: t('password'), required: true, value: form.password, error: er[0].password, onChange: function (v) { set('password', v); } })),
         h('div', { className: 'box-row' },
