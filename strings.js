@@ -2941,3 +2941,8 @@ Object.assign(APP_T.zh, { ud_open: '删除员工', ud_eyebrow: '删除员工—�
   ud_kept: '将保留：工资计算、考勤、财物记录、建议、任务和日志。', ud_keep: '在排行榜“以往候选人”中保留学习成绩（{n} 节课）',
   ud_assets: '该员工还持有 {n} 件公司财物。请先收回——否则记录中会显示“未归还”。', ud_backup: '如有需要，请先保存副本：菜单 →“下载全部数据”。',
   ud_sure: '我明白：员工将被永久删除', ud_btn: '删除', ud_done: '已删除 {n}——登录已关闭' });
+/* «Adaptatsiya rejasi» (новая раскладка), «Jamoa davomati» (дни до начала), уведомление о месячном отчёте без висячего «— 0» */
+Object.assign(APP_T.uz, { pl_new_ph: 'Yangi band…', pl_col_empty: 'Hali band yo‘q', mr_l_void: 'ishdan oldin / hali kelmagan', n_month_adm: '{m} oylik hisoboti tayyor: {n} xodim, xavf zonasida: {r}.' });
+Object.assign(APP_T.ru, { pl_new_ph: 'Новый пункт…', pl_col_empty: 'Пунктов пока нет', mr_l_void: 'до начала работы / ещё не наступил', n_month_adm: 'Отчёт за {m} готов: сотрудников {n}, в зоне риска {r}.' });
+Object.assign(APP_T.en, { pl_new_ph: 'New item…', pl_col_empty: 'No items yet', mr_l_void: 'before start / not yet', n_month_adm: 'Report for {m} is ready: {n} employees, {r} at risk.' });
+Object.assign(APP_T.zh, { pl_new_ph: '新事项…', pl_col_empty: '暂无事项', mr_l_void: '入职前 / 尚未到来', n_month_adm: '{m}月度报告已生成：员工 {n} 名，风险区 {r} 名。' });

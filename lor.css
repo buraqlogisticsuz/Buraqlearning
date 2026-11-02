@@ -3980,3 +3980,74 @@ input.org-name:hover, input.org-name:focus { border-color: var(--line); backgrou
 /* тёмная тема: неактивные вкладки — белым, а не приглушённым (на светлом пятне фона приглушённые почти не видны) */
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .lor-tab { color: var(--ink); } }
 :root[data-theme="dark"] .lor-tab { color: var(--ink); }
+/* вкладки и меню: при наведении — только цвет; красная черта — только у открытой (полчерты при наведении
+   выглядела как вторая открытая вкладка) */
+.lor-header-nav a:hover::after, .app-subnav a:hover::after, .lor-tab:hover::after { transform: scaleX(0); opacity: 0; }
+.lor-header-nav a.is-on:hover::after, .app-subnav a.is-on:hover::after, .lor-tab.is-on:hover::after { transform: scaleX(1); opacity: 1; }
+.lor-tab:hover { color: var(--ink); }
+.lor-tab { transition: color var(--t-sm) var(--ease); }
+
+/* выпадающие списки: своя стрелка с отступом от края (системная прилипала к рамке) */
+:root { --select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230e2e54' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6.5 9.5l5.5 5.5 5.5-5.5'/%3E%3C/svg%3E"); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6.5 9.5l5.5 5.5 5.5-5.5'/%3E%3C/svg%3E"); } }
+:root[data-theme="dark"] { --select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6.5 9.5l5.5 5.5 5.5-5.5'/%3E%3C/svg%3E"); }
+select.lor-input:not([multiple]) { -webkit-appearance: none; appearance: none; background-image: var(--select-arrow); background-repeat: no-repeat; background-position: right 14px center; background-size: 16px 16px; padding-right: 42px; text-overflow: ellipsis; }
+select.lor-input.slim:not([multiple]) { background-position: right 10px center; background-size: 14px 14px; padding-right: 32px; }
+
+/* «Jamoa davomati»: дни до начала работы и ещё не наступившие — пунктиром, не путаются с «1 soatgacha»;
+   имена — с отступом от края */
+.mx-c.is-void, .mr-strip i.is-void, .mc-sw.is-void { background: transparent; box-shadow: none; outline: var(--hairline) dashed var(--line); outline-offset: -1px; }
+.mx .mx-name { padding-left: 12px; }
+
+/* уведомления: прочитанное — без кружка (пустой кружок выглядел как переключатель) */
+.notif-dot { box-shadow: none; }
+
+/* «Adaptatsiya rejasi»: колонки 30/60/90 — карточки пунктов: номер, текст на месте, программа и удаление значком */
+.pa-cols { align-items: start; }
+.pa-col { border: var(--hairline) solid var(--line); border-radius: var(--radius-lg); background: var(--glass-read); padding: var(--space-3); display: flex; flex-direction: column; gap: var(--space-2); }
+.pa-col-h { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); padding: 4px 4px var(--space-2); border-bottom: var(--hairline) solid var(--line); }
+.pa-day { font-size: 13px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink); }
+.pa-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.pa-item { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: var(--space-2); align-items: start; padding: var(--space-2); border-radius: var(--radius-md); background: var(--surface-raised); border: var(--hairline) solid var(--line); }
+.pa-n { width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; color: var(--ink-muted); border: var(--hairline) solid var(--line); margin-top: 6px; font-variant-numeric: tabular-nums; }
+.pa-body { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.pa-text { font: inherit; font-size: 14px; line-height: 20px; color: var(--ink); background: transparent; border: var(--hairline) solid transparent; border-radius: var(--radius-sm); padding: 5px 6px; resize: none; width: 100%; box-sizing: border-box; field-sizing: content; min-height: 52px; }
+.pa-text:hover { border-color: var(--line); }
+.pa-text:focus-visible { outline: none; border-color: var(--blue-text); background: var(--glass-read); }
+.pa-foot { display: flex; align-items: center; gap: var(--space-2); }
+.pa-track { flex: 1 1 auto; min-width: 0; width: 100%; height: 32px; font-size: 13px; }
+.pa-del, .pa-plus { flex: none; width: 32px; height: 32px; border-radius: 50%; border: var(--hairline) solid transparent; background: transparent; color: var(--ink-muted); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+.pa-del:hover, .pa-del:focus-visible { color: var(--red-text); border-color: var(--red); background: var(--red-soft); outline: none; }
+.pa-empty { margin: 0; padding: 6px 4px; }
+.pa-add { display: flex; gap: var(--space-2); align-items: center; padding-top: var(--space-2); border-top: var(--hairline) dashed var(--line); }
+.pa-add .lor-input { flex: 1 1 auto; min-width: 0; width: 100%; }
+.pa-plus { border-color: var(--line); color: var(--ink); }
+.pa-plus:not(:disabled):hover { background: var(--red); border-color: var(--red); color: var(--on-red); }
+.pa-plus:disabled { opacity: .45; cursor: default; }
+@media (max-width: 720px) { .pa-cols { grid-template-columns: minmax(0, 1fr); } }
+/* «Tillar» (таблица уровней, вопрос [jadval]): каждая строка — карточка; слева название и «уровень сигнала»,
+   справа одна шкала: пройденные уровни — голубым, выбранный — синим, «Bilmayman» — серым */
+.qn-lv { gap: 10px; }
+.qn-lv-row { grid-template-columns: minmax(170px, 220px) minmax(0, 1fr); gap: var(--space-4); align-items: center; padding: 10px 10px 10px 14px; border: var(--hairline) solid var(--line); border-radius: var(--radius-md); background: var(--surface-raised); transition: border-color var(--t-sm) var(--ease), box-shadow var(--t-sm) var(--ease); }
+.qn-lv-row.is-set { border-color: var(--blue-text); box-shadow: inset 3px 0 0 var(--blue); }
+.qn-lv-row.is-none { border-color: var(--line); box-shadow: inset 3px 0 0 var(--gray); }
+.qn-lv-name { gap: 12px; font-weight: 400; min-width: 0; }
+.qn-lv-txt { display: flex; flex-direction: column; min-width: 0; line-height: 18px; }
+.qn-lv-txt b { font-weight: 500; font-size: 15px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qn-lv-txt small { font-size: 12px; color: var(--blue-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.qn-lv-row.is-none .qn-lv-txt small { color: var(--ink-muted); }
+.qn-lv-bars { display: inline-flex; align-items: flex-end; gap: 3px; height: 20px; flex: none; }
+.qn-lv-bars i { width: 5px; min-height: 4px; border-radius: 2px; background: var(--line); transition: background-color var(--t-md) var(--ease); }
+.qn-lv-bars i.is-on { background: var(--blue-text); }
+.qn-lv-pills { display: flex; flex-wrap: nowrap; gap: 3px; padding: 3px; border-radius: var(--radius-pill); background: var(--surface-sunken); border: var(--hairline) solid var(--line); }
+.qn-lv-pill { flex: 1 1 0; min-width: 0; height: 36px; padding: 0 10px; border: 0; border-radius: var(--radius-pill); background: transparent; color: var(--ink-muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.qn-lv-pill:hover:not(:disabled) { color: var(--ink); background: var(--surface-raised); border-color: transparent; }
+.qn-lv-pill.is-fill { background: var(--blue-soft); color: var(--blue-text); }
+.qn-lv-pill.is-on, .qn-lv-pill.is-on:hover:not(:disabled) { background: var(--blue); color: var(--on-blue); font-weight: 500; box-shadow: var(--shadow-sm); }
+.qn-lv-row.is-none .qn-lv-pill.is-on, .qn-lv-row.is-none .qn-lv-pill.is-on:hover:not(:disabled) { background: var(--gray); color: var(--navy); }
+.qn-lv-pill:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+@media (max-width: 720px) {
+  .qn-lv-row { grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 12px; }
+  .qn-lv-pills { flex-wrap: wrap; border-radius: var(--radius-md); }
+  .qn-lv-pill { flex: 1 1 calc(33.33% - 3px); border-radius: 9px; font-size: 12px; padding: 0 4px; }
+}

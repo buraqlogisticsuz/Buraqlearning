@@ -507,11 +507,15 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     else if (x.type === 'grid') {
       var g = v && typeof v === 'object' && !Array.isArray(v) ? v : {}, cols = x.cols || [];
       input = h('div', { className: 'qn-lv', role: 'group', 'aria-labelledby': id + '-l' }, opts.map(function (r, ri) {
-        var at = cols.indexOf(g[r]);
-        return h('div', { key: ri, className: cx('qn-lv-row', g[r] && 'is-set') },
-          h('span', { className: 'qn-lv-name' }, g[r] ? h(Ico, { name: 'check', size: 14, w: 2.4 }) : null, r),
+        /* строка языка: «уровень сигнала» у названия + одна шкала уровней; до выбранного — подсвечено, выбранный — синим,
+           первый столбец («Bilmayman») — серым */
+        var at = cols.indexOf(g[r]), lv = cols.length - 1;
+        return h('div', { key: ri, className: cx('qn-lv-row', g[r] && 'is-set', at === 0 && 'is-none') },
+          h('span', { className: 'qn-lv-name' },
+            h('span', { className: 'qn-lv-bars', 'aria-hidden': true }, cols.slice(1).map(function (c, k) { return h('i', { key: k, className: cx(at > k && 'is-on'), style: { height: Math.round((k + 1) / Math.max(1, lv) * 100) + '%' } }); })),
+            h('span', { className: 'qn-lv-txt' }, h('b', null, r), h('small', null, g[r] || '\u00a0'))),
           h('div', { className: 'qn-lv-pills', role: 'radiogroup', 'aria-label': r }, cols.map(function (c, ci) {
-            return h('button', { key: c, type: 'button', role: 'radio', 'aria-checked': g[r] === c, disabled: ro, className: cx('qn-lv-pill', g[r] === c && 'is-on', at >= 0 && ci <= at && ci > 0 && 'is-fill'),
+            return h('button', { key: c, type: 'button', role: 'radio', 'aria-checked': g[r] === c, disabled: ro, className: cx('qn-lv-pill', g[r] === c && 'is-on', at > 0 && ci > 0 && ci < at && 'is-fill'),
               onClick: function () { var n = Object.assign({}, g); n[r] = c; ch(n); } }, c);
           })));
       }));
@@ -1632,6 +1636,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
 
   /* ---------- icons (line icons, 24×24) ---------- */
   var ICO = {
+    trash: 'M4.5 7h15M9.5 7V4.5h5V7M6.5 7l.9 12.5h9.2L17.5 7M10.2 10.8v5.4M13.8 10.8v5.4',
+    plus: 'M12 5.5v13M5.5 12h13',
     laptop: 'M4 5h16v11H4zM2 19h20', phone: 'M8 2.5h8a1.5 1.5 0 0 1 1.5 1.5v16a1.5 1.5 0 0 1-1.5 1.5H8A1.5 1.5 0 0 1 6.5 20V4A1.5 1.5 0 0 1 8 2.5zM11 18.5h2',
     sim: 'M7 2.5h7.5l4 4v15H7zM10 11h6v6h-6zM13 11v6M10 14h6', monitor: 'M3 4h18v12H3zM9 20h6M12 16v4',
     scanner: 'M3 5v14M6 5v14M9.5 5v14M13 5v14M15.5 5v14M18 5v14M21 5v14', token: 'M9 2.5h6v5H9zM6.5 7.5h11v10a4 4 0 0 1-4 4h-3a4 4 0 0 1-4-4zM11 4.5v1M13 4.5v1',
@@ -4697,39 +4703,46 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       h('p', { className: 'lor-sm lor-muted' }, t('trk_rest_note')));
   }
 
-  /* ---------- admin: the plan template ---------- */
+  /* ---------- admin: the plan template ----------
+     три колонки (30 / 60 / 90 дней); пункт — карточка: номер, текст (правится на месте, высота по тексту), программа и
+     удаление значком; новый пункт — строкой внизу своей колонки (Enter или «+») */
+  function planRows(s) { return Math.max(2, Math.min(8, String(s || '').split('\n').reduce(function (a, l) { return a + Math.max(1, Math.ceil(l.length / 34)); }, 0))); }
+  function PlanAddRow(p) {
+    var t = p.t, v = useState('');
+    function go(e) { if (e) e.preventDefault(); var x = v[0].trim(); if (!x) return; p.onAdd(x); v[1](''); }
+    return h('form', { className: 'pa-add', onSubmit: go },
+      h('input', { className: 'lor-input slim', id: 'pl-new-' + p.day, value: v[0], placeholder: t('pl_new_ph'), 'aria-label': t('pl_add') + ' · ' + tpl(t('pl_day'), { n: p.day }), maxLength: 300, onChange: function (e) { v[1](e.target.value); } }),
+      h('button', { type: 'submit', className: 'pa-plus', disabled: !v[0].trim(), title: t('pl_add'), 'aria-label': t('pl_add') }, h(Ico, { name: 'plus', size: 18 })));
+  }
   function PlanAdmin(p) {
-    var t = p.t, db = p.db, list = (db.planTpl || []), add = useState({ day: 30, track: '', text: '' });
+    var t = p.t, db = p.db, list = (db.planTpl || []);
+    var trackOpts = [['', t('pl_all_tracks')]].concat(tracksOf(db).map(function (y) { return [y.id, trackTitle(y, p.lang)]; }));
     function save(id, fn) { p.update(function (d) { d.planTpl = (d.planTpl || []).map(function (x) { if (x.id !== id) return x; var c = clone(x); fn(c); return c; }); }); }
     function remove(id) { p.update(function (d) { d.planTpl = (d.planTpl || []).filter(function (x) { return x.id !== id; }); }); p.say(t('pl_deleted')); }
-    function create() {
-      var v = add[0]; if (!v.text.trim()) return;
-      p.update(function (d) { var o = { id: 'pl' + nextId(d), day: +v.day, track: v.track || null, text: {} }; o.text[p.lang] = v.text.trim(); d.planTpl = (d.planTpl || []).concat([o]); });
-      add[1]({ day: v.day, track: v.track, text: '' }); p.say(t('pl_added'));
+    function create(day, text) {
+      p.update(function (d) { var o = { id: 'pl' + nextId(d), day: day, track: null, text: {} }; o.text[p.lang] = text; d.planTpl = (d.planTpl || []).concat([o]); });
+      p.say(t('pl_added'));
     }
     return h('div', { className: 'cs-admin' },
       h('div', { className: 'cs-admin-h' },
         h('div', null, h('h2', { className: 'lor-h' }, t('pl_admin_t')), h('p', { className: 'lor-sm lor-muted', style: { margin: '4px 0 0' } }, t('pl_admin_s')))),
-      h('div', { className: 'plan-cols' }, PLAN_DAYS.map(function (day) {
-        return h('div', { key: day, className: 'plan-col' },
-          h('div', { className: 'plan-col-h' }, h('b', null, tpl(t('pl_day'), { n: day })), h('span', { className: 'lor-sm lor-muted' }, list.filter(function (x) { return x.day === day; }).length)),
-          h('ul', { className: 'plan-list is-admin' }, list.filter(function (x) { return x.day === day; }).map(function (x) {
-            var tr = x.track ? trackById(db, x.track) : null;
-            return h('li', { key: x.id },
-              h(Field, { name: 'plt-' + x.id, multiline: true, rows: 2, value: planText(x, p.lang), onChange: function (v) { save(x.id, function (c) { if (typeof c.text === 'string') c.text = { uz: c.text }; c.text[p.lang] = v; }); } }),
-              h('div', { className: 'cms-mini' },
-                h(Field, { name: 'pltr-' + x.id, value: x.track || '', options: [['', t('pl_all_tracks')]].concat(tracksOf(db).map(function (y) { return [y.id, trackTitle(y, p.lang)]; })), onChange: function (v) { save(x.id, function (c) { c.track = v || null; }); } }),
-                h('button', { type: 'button', className: 'app-link danger', onClick: function () { remove(x.id); } }, t('remove'))),
-              tr ? h('span', { className: 'cs-tag' }, trackTitle(tr, p.lang)) : null);
-          })));
-      })),
-      h('section', { className: 'box' },
-        h('h3', { className: 'lor-h' }, t('pl_add')),
-        h('div', { className: 'lor-form-grid' },
-          h(Field, { name: 'pl-day', label: t('pl_when'), value: String(add[0].day), options: PLAN_DAYS.map(function (d) { return [String(d), tpl(t('pl_day'), { n: d })]; }), onChange: function (v) { add[1](Object.assign({}, add[0], { day: +v })); } }),
-          h(Field, { name: 'pl-track', label: t('trk_title'), value: add[0].track, options: [['', t('pl_all_tracks')]].concat(tracksOf(db).map(function (y) { return [y.id, trackTitle(y, p.lang)]; })), onChange: function (v) { add[1](Object.assign({}, add[0], { track: v })); } }),
-          h(Field, { name: 'pl-text', span: true, multiline: true, rows: 2, label: t('pl_text'), placeholder: t('pl_text_ph'), value: add[0].text, onChange: function (v) { add[1](Object.assign({}, add[0], { text: v })); } })),
-        h('div', { className: 'as-act' }, h(Btn, { variant: 'primary', onClick: create }, '+ ' + t('pl_add')))));
+      h('div', { className: 'plan-cols pa-cols' }, PLAN_DAYS.map(function (day) {
+        var items = list.filter(function (x) { return x.day === day; });
+        return h('section', { key: day, className: 'pa-col', 'aria-label': tpl(t('pl_day'), { n: day }) },
+          h('header', { className: 'pa-col-h' }, h('span', { className: 'pa-day' }, tpl(t('pl_day'), { n: day })), h('span', { className: 'lor-count' }, items.length)),
+          items.length ? h('ol', { className: 'pa-list' }, items.map(function (x, i) {
+            var txt = planText(x, p.lang);
+            return h('li', { key: x.id, className: 'pa-item' },
+              h('span', { className: 'pa-n', 'aria-hidden': true }, i + 1),
+              h('div', { className: 'pa-body' },
+                h('textarea', { className: 'pa-text', id: 'plt-' + x.id, rows: planRows(txt), value: txt, 'aria-label': t('pl_text') + ' ' + (i + 1), onChange: function (e) { var v = e.target.value; save(x.id, function (c) { if (typeof c.text === 'string') c.text = { uz: c.text }; c.text[p.lang] = v; }); } }),
+                h('div', { className: 'pa-foot' },
+                  h('select', { className: 'lor-input slim pa-track', id: 'pltr-' + x.id, 'aria-label': t('trk_title'), value: x.track || '', onChange: function (e) { var v = e.target.value; save(x.id, function (c) { c.track = v || null; }); } },
+                    trackOpts.map(function (o) { return h('option', { key: o[0], value: o[0] }, o[1]); })),
+                  h('button', { type: 'button', className: 'pa-del', title: t('remove'), 'aria-label': t('remove') + ': ' + txt.slice(0, 60), onClick: function () { remove(x.id); } }, h(Ico, { name: 'trash', size: 17 })))));
+          })) : h('p', { className: 'lor-sm lor-muted pa-empty' }, t('pl_col_empty')),
+          h(PlanAddRow, { t: t, day: day, onAdd: function (x) { create(day, x); } }));
+      })));
   }
 
   /* ======================= FEATURES 9: which standards the mistakes keep pointing at ======================= */
@@ -5373,7 +5386,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   function HeatLegend(p) {
     var t = p.t;
     return h('div', { className: 'mc-legend' }, [[0, t('mr_l0')], [1, t('mr_l1')], [2, t('mr_l2')], [3, t('mr_l3')]].map(function (x) { return h('span', { key: x[0] }, h('i', { className: 'mc-sw h' + x[0] }), x[1]); }),
-      h('span', null, h('i', { className: 'mc-sw is-off' }), t('mr_dayoff')));
+      h('span', null, h('i', { className: 'mc-sw is-off' }), t('mr_dayoff')),
+      p.void ? h('span', null, h('i', { className: 'mc-sw is-void' }), t('mr_l_void')) : null);
   }
   function MiniStrip(p) {
     return h('div', { className: 'mr-strip', 'aria-hidden': true }, p.ms.days.map(function (d) { return h('i', { key: d.k, className: cx('h' + heatLvl(d.m), !d.work && 'is-off', (d.before || d.future) && 'is-void', d.today && 'is-today') }); }));
@@ -5580,7 +5594,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
                 h('td', { className: cx('mx-sum num', r.ms.att != null && r.ms.att < 80 && 'warn-txt') }, r.ms.att == null ? '—' : r.ms.att + '%'),
                 h('td', { className: 'mx-sum num' }, Math.round(r.ms.minutes / 6) / 10));
             })))),
-          h(HeatLegend, { t: t })),
+          h(HeatLegend, { t: t, void: rows.some(function (r) { return r.ms.days.some(function (d) { return d.before || d.future; }); }) })),
         h('section', { className: 'box mr-people' },
           h('h2', { className: 'lor-h' }, t('mr_people_t')),
           h('div', { className: 'lor-table-wrap' }, h('table', { className: 'lor-table mr-table' },
