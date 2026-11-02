@@ -315,7 +315,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           return h('button', { key: d.id || j, type: 'button', role: 'tab', 'aria-selected': on, className: cx('ir-tab', on && 'is-on', sn && 'is-seen'), onClick: function () { ix[1](j); } }, (sn ? '✓ ' : (j + 1) + '. ') + docTitle(d));
         })) : null,
         p.onX ? h('button', { type: 'button', className: 'lor-modal-x ir-x', 'aria-label': t('close'), onClick: p.onX }, '×') : null),
-      h('div', { className: cx('ir-body', !vid && 'no-video') },
+      h('div', { className: 'ir-body' },
         h('section', { className: cx('ir-doc', 'is-' + kind), 'aria-label': docTitle(cur) },
           h('div', { className: 'ir-doc-bar' },
             h('span', { className: 'jf-ext' }, fileExt(cur.name)),
@@ -325,8 +325,13 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
               h('button', { type: 'button', className: 'app-link', onClick: function () { seen(); docSave(cur); } }, t('in_doc_dl')))),
           h('div', { className: cx('dv-body', 'is-' + kind) }, docBody(t, cur, x, seen))),
         h('aside', { className: 'ir-side' },
-          h('p', { className: 'lor-sm lor-muted ir-how' }, t(vid ? 'ir_how' : 'ir_how_doc')),
-          vid ? h('div', { className: 'ir-video' }, h(IntroVideo, { t: t, video: { title: vid.title || docTitle(cur), duration: '', src: vid.src } })) : null,
+          h('p', { className: 'lor-sm lor-muted ir-how' }, t('ir_how')),
+          /* окно видео есть всегда: пока ссылки нет — заставка (у SOP-менеджера и CEO — где её вставить) */
+          h('div', { className: 'ir-video' }, vid ? h(IntroVideo, { t: t, video: { title: vid.title || docTitle(cur), duration: '', src: vid.src } })
+            : h('div', { className: 'ir-video-empty' },
+              h('span', { className: 'ir-play', 'aria-hidden': true }, h('svg', { width: 30, height: 30, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, strokeLinejoin: 'round' }, h('path', { d: 'M9 6.5v11l9-5.5z' }))),
+              h('b', null, t('ir_vid_soon')),
+              h('small', null, t(p.admin ? 'ir_vid_add' : 'ir_vid_soon_sub')))),
           String(w.introText || '').trim() ? h('div', { className: 'intro-text ir-text' }, paras(w.introText)) : null,
           h('div', { className: 'ir-foot' },
             p.confirm ? h('label', { className: cx('check big', need && 'is-off') }, h('input', { type: 'checkbox', id: 'in-seen', disabled: need, checked: ok[0] && !need, onChange: function (e) { ok[1](e.target.checked); if (p.onCheck) p.onCheck(e.target.checked); } }), t('in_seen')) : null,
@@ -7138,7 +7143,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
             h('h3', { className: 'lor-h' }, preview.introTitle.trim() || t('in_title')),
             docs.length ? h(Btn, { variant: 'outline', size: 'sm', onClick: function () { full[1](true); } }, t('in_full')) : null,
             h(IntroBody, { t: t, w: preview, noMarks: true })) : null)),
-      full[0] && docs.length ? h(IntroReader, { t: t, w: Object.assign({}, preview, { docs: docs.map(function (z) { return docVidBad(z) ? Object.assign({}, z, { video: null }) : z; }) }), onX: function () { full[1](false); }, onEsc: function () { full[1](false); }, next: { label: t('close'), on: function () { full[1](false); } } }) : null);
+      full[0] && docs.length ? h(IntroReader, { t: t, admin: true, w: Object.assign({}, preview, { docs: docs.map(function (z) { return docVidBad(z) ? Object.assign({}, z, { video: null }) : z; }) }), onX: function () { full[1](false); }, onEsc: function () { full[1](false); }, next: { label: t('close'), on: function () { full[1](false); } } }) : null);
   }
   /* ---------- «Kontent» → «Savolnoma»: вопросы анкеты (SOP-менеджер и CEO; руководитель — только смотрит) ---------- */
   function qnNew(type, text) { return { id: 'q' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), text: text || '', type: type || 'long', options: [], req: type !== 'section' }; }
