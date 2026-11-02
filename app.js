@@ -292,6 +292,92 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       h('label', { className: cx('check big', need && 'is-off') }, h('input', { type: 'checkbox', id: 'in-seen', disabled: need, checked: p.checked && !need, onChange: function (e) { p.onChange(e.target.checked); } }), t('in_seen')),
       need ? h('p', { className: 'lor-sm lor-muted in-need' }, tpl(t('in_docs_need'), { n: k, m: n })) : null);
   }
+  /* ---------- «Savolnoma» — обязательный опросник для всех сотрудников (settings.questionnaire) ----------
+     Вопросы пишут SOP-менеджер и CEO в «Kontent» → «Savolnoma»: вручную, вставкой списка или из Word (.docx).
+     { title, intro, on, questions: [{ id, text, type: text|long|one|many|scale|section, options: [], req }], editedAt, by }.
+     Ответы — в карточке сотрудника: users[].qa = { answers: { <id вопроса>: текст | [варианты] | 1…5 }, at — когда отправил }.
+     Чужие карточки сотрудникам не уходят (сервер: PUBLIC_USER) — ответы видят сам сотрудник, CEO, SOP-менеджер и руководитель.
+     Должен заполнить, пока не ответил на все обязательные вопросы: добавили новый обязательный — спросит снова, с прежними ответами */
+  var QN_TYPES = ['long', 'text', 'one', 'many', 'scale', 'section'];
+  function qnOf(db) { var q = db.settings && db.settings.questionnaire; return q && q.on !== false && qnAsk(q).length ? q : null; }
+  function qnAsk(q) { return ((q && q.questions) || []).filter(function (x) { return x.type !== 'section'; }); }
+  function qnHas(v) { return Array.isArray(v) ? v.length > 0 : typeof v === 'number' ? v > 0 : String(v == null ? '' : v).trim() !== ''; }
+  function qnDone(q, u) { var a = (u.qa && u.qa.answers) || {}; return !!(u.qa && u.qa.at) && qnAsk(q).every(function (x) { return !x.req || qnHas(a[x.id]); }); }
+  function qnDue(db, u) { var q = qnOf(db); return !!(q && u && u.role === 'employee' && !qnDone(q, u)); }
+  function qnText(x, v) { return !qnHas(v) ? '' : x.type === 'scale' ? v + ' / 5' : Array.isArray(v) ? v.join(', ') : String(v); }
+  /* один вопрос анкеты: короткий / развёрнутый ответ, один или несколько вариантов, оценка 1–5; section — подзаголовок */
+  function QnField(p) {
+    var t = p.t, x = p.q, v = p.value, id = 'qn-' + x.id, ch = p.onChange, ro = !ch;
+    if (x.type === 'section') return h('h3', { className: 'qn-sec' }, x.text);
+    var arr = Array.isArray(v) ? v : [], input;
+    if (x.type === 'text') input = h('input', { id: id, className: 'lor-input', value: v || '', maxLength: 500, readOnly: ro, 'aria-labelledby': id + '-l', onChange: function (e) { ch(e.target.value); } });
+    else if (x.type === 'long') input = h('textarea', { id: id, className: 'lor-input', rows: 3, value: v || '', maxLength: 4000, readOnly: ro, 'aria-labelledby': id + '-l', onChange: function (e) { ch(e.target.value); } });
+    else if (x.type === 'one' || x.type === 'many') input = h('div', { className: 'qn-opts', role: x.type === 'one' ? 'radiogroup' : 'group', 'aria-labelledby': id + '-l' }, (x.options || []).map(function (o, i) {
+      var on = x.type === 'one' ? v === o : arr.indexOf(o) >= 0;
+      return h('label', { key: i, className: cx('qn-opt', on && 'is-on') },
+        h('input', { type: x.type === 'one' ? 'radio' : 'checkbox', name: id, checked: on, disabled: ro, onChange: function () { ch(x.type === 'one' ? o : on ? arr.filter(function (z) { return z !== o; }) : (x.options || []).filter(function (z) { return z === o || arr.indexOf(z) >= 0; })); } }),
+        h('span', null, o));
+    }));
+    else input = h('div', { className: 'qn-scale' },
+      h('div', { className: 'qn-sc-row', role: 'radiogroup', 'aria-labelledby': id + '-l' }, [1, 2, 3, 4, 5].map(function (n) { return h('button', { key: n, type: 'button', role: 'radio', 'aria-checked': v === n, disabled: ro, className: cx('qn-sc', v === n && 'is-on'), onClick: function () { ch(n); } }, n); })),
+      h('span', { className: 'qn-sc-cap' }, t('qn_scale_cap')));
+    return h('div', { className: cx('qn-field', p.err && 'is-err'), 'data-q': x.id },
+      h('span', { className: 'qn-q', id: id + '-l' }, h('span', { className: 'qn-n' }, p.n + '.'), h('span', null, x.text, x.req ? h('span', { className: 'lor-req', 'aria-hidden': true }, '*') : null)),
+      x.type === 'many' && !ro ? h('span', { className: 'lor-sm lor-muted qn-many' }, t('qn_many_hint')) : null,
+      input,
+      p.err ? h('span', { className: 'lor-field-error' }, t('qn_req_err')) : null);
+  }
+  function qnFields(q, a, set, errs, t) {
+    var n = 0;
+    return (q.questions || []).map(function (x) { if (x.type !== 'section') n++; return h(QnField, { key: x.id, t: t, q: x, n: n, value: a[x.id], err: errs && errs[x.id], onChange: set ? function (v) { set(x.id, v); } : null }); });
+  }
+  /* анкета поверх программы: обязательная — «Keyinroq» (черновик сохраняется) и «Yuborish»; уже отправлена — поправить и «Saqlash» */
+  function QnModal(p) {
+    var t = p.t, u = p.user, q = qnOf(p.db) || { questions: [] }, due = qnDue(p.db, u), prev = (u.qa && u.qa.answers) || {};
+    var a = useState(function () { return Object.assign({}, prev); }), errs = useState({}), box = useRef(null);
+    var ask = qnAsk(q), got = ask.filter(function (x) { return qnHas(a[0][x.id]); }).length;
+    function set(id, v) { a[1](function (o) { var n = Object.assign({}, o); n[id] = v; return n; }); if (errs[0][id]) errs[1](function (e) { var n = Object.assign({}, e); delete n[id]; return n; }); }
+    function answers() {
+      var o = Object.assign({}, prev);
+      ask.forEach(function (x) { var v = a[0][x.id]; if (qnHas(v)) o[x.id] = typeof v === 'string' ? v.trim().slice(0, x.type === 'long' ? 4000 : 500) : v; else delete o[x.id]; });
+      return o;
+    }
+    function later() {
+      var ans = answers();
+      if (due && JSON.stringify(ans) !== JSON.stringify(prev)) p.update(function (d) { patchUser(d, u.id, function (x) { x.qa = Object.assign({}, x.qa || {}, { answers: ans }); }); });
+      p.onClose();
+    }
+    function send() {
+      var e = {}; ask.forEach(function (x) { if (x.req && !qnHas(a[0][x.id])) e[x.id] = 1; });
+      errs[1](e);
+      if (Object.keys(e).length) { setTimeout(function () { var el = box.current && box.current.querySelector('.qn-field.is-err'); if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, 30); return; }
+      var at = Date.now(), ans = answers(), first = !(u.qa && u.qa.at);
+      p.update(function (d) { patchUser(d, u.id, function (x) { x.qa = { answers: ans, at: at }; }); if (first) d.audit.unshift({ id: nextId(d), userId: u.id, key: 'qn-done', at: at }); });
+      SAY(due ? 'qn_sent' : 'saved'); p.onClose();
+    }
+    useEffect(function () { function k(e) { if (e.key === 'Escape') later(); } window.addEventListener('keydown', k); return function () { window.removeEventListener('keydown', k); }; });
+    return h('div', { className: 'lor-scrim', onMouseDown: function (e) { if (e.target === e.currentTarget) later(); } },
+      h('div', { className: 'lor-modal qn-modal', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'qn-h', ref: box },
+        h('button', { type: 'button', className: 'lor-modal-x', 'aria-label': t('close'), onClick: later }, '×'),
+        h('span', { className: 'lor-eyebrow' }, due ? t('qn_banner_t') : t('qn_tab')),
+        h('h2', { className: 'lor-h', id: 'qn-h' }, String(q.title || '').trim() || t('qn_title')),
+        String(q.intro || '').trim() ? h('div', { className: 'intro-text qn-intro' }, paras(q.intro)) : null,
+        h('div', { className: 'qn-prog' }, h('span', { className: 'lor-sm lor-muted' }, tpl(t('qn_progress'), { n: got, m: ask.length })), h('span', { className: 'lor-progress' }, h('span', { className: 'lor-progress-fill', style: { width: Math.round(got / Math.max(1, ask.length) * 100) + '%' } }))),
+        h('div', { className: 'qn-list' }, qnFields(q, a[0], set, errs[0], t)),
+        !due && u.qa && u.qa.at ? h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, '✓ ' + tpl(t('qn_sent_on'), { d: fmt(u.qa.at, t) })) : null,
+        h('div', { className: 'lor-modal-actions' },
+          h(Btn, { variant: 'ghost', onClick: later }, due ? t('clk_later') : t('close')),
+          h(Btn, { variant: 'primary', arrow: true, onClick: send }, due ? t('qn_send') : t('save')))));
+  }
+  /* напоминание на главной, пока анкета не отправлена */
+  function QnBanner(p) {
+    var t = p.t, q = qnOf(p.db);
+    if (!p.openQn || !qnDue(p.db, p.user)) return null;
+    return h('section', { className: 'clock-banner intro-banner qn-banner' },
+      h('svg', { className: 'cb-ico', width: 24, height: 24, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true }, h('rect', { x: 5, y: 4, width: 14, height: 17, rx: 2 }), h('path', { d: 'M9 4V3h6v1M8.5 10h7M8.5 14h7M8.5 18h4' })),
+      h('div', { className: 'cb-body' }, h('b', null, t('qn_banner_t')), h('span', null, tpl(t('qn_banner_sub'), { n: qnAsk(q).length }))),
+      h(Btn, { variant: 'primary', arrow: true, onClick: p.openQn }, t('qn_open')));
+  }
   /* знакомство поверх программы: обязательное (ещё не подтверждено) — с галочкой и «Tasdiqlash»; уже подтверждено — просто посмотреть */
   function IntroModal(p) {
     var t = p.t, u = p.user, w = introOf(p.db) || {}, due = introDue(p.db, u), ok = useState(false), tick = useState(0);
@@ -4507,8 +4593,10 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     ['.pay-filters', 'hint_payflt_t', 'hint_payflt'],
     ['.ld-box', 'hint_ldr_t', 'hint_ldr'],
     ['.wz-admin', 'hint_wz_t', 'hint_wz'],
-    ['.in-admin', 'hint_in_t', 'hint_in'],
-    ['.intro-banner', 'hint_inb_t', 'hint_inb']
+    ['.in-admin:not(.qn-admin)', 'hint_in_t', 'hint_in'],
+    ['.intro-banner:not(.qn-banner)', 'hint_inb_t', 'hint_inb'],
+    ['.qn-admin', 'hint_qn_t', 'hint_qn'],
+    ['.qn-banner', 'hint_qnb_t', 'hint_qnb']
   ];
   var HINT_ALL = HINTS.map(function (x) { return x[0]; }).join(', ');
 
@@ -6703,6 +6791,160 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
             h('h3', { className: 'lor-h' }, preview.introTitle.trim() || t('in_title')),
             h(IntroBody, { t: t, w: preview, noMarks: true })) : null)));
   }
+  /* ---------- «Kontent» → «Savolnoma»: вопросы анкеты (SOP-менеджер и CEO; руководитель — только смотрит) ---------- */
+  function qnNew(type, text) { return { id: 'q' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), text: text || '', type: type || 'long', options: [], req: type !== 'section' }; }
+  /* список вопросов из текста: строка — вопрос (номер «1.» убирается), «- …», «• …», «a) …» — вариант к вопросу выше,
+     «# …» — подзаголовок. Так же читается Word: заголовки → подзаголовки, маркированный список → варианты */
+  function qnFromText(s) {
+    var out = [], cur = null;
+    String(s || '').split(/\r?\n/).forEach(function (raw) {
+      var l = raw.replace(/\s+/g, ' ').trim(), m;
+      if (!l) return;
+      if (/^#/.test(l)) { cur = null; out.push(qnNew('section', l.replace(/^#+\s*/, '').slice(0, 300))); return; }
+      if ((m = /^(?:[-–—•*○◦□▪·●]|[a-zа-я][.)])\s*(.+)$/i.exec(l))) {
+        if (cur) { cur.options.push(m[1].trim().slice(0, 200)); if (cur.type === 'long' || cur.type === 'text') cur.type = 'one'; return; }
+        l = m[1];
+      }
+      cur = qnNew('long', l.replace(/^\d+\s*[.)]\s*/, '').slice(0, 500)); out.push(cur);
+    });
+    return out;
+  }
+  function docxQnText(doc) {
+    return doc.blocks.map(function (b) {
+      if (b.k === 'h') return '# ' + b.text;
+      var x = plain(b.html || '');
+      if (b.k === 'li') return b.ul ? '- ' + x : x;
+      return x;
+    }).join('\n');
+  }
+  function qnStat(db) {
+    var q = qnOf(db), emps = db.users.filter(function (u) { return u.role === 'employee'; });
+    var done = q ? emps.filter(function (u) { return qnDone(q, u); }) : [];
+    return { q: q, emps: emps, done: done, wait: q ? emps.filter(function (u) { return done.indexOf(u) < 0; }) : [] };
+  }
+  function qnCsv(db, q) {
+    var ask = qnAsk(q), cell = function (x) { x = String(x == null ? '' : x); return /[;"\n]/.test(x) ? '"' + x.replace(/"/g, '""') + '"' : x; };
+    var rows = [['ID', 'Xodim', 'Lavozim', 'Bo‘lim', 'Yuborilgan'].concat(ask.map(function (x) { return x.text; }))];
+    db.users.filter(function (u) { return u.role === 'employee' && u.qa; }).forEach(function (u) {
+      var a = u.qa.answers || {};
+      rows.push([u.id, u.name, u.position || '', u.department || '', u.qa.at ? fmtDate(u.qa.at) : '—'].concat(ask.map(function (x) { return qnText(x, a[x.id]); })));
+    });
+    return '﻿' + rows.map(function (r) { return r.map(cell).join(';'); }).join('\r\n');
+  }
+  /* ответы одного сотрудника — для CEO, SOP-менеджера и руководителя */
+  function QnAnswers(p) {
+    var t = p.t, u = p.u, q = p.q, a = (u.qa && u.qa.answers) || {}, n = 0;
+    useEffect(function () { function k(e) { if (e.key === 'Escape') p.onClose(); } window.addEventListener('keydown', k); return function () { window.removeEventListener('keydown', k); }; }, []);
+    return h('div', { className: 'lor-scrim', onMouseDown: function (e) { if (e.target === e.currentTarget) p.onClose(); } },
+      h('div', { className: 'lor-modal qn-modal qn-ans', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'qa-h' },
+        h('button', { type: 'button', className: 'lor-modal-x', 'aria-label': t('close'), onClick: p.onClose }, '×'),
+        h('span', { className: 'lor-eyebrow' }, String(q.title || '').trim() || t('qn_title')),
+        h('h2', { className: 'lor-h', id: 'qa-h' }, u.name),
+        h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, [u.position, u.department].filter(Boolean).join(' · ') + ' · ' + (u.qa && u.qa.at ? tpl(t('qn_sent_on'), { d: fmt(u.qa.at, t) }) : t('qn_draft'))),
+        h('dl', { className: 'qn-dl' }, (q.questions || []).map(function (x) {
+          if (x.type === 'section') return h('h3', { key: x.id, className: 'qn-sec' }, x.text);
+          n++; var v = qnText(x, a[x.id]);
+          return h('div', { key: x.id, className: 'qn-dl-row' }, h('dt', null, n + '. ' + x.text), h('dd', { className: v ? '' : 'lor-muted' }, v || '—'));
+        })),
+        h('div', { className: 'lor-modal-actions' }, h(Btn, { variant: 'primary', onClick: p.onClose }, t('close')))));
+  }
+  function QnAdmin(p) {
+    var t = p.t, db = p.db, q0 = (db.settings && db.settings.questionnaire) || {}, ro = lvlOf(p.user) === 'boss';
+    var f = useState(function () { return { title: q0.title || '', intro: q0.intro || '', on: q0.on !== false, questions: clone(q0.questions || []) }; }), v = f[0];
+    var paste = useState(null), err = useState(''), who = useState(null), st = qnStat(db), fileRef = useRef(null), busy = useState(false);
+    function set(k, x) { f[1](function (o) { var n = Object.assign({}, o); n[k] = x; return n; }); }
+    function setQs(fn) { f[1](function (o) { return Object.assign({}, o, { questions: fn(o.questions.slice()) }); }); err[1](''); }
+    function setQ(i, k, x) { setQs(function (a) { a[i] = Object.assign({}, a[i]); a[i][k] = x; if (k === 'type' && (x === 'one' || x === 'many') && (a[i].options || []).length < 2) a[i].options = (a[i].options || []).concat(['', '']).slice(0, Math.max(2, (a[i].options || []).length)); if (k === 'type' && x === 'section') a[i].req = false; return a; }); }
+    function move(i, d) { setQs(function (a) { var j = i + d; if (j < 0 || j >= a.length) return a; var x = a[i]; a[i] = a[j]; a[j] = x; return a; }); }
+    function add(list) { setQs(function (a) { return a.concat(list); }); }
+    function fromWord(e) {
+      var file = (e.target.files || [])[0]; e.target.value = '';
+      if (!file) return;
+      busy[1](true);
+      file.arrayBuffer().then(parseDocx).then(function (doc) {
+        var list = qnFromText(docxQnText(doc)); busy[1](false);
+        if (!list.length) { err[1](t('qn_imp_none')); return; }
+        add(list); p.say(tpl(t('qn_imp_ok'), { n: list.filter(function (x) { return x.type !== 'section'; }).length }));
+      }).catch(function () { busy[1](false); err[1](t('qn_imp_err')); });
+    }
+    var json = JSON.stringify({ title: v.title, intro: v.intro, on: v.on, questions: v.questions }), saved = JSON.stringify({ title: q0.title || '', intro: q0.intro || '', on: q0.on !== false, questions: q0.questions || [] });
+    function save() {
+      if (ro) return;
+      var qs = v.questions.map(function (x) { return Object.assign({}, x, { text: String(x.text || '').trim().slice(0, 500), options: (x.type === 'one' || x.type === 'many') ? (x.options || []).map(function (o) { return String(o).trim().slice(0, 200); }).filter(Boolean) : [] }); }).filter(function (x) { return x.text; });
+      var bad = qs.filter(function (x) { return (x.type === 'one' || x.type === 'many') && x.options.length < 2; })[0];
+      if (bad) { err[1](tpl(t('qn_err_opts'), { q: bad.text.slice(0, 60) })); return; }
+      err[1]('');
+      set('questions', qs);
+      p.update(function (d) { d.settings = d.settings || {}; d.settings.questionnaire = { title: v.title.trim().slice(0, 120), intro: v.intro.trim().slice(0, 4000), on: v.on, questions: qs, by: p.user.id, editedAt: Date.now() }; });
+      p.say(t('saved'));
+    }
+    var n = 0, TYPES = QN_TYPES.map(function (k) { return [k, t('qn_t_' + k)]; });
+    return h('div', { className: 'in-admin qn-admin' },
+      h('div', { className: 'in-cols' },
+        h('div', { className: 'in-forms' },
+          h('section', { className: 'box' },
+            h('h2', { className: 'lor-h' }, t('qn_title')),
+            h('p', { className: 'lor-sm lor-muted', style: { margin: '0 0 12px' } }, t('qn_hint')),
+            h('div', { className: 'wz-form' },
+              h(Field, { name: 'qn-title', label: t('in_f_title'), value: v.title, placeholder: t('qn_title'), onChange: function (x) { set('title', x); } }),
+              h(Field, { name: 'qn-intro', label: t('qn_intro'), multiline: true, rows: 3, value: v.intro, placeholder: t('qn_intro_ph'), onChange: function (x) { set('intro', x); } }),
+              h('label', { className: 'check big lor-span' }, h('input', { type: 'checkbox', id: 'qn-on', checked: v.on, disabled: ro, onChange: function (e) { set('on', e.target.checked); } }), t('qn_on')))),
+          h('section', { className: 'box qn-edit' },
+            h('div', { className: 'qn-edit-head' },
+              h('h2', { className: 'lor-h' }, t('qn_qs'), h('span', { className: 'lor-count' }, qnAsk(v).length)),
+              ro ? null : h('div', { className: 'qn-imp' },
+                h('label', { className: 'lor-btn lor-btn-outline lor-btn-sm', htmlFor: 'qn-docx' }, busy[0] ? t('clk_wait') : t('qn_imp_word')),
+                h('input', { id: 'qn-docx', ref: fileRef, type: 'file', className: 'jf-input', accept: '.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document', onChange: fromWord }),
+                h(Btn, { variant: 'outline', size: 'sm', onClick: function () { paste[1](paste[0] == null ? '' : null); } }, t('qn_imp_text')))),
+            paste[0] != null ? h('div', { className: 'qn-paste' },
+              h(Field, { name: 'qn-paste', label: t('qn_paste_l'), multiline: true, rows: 7, value: paste[0], placeholder: t('qn_paste_ph'), hint: t('qn_paste_hint'), onChange: paste[1] }),
+              h('div', { className: 'qn-paste-act' },
+                h(Btn, { variant: 'ghost', size: 'sm', onClick: function () { paste[1](null); } }, t('cancel')),
+                h(Btn, { variant: 'primary', size: 'sm', disabled: !paste[0].trim(), onClick: function () { var list = qnFromText(paste[0]); add(list); paste[1](null); p.say(tpl(t('qn_imp_ok'), { n: list.filter(function (x) { return x.type !== 'section'; }).length })); } }, t('qn_paste_add')))) : null,
+            v.questions.length ? null : h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('qn_empty')),
+            h('ol', { className: 'qn-items' }, v.questions.map(function (x, i) {
+              var sec = x.type === 'section'; if (!sec) n++;
+              return h('li', { key: x.id, className: cx('qn-item', sec && 'is-sec') },
+                h('div', { className: 'qn-item-top' },
+                  h('span', { className: 'qn-item-n' }, sec ? '§' : n),
+                  h('textarea', { className: 'lor-input qn-item-text', rows: sec ? 1 : 2, value: x.text, readOnly: ro, placeholder: sec ? t('qn_sec_ph') : t('qn_q_ph'), 'aria-label': sec ? t('qn_t_section') : tpl(t('qn_q_n'), { n: n }), onChange: function (e) { setQ(i, 'text', e.target.value); } }),
+                  ro ? null : h('span', { className: 'qn-item-mv' },
+                    h('button', { type: 'button', className: 'in-dl-mv', disabled: i === 0, 'aria-label': t('up'), title: t('up'), onClick: function () { move(i, -1); } }, '↑'),
+                    h('button', { type: 'button', className: 'in-dl-mv', disabled: i === v.questions.length - 1, 'aria-label': t('down'), title: t('down'), onClick: function () { move(i, 1); } }, '↓'),
+                    h('button', { type: 'button', className: 'in-dl-mv qn-del', 'aria-label': t('remove'), title: t('remove'), onClick: function () { setQs(function (a) { a.splice(i, 1); return a; }); } }, '×'))),
+                h('div', { className: 'qn-item-meta' },
+                  h('select', { className: 'lor-input qn-type', value: x.type, disabled: ro, 'aria-label': t('qn_type'), onChange: function (e) { setQ(i, 'type', e.target.value); } }, TYPES.map(function (o) { return h('option', { key: o[0], value: o[0] }, o[1]); })),
+                  sec ? null : h('label', { className: 'check' }, h('input', { type: 'checkbox', checked: !!x.req, disabled: ro, onChange: function (e) { setQ(i, 'req', e.target.checked); } }), t('qn_req'))),
+                x.type === 'one' || x.type === 'many' ? h('div', { className: 'qn-item-opts' },
+                  (x.options || []).map(function (o, k) {
+                    return h('div', { key: k, className: 'qn-item-opt' },
+                      h('span', { className: cx('qn-mark', x.type === 'many' && 'is-sq'), 'aria-hidden': true }),
+                      h('input', { className: 'lor-input', value: o, readOnly: ro, placeholder: tpl(t('qn_opt_ph'), { n: k + 1 }), 'aria-label': tpl(t('qn_opt_ph'), { n: k + 1 }), onChange: function (e) { var val = e.target.value; setQs(function (a) { a[i] = Object.assign({}, a[i], { options: a[i].options.slice() }); a[i].options[k] = val; return a; }); } }),
+                      ro ? null : h('button', { type: 'button', className: 'in-dl-mv qn-del', 'aria-label': t('remove'), onClick: function () { setQs(function (a) { a[i] = Object.assign({}, a[i], { options: a[i].options.filter(function (_, z) { return z !== k; }) }); return a; }); } }, '×'));
+                  }),
+                  ro ? null : h('button', { type: 'button', className: 'app-link qn-add-opt', onClick: function () { setQs(function (a) { a[i] = Object.assign({}, a[i], { options: (a[i].options || []).concat(['']) }); return a; }); } }, '+ ' + t('qn_add_opt'))) : null);
+            })),
+            ro ? null : h('div', { className: 'qn-add' },
+              h(Btn, { variant: 'outline', size: 'sm', onClick: function () { add([qnNew('long')]); } }, '+ ' + t('qn_add_q')),
+              h(Btn, { variant: 'ghost', size: 'sm', onClick: function () { add([qnNew('section')]); } }, '+ ' + t('qn_add_sec')))),
+          h('div', { className: 'in-actions' },
+            ro ? h('span', { className: 'lor-sm lor-muted' }, t('in_ro')) : err[0] ? h('span', { className: 'lor-field-error' }, err[0]) : json !== saved ? h('span', { className: 'lor-sm in-dirty' }, t('in_unsaved')) : h('span'),
+            h(Btn, { variant: 'primary', arrow: true, disabled: ro, onClick: save }, t('save')))),
+        h('div', { className: 'in-side' },
+          h('section', { className: 'box in-stat' },
+            h('span', { className: 'lor-eyebrow' }, t('qn_stat_t')),
+            st.q ? h('b', { className: 'in-stat-n' }, st.done.length + ' / ' + st.emps.length) : null,
+            st.q ? h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, tpl(t('qn_stat'), { n: st.done.length, m: st.emps.length })) : h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('qn_none')),
+            st.q && st.done.length ? h('div', { className: 'in-wait' }, h('span', { className: 'lor-sm lor-muted' }, t('qn_answers')), st.done.map(function (u) { return h('button', { key: u.id, type: 'button', className: 'in-chip qn-who', onClick: function () { who[1](u.id); } }, u.name); })) : null,
+            st.q && st.wait.length ? h('div', { className: 'in-wait' }, h('span', { className: 'lor-sm lor-muted' }, t('qn_wait')), st.wait.map(function (u) { return h(u.qa ? 'button' : 'span', { key: u.id, type: u.qa ? 'button' : undefined, className: cx('in-chip', u.qa && 'qn-who'), onClick: u.qa ? function () { who[1](u.id); } : undefined }, u.name + (u.qa ? ' · ' + t('qn_draft') : '')); })) : null,
+            st.q && db.users.some(function (u) { return u.role === 'employee' && u.qa; }) ? h(Btn, { variant: 'outline', size: 'sm', onClick: function () { downloadText('savolnoma-' + dayKey(Date.now()) + '.csv', qnCsv(db, st.q)); } }, t('qn_csv')) : null),
+          qnAsk(v).length ? h('section', { className: 'box in-preview' },
+            h('span', { className: 'lor-eyebrow' }, t('in_preview')),
+            h('h3', { className: 'lor-h' }, v.title.trim() || t('qn_title')),
+            v.intro.trim() ? h('div', { className: 'intro-text' }, paras(v.intro)) : null,
+            h('div', { className: 'qn-list' }, qnFields(v, {}, null, null, t))) : null)),
+      who[0] && userOf(db, who[0]) ? h(QnAnswers, { t: t, u: userOf(db, who[0]), q: (db.settings && db.settings.questionnaire) || v, onClose: function () { who[1](null); } }) : null);
+  }
   function Login(p) {
     var t = p.t, a = useState(''), b = useState(''), e = useState(''), th = useThemePref(), busy = useState(false), from = useState(introFrom)[0];
     function submit(ev) {
@@ -7033,6 +7275,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         h(Badge, { status: u.status, lang: p.lang })),
       h(ClockBanner, p),
       h(IntroBanner, p),
+      h(QnBanner, p),
       (function () {
         var iss = assetsOf(db, u.id).filter(function (a) { return a.status === 'issued'; });
         return iss.length ? h('section', { className: 'lor-notice as-notice' },
@@ -7113,7 +7356,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   function EmployeeApp(p) {
     var t = p.t, db = p.db, u = p.user;
     var r = useHashRoute(EMP_ROUTES, { name: 'home' }), route = r[0], dr = useState(false), ai = useState(false);
-    var ini = useState(false), sv = useState(false), pHide = useState(false), tour = useState(false), gate = useState(false), gateInit = useRef(false), intro = useState(false);
+    var ini = useState(false), sv = useState(false), pHide = useState(false), tour = useState(false), gate = useState(false), gateInit = useRef(false), intro = useState(false), qn = useState(false);
     var pal = useState(false); usePalette(pal[0], pal[1]);
     var hintOn = !!u.hints;
     var theme = useThemePref(p.say, t);
@@ -7123,8 +7366,14 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var filled = !!(u.profileComplete && u.assetsDeclaredAt);
     var ready = !!(u.termsAcceptedAt && filled);
     /* при открытии программы — модальное окно отметки прихода, если сотрудник ещё не отметился сегодня (один раз за заход) */
-    /* сначала обязательное знакомство (если не подтверждено), после него — отметка прихода */
-    useEffect(function () { if (gateInit.current || !ready) return; gateInit.current = true; if (introDue(dbRef.current, u)) intro[1]('auto'); else if (clockDue(dbRef.current, u)) gate[1](true); }, [ready]);
+    /* сначала обязательное знакомство (если не подтверждено), потом анкета (если не отправлена), после них — отметка прихода */
+    function nextGate(from) {
+      var d = dbRef.current;
+      if (from === 'start' && introDue(d, u)) intro[1]('auto');
+      else if (from !== 'qn' && qnDue(d, u)) qn[1]('auto');
+      else if (clockDue(d, u)) gate[1](true);
+    }
+    useEffect(function () { if (gateInit.current || !ready) return; gateInit.current = true; nextGate('start'); }, [ready]);
     function forceGo(x) { r[1](x); dr[1](false); window.scrollTo(0, 0); }
     function go(x) { if (route.name === 'lesson' && leaveRef.current && leaveRef.current(x)) { dr[1](false); return; } forceGo(x); }
     function openNotif(n) {
@@ -7212,7 +7461,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var sections = courseSections(db, u).map(function (s) {
       return { title: s.title, officialOnly: s.officialOnly && u.status !== 'official', lessons: s.lessons.map(function (l) { var st = lessonStatus(db, u, l.id); return { id: l.id, title: l.title, status: st === 'question' || st === 'updated' ? 'in-progress' : st, active: (route.name === 'lesson' || route.name === 'quiz') && route.id === l.id }; }) };
     });
-    var q = Object.assign({}, p, { go: go, openNotif: openNotif, pulseDue: due, openSurvey: function () { sv[1](true); }, openIni: function () { ini[1](true); }, openClock: function () { gate[1](true); }, openIntro: function () { intro[1]('view'); } });
+    var q = Object.assign({}, p, { go: go, openNotif: openNotif, pulseDue: due, openSurvey: function () { sv[1](true); }, openIni: function () { ini[1](true); }, openClock: function () { gate[1](true); }, openIntro: function () { intro[1]('view'); }, openQn: function () { qn[1]('view'); } });
     var main = !filled ? h(ProfilePage, p)
       : route.name === 'lesson' ? h(LessonView, Object.assign({}, q, { id: route.id, forceGo: forceGo, leaveRef: leaveRef, key: route.id }))
       : route.name === 'quiz' ? h(QuizView, Object.assign({}, q, { id: route.id, key: 'q' + route.id }))
@@ -7234,7 +7483,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     if (LmsPay.schemeFor(db.pay, u) || (db.payCalcs || []).some(function (c) { return c.uid === u.id; })) navItems.push(['pay', t('nav_pay')]);
     var nav = filled ? navItems.map(function (n) { return { key: n[0], label: n[1], count: n[2], active: route.name === n[0], onClick: function () { go({ name: n[0] }); } }; }) : null;
     var issuedN = assetsOf(db, u.id).filter(function (a) { return a.status === 'issued'; }).length;
-    var links = filled ? (introOf(db) ? [{ key: 'intro', label: t('in_title'), onClick: function () { intro[1]('view'); } }] : []).concat([{ key: 'drill', label: t('dr_title'), onClick: function () { go({ name: 'drill' }); } }, { key: 'assets', label: t('as_my_title'), count: issuedN, onClick: function () { go({ name: 'assets' }); } }, { key: 'ideas', label: t('ini_my'), onClick: function () { go({ name: 'ideas' }); } }, { key: 'report', label: t('mr_nav'), onClick: function () { go({ name: 'report' }); } }, { key: 'help', label: t('nav_help'), onClick: function () { go({ name: 'help' }); } }]) : null;
+    var links = filled ? (introOf(db) ? [{ key: 'intro', label: t('in_title'), onClick: function () { intro[1]('view'); } }] : []).concat(qnOf(db) ? [{ key: 'qn', label: t('qn_title'), onClick: function () { qn[1]('view'); } }] : []).concat([{ key: 'drill', label: t('dr_title'), onClick: function () { go({ name: 'drill' }); } }, { key: 'assets', label: t('as_my_title'), count: issuedN, onClick: function () { go({ name: 'assets' }); } }, { key: 'ideas', label: t('ini_my'), onClick: function () { go({ name: 'ideas' }); } }, { key: 'report', label: t('mr_nav'), onClick: function () { go({ name: 'report' }); } }, { key: 'help', label: t('nav_help'), onClick: function () { go({ name: 'help' }); } }]) : null;
     return h(F, null,
       h(Header, { t: t, lang: p.lang, setLang: p.setLang, onProfile: p.openProfile, user: u, notifs: mine, onNotif: openNotif, onReadAll: function () { p.update(function (d) { d.notifications.forEach(function (n) { if (n.userId === u.id) n.read = true; }); }); }, onLogout: p.logout, onMenu: filled ? function () { dr[1](!dr[0]); } : null,
         nav: nav, links: links, hint: filled ? hint : null, theme: theme, onSearch: filled ? function () { pal[1](true); } : null, onHelp: filled ? function () { go({ name: 'help' }); } : null, medalNew: !!u.medalNew, onMedalSeen: function () { p.update(function (d) { d.users.forEach(function (x) { if (x.id === u.id) x.medalNew = false; }); }); }, rank: filled ? rankOf(db, u) : null, fmtNotif: function (n) { return notifText(n, db, p.lang, t); }, onPath: filled ? function () { go({ name: 'path' }); } : null, onTerms: p.showTerms,
@@ -7246,8 +7495,9 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       due && !pHide[0] && !sv[0] && !ai[0] && !ini[0] && !u.celebrate && route.name !== 'lesson' && route.name !== 'quiz' && route.name !== 'drill' ? h(PulseBubble, { t: t, db: db, user: u, onStart: function () { sv[1](true); }, onLater: snoozePulse, onClose: function () { pHide[1](true); } }) : null,
       sv[0] ? h(SurveyModal, Object.assign({}, p, { key: 'sv', onClose: function () { sv[1](false); pHide[1](true); }, openIni: function () { ini[1](true); } })) : null,
       ini[0] ? h(IniModal, Object.assign({}, p, { key: 'ini', onClose: function () { ini[1](false); }, onList: function () { go({ name: 'ideas' }); } })) : null,
-      intro[0] ? h(IntroModal, Object.assign({}, q, { key: 'intro', onClose: function () { var auto = intro[0] === 'auto'; intro[1](false); if (auto && clockDue(dbRef.current, u)) gate[1](true); } })) : null,
-      gate[0] && !intro[0] ? h(ClockGate, Object.assign({}, q, { key: 'gate', onClose: function () { gate[1](false); } })) : null,
+      intro[0] ? h(IntroModal, Object.assign({}, q, { key: 'intro', onClose: function () { var auto = intro[0] === 'auto'; intro[1](false); if (auto) nextGate('intro'); } })) : null,
+      qn[0] && !intro[0] ? h(QnModal, Object.assign({}, q, { key: 'qn', onClose: function () { var auto = qn[0] === 'auto'; qn[1](false); if (auto) nextGate('qn'); } })) : null,
+      gate[0] && !intro[0] && !qn[0] ? h(ClockGate, Object.assign({}, q, { key: 'gate', onClose: function () { gate[1](false); } })) : null,
       filled ? h(AIMentor, Object.assign({}, p, { open: ai[0], setOpen: ai[1], lessonId: route.name === 'lesson' ? route.id : null, openLesson: function (id) { go({ name: 'lesson', id: id }); } })) : null,
       hintOn && !tour[0] && u.tourDone ? h(HintLayer, { t: t }) : null,
       pal[0] ? h(Palette, Object.assign({}, q, { onClose: function () { pal[1](false); }, go: function (x) { go(x); } })) : null,
@@ -7415,7 +7665,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
 
     return h('div', { className: 'app-wrap' },
       h('div', { className: 'page-head' }, h('div', null, h('span', { className: 'lor-eyebrow' }, t('srv_cms_hint')), h('h1', { className: 'lor-title' }, t('nav_cms'), h(PageTip, { t: t, id: 'cms' })))),
-      h('div', { className: 'lor-tabs fb-tabs', role: 'tablist' }, [['lessons', t('cms_tab_lessons'), flat(db.course).length], ['welcome', t('in_tab'), (function () { var st = introStat(db); return st.w ? st.seen.length + '/' + st.emps.length : 0; })()], ['cases', t('nav_cases'), (db.cases || []).length], ['journals', t('db_tab_j'), (db.journals || []).length], ['terms', t('db_tab_t'), (db.terms || []).length], ['tracks', t('trk_tab'), (db.tracks || []).length], ['plan', t('pl_tab'), (db.planTpl || []).length], ['wisdom', t('wz_title'), ((db.settings && db.settings.wisdom && db.settings.wisdom.list) || []).length]].map(function (x) {
+      h('div', { className: 'lor-tabs fb-tabs', role: 'tablist' }, [['lessons', t('cms_tab_lessons'), flat(db.course).length], ['welcome', t('in_tab'), (function () { var st = introStat(db); return st.w ? st.seen.length + '/' + st.emps.length : 0; })()], ['qn', t('qn_tab'), (function () { var st = qnStat(db); return st.q ? st.done.length + '/' + st.emps.length : 0; })()], ['cases', t('nav_cases'), (db.cases || []).length], ['journals', t('db_tab_j'), (db.journals || []).length], ['terms', t('db_tab_t'), (db.terms || []).length], ['tracks', t('trk_tab'), (db.tracks || []).length], ['plan', t('pl_tab'), (db.planTpl || []).length], ['wisdom', t('wz_title'), ((db.settings && db.settings.wisdom && db.settings.wisdom.list) || []).length]].map(function (x) {
         return h('button', { key: x[0], type: 'button', role: 'tab', 'aria-selected': tab[0] === x[0], className: cx('lor-tab', tab[0] === x[0] && 'is-on'), onClick: function () { tab[1](x[0]); } }, x[1], h('span', { className: 'lor-count' }, x[2]));
       })),
       tab[0] === 'cases' ? h(CasesAdmin, p) :
@@ -7425,6 +7675,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       tab[0] === 'plan' ? h(PlanAdmin, p) :
       tab[0] === 'wisdom' ? h(WisdomAdmin, p) :
       tab[0] === 'welcome' ? h(WelcomeAdmin, p) :
+      tab[0] === 'qn' ? h(QnAdmin, p) :
       h('div', { className: 'cms' },
         audSec[0] && db.course.sections.some(function (s) { return s.id === audSec[0]; }) ? h(AudienceModal, Object.assign({}, p, { section: db.course.sections.filter(function (s) { return s.id === audSec[0]; })[0], onClose: function () { audSec[1](null); } })) : null,
         h('aside', { className: 'cms-tree' },

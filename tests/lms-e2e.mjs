@@ -760,6 +760,50 @@ try {
   assert.equal(await E.locator('.intro-modal').count(), 0, 'окно закрылось');
   step('«Tanishuv»: SOP-менеджер задал приветствие и обязательное знакомство (текст, PDF и Word, видео), сотрудник открыл документы и подтвердил');
 
+  // ---------- «Savolnoma»: SOP-менеджер добавляет вопросы списком (варианты, раздел, оценка); сотрудник заполняет; ответы видит SOP ----------
+  await nav(A, 'cms'); await A.locator('.lor-tab').filter({ hasText: 'Savolnoma' }).click(); await A.waitForTimeout(300);
+  await A.locator('.qn-imp button').click();
+  await A.fill('#f-qn-paste', '1. Nega aynan BURAQ Logistics’ni tanladingiz?\n2. Qaysi ish formati sizga qulay?\n- Ofisda\n- Masofadan\n# Tajriba\n3. Logistikadagi tajribangizni baholang');
+  await A.locator('.qn-paste-act .lor-btn-primary').click();
+  assert.equal(await A.locator('.qn-item').count(), 4, 'три вопроса и раздел');
+  await A.locator('.qn-item').nth(3).locator('select.qn-type').selectOption('scale');
+  await A.locator('.qn-admin .in-actions .lor-btn-primary').click(); await settle(A);
+  { const q = srv.g.state().settings.questionnaire;
+    assert.deepEqual(q.questions.map(x => x.type), ['long', 'one', 'section', 'scale']);
+    assert.deepEqual(q.questions[1].options, ['Ofisda', 'Masofadan'], 'строки «- …» — варианты'); }
+  await A.locator('.qn-item').first().scrollIntoViewIfNeeded(); await shot(A, 'savolnoma-kontent');
+  await A.locator('.lor-tab').filter({ hasText: 'Darslar' }).click();
+  await E.reload({ waitUntil: 'networkidle' }); await watchSync(E); await E.waitForTimeout(1500);
+  if (!(await E.locator('.qn-modal').count())) { await E.locator('.user-btn').first().click(); await E.locator('.user-pop-links button.qn').click(); }
+  await E.locator('.qn-modal').waitFor({ timeout: 5000 });
+  await E.locator('.qn-modal .lor-modal-actions .lor-btn-primary').click();
+  assert.equal(await E.locator('.qn-field.is-err').count(), 3, 'без ответов не отправить — три вопроса подсвечены');
+  await E.locator('.qn-field').nth(0).locator('textarea').fill('Kompaniya rivojlanmoqda');
+  await E.locator('.qn-field').nth(1).locator('.qn-opt').filter({ hasText: 'Masofadan' }).click();
+  await E.locator('.qn-field').nth(2).locator('.qn-sc').nth(3).click();
+  await shot(E, 'savolnoma-xodim');
+  await E.locator('.qn-modal .lor-modal-actions .lor-btn-primary').click(); await settle(E);
+  { const qa = srv.g.state().users.find(u => u.id === emp.id).qa, qs = srv.g.state().settings.questionnaire.questions;
+    assert.ok(qa && qa.at, 'анкета отправлена — на сервере');
+    assert.deepEqual([qa.answers[qs[0].id], qa.answers[qs[1].id], qa.answers[qs[3].id]], ['Kompaniya rivojlanmoqda', 'Masofadan', 4]); }
+  assert.equal(await E.locator('.qn-modal').count(), 0, 'окно закрылось');
+  assert.equal(await E.locator('.qn-banner').count(), 0, 'напоминания больше нет');
+  await A.reload({ waitUntil: 'networkidle' }); await watchSync(A);
+  await nav(A, 'cms'); await A.locator('.lor-tab').filter({ hasText: 'Savolnoma' }).click(); await A.waitForTimeout(300);
+  await A.locator('.qn-who').first().click();
+  assert.match(await A.locator('.qn-ans').innerText(), /Masofadan/, 'SOP-менеджер видит ответы');
+  await A.waitForTimeout(450); await shot(A, 'savolnoma-javoblar');
+  await A.locator('.qn-ans .lor-modal-x').click();
+  // вопросы из Word: заголовки — разделы, маркированный список — варианты к вопросу выше (не сохраняем — только проверка)
+  const qn0 = await A.locator('.qn-item').count();
+  await A.setInputFiles('#qn-docx', { name: 'savollar.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', buffer: docx });
+  await A.waitForFunction(n => document.querySelectorAll('.qn-item').length > n, qn0, { timeout: 5000 });
+  assert.ok(await A.locator('.qn-item.is-sec').count() >= 2, 'заголовки Word — разделы');
+  assert.ok(await A.locator('.qn-item-opt input[value="Birinchi band"]').count(), 'маркированный список — варианты');
+  assert.ok(await A.locator('.in-dirty').count(), 'до «Saqlash» — «не сохранено»');
+  await A.locator('.lor-tab').filter({ hasText: 'Darslar' }).click();
+  step('«Savolnoma»: SOP-менеджер добавил вопросы списком (варианты, раздел, оценка 1–5), сотрудник заполнил обязательные, SOP-менеджер видит ответы; вопросы из Word');
+
   // ---------- демо больше нет: ?demo=1 — тот же вход на сервер; без адреса сервера — «Server ulanmagan» ----------
   const D = await device('бывшее демо', '?demo=1');
   assert.equal(await D.locator('.demo-box').count(), 0, 'демо-входов нет');

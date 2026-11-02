@@ -778,3 +778,16 @@ test('«Tanishuv»: документы (PDF, Word) — файлом на сер�
   const bad = D({ action: 'patch', ops: [{ op: 'set', path: ['settings', 'welcome', 'docs'], value: [] }] });
   assert.equal(bad.rejected.length, 1, 'сотрудник документы не меняет');
 });
+
+test('«Savolnoma»: ответы — в своей карточке; коллеги их не видят, чужие ответы не записать, вопросы правят только SOP/CEO', () => {
+  const { A, D, Z } = platform();
+  const qs = { on: true, questions: [{ id: 'q1', text: 'Nega BURAQ?', type: 'long', options: [], req: true }] };
+  assert.deepEqual(rejected(A({ action: 'patch', ops: [{ op: 'set', path: ['settings', 'questionnaire'], value: qs }] })), []);
+  assert.equal(D({ action: 'load' }).state.settings.questionnaire.questions.length, 1, 'вопросы видны сотруднику');
+  const own = D({ action: 'patch', ops: [{ op: 'set', path: ['users', { id: 10427 }, 'qa'], value: { answers: { q1: 'shaxsiy javob' }, at: 1 } }] });
+  assert.deepEqual(rejected(own), []);
+  assert.equal(A({ action: 'load' }).state.users.find(u => u.id === 10427).qa.answers.q1, 'shaxsiy javob', 'SOP-менеджер видит ответ');
+  assert.equal(Z({ action: 'load' }).state.users.find(u => u.id === 10427).qa, undefined, 'коллега ответов не видит');
+  assert.equal(Z({ action: 'patch', ops: [{ op: 'set', path: ['users', { id: 10427 }, 'qa'], value: { answers: {}, at: 2 } }] }).rejected.length, 1, 'чужие ответы не записать');
+  assert.equal(D({ action: 'patch', ops: [{ op: 'set', path: ['settings', 'questionnaire'], value: { on: false } }] }).rejected.length, 1, 'сотрудник вопросы не меняет');
+});
