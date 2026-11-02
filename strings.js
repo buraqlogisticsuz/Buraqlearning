@@ -3301,3 +3301,17 @@ Object.assign(APP_T.zh, { qn_fold_all: '全部折叠', qn_unfold_all: '全部展
   qn_rep_q_save: '在点击“保存”之前不会保存任何内容。是否继续？',
   qn_rep_ok: '问卷已替换：{n} 个问题——请检查后点击“保存”',
   qn_cond_sugg: '添加条件：仅当选择“{o}”时', qn_cond_sugg_t: '只有选择了该答案的人才会看到此问题' });
+/* «Savolnoma»: вариант «Boshqa» («Boshqa (yozing)», «Другое», «Other», «其他») со своим ответом — поле «Yozing…» под
+   вариантами; в редакторе — пометка у такого варианта; подсказка вставки — с примером */
+Object.assign(APP_T.uz, { qn_oth_ph: 'Yozing…', qn_oth_err: 'Boshqa variantni yozing', qn_oth_tag: 'o‘z javobi bilan',
+  qn_oth_tag_t: 'Bu variant tanlansa, ostida «Yozing…» maydoni chiqadi: xodim o‘z javobini yozadi (200 belgigacha). Natijalarda — «Boshqa: javob».',
+  qn_paste_hint: 'Har bir qator — savol. «- …» yoki «a) …» — yuqoridagi savolning variantlari (jadvalda — qatorlari); «- Boshqa (yozing)» — o‘z javobi uchun maydon bilan. «# …» — bo‘lim. Qator oxirida: [qisqa] [batafsil] [sana] [tanlov] [bir nechta] [baho] [jadval: A | B] [rozilik], [ixtiyoriy], [asosiy], [maxfiy], [profil:email]. Test: [shkala: Nomi], [teskari], [diqqat: 2], [tekshiruv], [samimiylik], [juft: 12]. «@sarlavha: …», «@kirish: …», «@birinchi» — sozlamalar.' });
+Object.assign(APP_T.ru, { qn_oth_ph: 'Напишите…', qn_oth_err: 'Напишите свой вариант', qn_oth_tag: 'со своим ответом',
+  qn_oth_tag_t: 'Если выбрать этот вариант, под ним появится поле «Напишите…»: сотрудник впишет свой ответ (до 200 знаков). В результатах — «Boshqa: ответ».',
+  qn_paste_hint: 'Каждая строка — вопрос. «- …» или «a) …» — варианты к вопросу выше (для таблицы — её строки); «- Boshqa (yozing)» — с полем для своего ответа. «# …» — раздел. В конце строки: [qisqa] [batafsil] [sana] [tanlov] [bir nechta] [baho] [jadval: A | B] [rozilik], [ixtiyoriy], [asosiy], [maxfiy], [profil:email]. Тест: [shkala: Название], [teskari], [diqqat: 2], [tekshiruv], [samimiylik], [juft: 12]. «@sarlavha: …», «@kirish: …», «@birinchi» — настройки.' });
+Object.assign(APP_T.en, { qn_oth_ph: 'Type your answer…', qn_oth_err: 'Please write your “Other” answer', qn_oth_tag: 'own answer',
+  qn_oth_tag_t: 'When this option is chosen, a “Type your answer…” field appears below it: the employee writes their own answer (up to 200 characters). In the results — “Boshqa: answer”.',
+  qn_paste_hint: 'Each line is a question. “- …” or “a) …” are options for the question above (rows for a grid); “- Boshqa (yozing)” comes with a field for an own answer. “# …” is a section. At the end of a line: [qisqa] [batafsil] [sana] [tanlov] [bir nechta] [baho] [jadval: A | B] [rozilik], [ixtiyoriy], [asosiy], [maxfiy], [profil:email]. Test: [shkala: Name], [teskari], [diqqat: 2], [tekshiruv], [samimiylik], [juft: 12]. “@sarlavha: …”, “@kirish: …”, “@birinchi” are settings.' });
+Object.assign(APP_T.zh, { qn_oth_ph: '请填写…', qn_oth_err: '请填写“其他”的内容', qn_oth_tag: '可自填',
+  qn_oth_tag_t: '选择此选项后，下方会出现“请填写…”输入框：员工填写自己的答案（最多 200 字）。结果中显示为“Boshqa: 答案”。',
+  qn_paste_hint: '每行一个问题。“- …”或“a) …”为上一问题的选项（表格中为行）；“- Boshqa (yozing)”附带自填答案的输入框。“# …”为分节。行末标记：[qisqa] [batafsil] [sana] [tanlov] [bir nechta] [baho] [jadval: A | B] [rozilik]、[ixtiyoriy]、[asosiy]、[maxfiy]、[profil:email]。测试：[shkala: 名称]、[teskari]、[diqqat: 2]、[tekshiruv]、[samimiylik]、[juft: 12]。“@sarlavha: …”、“@kirish: …”、“@birinchi”为设置。' });

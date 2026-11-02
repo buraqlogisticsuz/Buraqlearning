@@ -417,7 +417,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       var qa = Object.assign({}, x.qa || {}), was = qa.consent && typeof qa.consent === 'object' ? qa.consent : {};
       c = { v: o.v || was.v || QN_CONSENT_V, at: at, base: (o.base != null ? o.base : was.base) === true, ai: (o.ai != null ? o.ai : was.ai) === true, special: (o.special != null ? o.special : was.special) === true };
       qa.consent = c;
-      if (!c.special && qa.answers) { var ans = Object.assign({}, qa.answers); qnAsk(q).forEach(function (y) { if (y.secret) delete ans[y.id]; }); qa.answers = ans; }
+      if (!c.special && qa.answers) { var ans = Object.assign({}, qa.answers); qnAsk(q).forEach(function (y) { if (y.secret) { delete ans[y.id]; delete ans[y.id + QN_OTH]; } }); qa.answers = ans; }
       x.qa = qa;
     });
     if (c && d.audit) d.audit.unshift({ id: nextId(d), userId: uid, key: 'qn-consent', v: c.v, base: c.base, ai: c.ai, special: c.special, at: at });
@@ -458,13 +458,47 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   /* «сначала анкета»: пока не отправлена — вместо программы страница анкеты */
   function qnGate(db, u) { var q = qnOf(db); return !!(q && q.first && qnDue(db, u)); }
   function qnDate(v) { var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(v || '')); return m ? m[3] + '.' + m[2] + '.' + m[1] : String(v || ''); }
-  function qnText(x, v) {
+  /* «Boshqa» среди вариантов (один или несколько): вариант «Boshqa», «Boshqa (yozing)», «Другое», «Other», «其他» (без
+     регистра и пробелов по краям) — выбран, и под вариантами поле «Yozing…»; свой ответ — answers[id + '__other'] (до 200
+     знаков). Сняли вариант или вопрос скрыт условием — свой ответ стирается; обязательный вопрос с «Boshqa» без текста не
+     отправить. В результатах, CSV и ИИ — «Boshqa: <текст>» вместо варианта. Если ниже есть вопрос по условию «[agar: Boshqa]»,
+     поля нет — свой ответ пишут в том вопросе, как раньше (qnOthOpt) */
+  var QN_OTH = '__other', QN_OTH_MAX = 200, QN_OTH_WORDS = ['boshqa', 'boshqa (yozing)', 'другое', 'other', '其他'];
+  function qnIsOth(o) { return QN_OTH_WORDS.indexOf(String(o == null ? '' : o).trim().toLowerCase()) >= 0; }
+  /* вариант «Boshqa» у вопроса x, к которому есть своё поле; null — не выбор, такого варианта нет или его ведёт вопрос по условию */
+  function qnOthOpt(q, x) {
+    if (!x || (x.type !== 'one' && x.type !== 'many')) return null;
+    var o = (x.options || []).filter(qnIsOth)[0];
+    if (o == null) return null;
+    var key = String(o).trim(), led = ((q && q.questions) || []).some(function (y) { return !!y.when && y.when.q === x.id && (y.when.any || []).indexOf(key) >= 0; });
+    return led ? null : o;
+  }
+  /* выбран ли вариант «Boshqa» (o) в ответе v */
+  function qnOthOn(x, v, o) { return o != null && (x.type === 'one' ? v === o : Array.isArray(v) && v.indexOf(o) >= 0); }
+  /* обязательный вопрос: «Boshqa» выбран, а свой ответ не написан */
+  function qnOthMiss(q, x, a) { a = a || {}; return !!x.req && qnOthOn(x, a[x.id], qnOthOpt(q, x)) && !String(a[x.id + QN_OTH] || '').trim(); }
+  /* подпись в результатах: «Boshqa (yozing)» → «Boshqa» */
+  function qnOthLabel(o) { var s = String(o).replace(/\s*\([^)]*\)\s*$/, '').trim(); return s || String(o); }
+  /* ответ словами; oth — свой ответ «Boshqa» (answers[id + '__other']) */
+  function qnText(x, v, oth) {
     if (!qnHas(v)) return '';
     if (x.type === 'scale' || x.type === 'attn') return v + ' / 5';
     if (x.type === 'date') return qnDate(v);
     if (x.type === 'consent') return v === true ? '✓' : '';
     if (x.type === 'grid') return (x.options || []).filter(function (r) { return v[r]; }).map(function (r) { return r + ': ' + v[r]; }).join('; ');
-    return Array.isArray(v) ? v.join(', ') : String(v);
+    var s = String(oth == null ? '' : oth).trim(), f = function (o) { return s && qnIsOth(o) ? qnOthLabel(o) + ': ' + s : o; };
+    return Array.isArray(v) ? v.map(f).join(', ') : x.type === 'one' ? f(String(v)) : String(v);
+  }
+  /* ответы к сохранению: prev — сохранённые, cur — на экране, c — согласие (qnCons). Скрытый условием вопрос не хранится,
+     свой ответ «Boshqa» — только пока вопрос виден и «Boshqa» выбран; текст обрезан: длинный — 4000, короткий — 500, «Boshqa» — 200 */
+  function qnAnsOut(q, prev, cur, c) {
+    var o = Object.assign({}, prev);
+    qnAsk(q).forEach(function (x) {
+      var v = cur[x.id], k = x.id + QN_OTH, s = String(cur[k] == null ? '' : cur[k]).trim(), vis = qnShowIf(x, cur, c);
+      if (qnHas(v) && vis) o[x.id] = typeof v === 'string' ? v.trim().slice(0, x.type === 'long' ? 4000 : 500) : v; else delete o[x.id];
+      if (s && vis && qnOthOn(x, v, qnOthOpt(q, x))) o[k] = s.slice(0, QN_OTH_MAX); else delete o[k];
+    });
+    return o;
   }
   /* что из анкеты подставить в профиль (поля, которые сотрудник ещё не заполнял) */
   function qnProfile(db, u) {
@@ -533,7 +567,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       qs.forEach(function (x) {
         var r = qnRange(x); lo += r[0]; hi += r[1]; max += qnMax(x);
         var v = qnVal(x, a[x.id]); if (v == null) return;
-        score += qnPts(x, a[x.id]); sum += v; n++; items.push({ x: x, v: v, a: a[x.id] });
+        score += qnPts(x, a[x.id]); sum += v; n++; items.push({ x: x, v: v, a: a[x.id], o: a[x.id + QN_OTH] });
       });
       var mean = n ? sum / n : null, few = n < QN_FEW * qs.length - 1e-9 || !n;
       var raw = mean == null ? null : lo + (mean - 1) / 4 * (hi - lo);
@@ -705,7 +739,9 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   function qnRetake(d, uid, q, by, at) {
     patchUser(d, uid, function (x) {
       var qa = Object.assign({}, x.qa || {}), ans = Object.assign({}, qa.answers || {}), old = {};
-      qnAsk(q).forEach(function (y) { if (qnTestItem(y) && y.id in ans) { old[y.id] = ans[y.id]; delete ans[y.id]; } });
+      qnAsk(q).forEach(function (y) {
+        [y.id, y.id + QN_OTH].forEach(function (k) { if (qnTestItem(y) && k in ans) { old[k] = ans[k]; delete ans[k]; } });
+      });
       qa.prev = { at: qa.at || null, answers: old, meta: qa.meta || null, asked: at, by: by };
       qa.answers = ans; qa.meta = { rt: {}, changes: 0 }; qa.retake = { at: at, by: by };
       x.qa = qa;
@@ -718,8 +754,11 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   function qnYes(o) { return /^(ha|да|yes|是)$/i.test(String(o).trim()); }
   function qnNo(o) { return /^(yo.?q|нет|no|否)$/i.test(String(o).trim()); }
   function qnYesNo(opts) { return opts.length === 2 && opts.some(qnYes) && opts.some(qnNo); }
+  /* p.oth — вариант «Boshqa» со своим полем (qnOthOpt), p.other — свой ответ, p.onOther(текст) */
   function QnField(p) {
-    var t = p.t, x = p.q, v = p.value, id = 'qn-' + x.id, ch = p.onChange, ro = !ch, done = qnFilled(x, v);
+    var t = p.t, x = p.q, v = p.value, id = 'qn-' + x.id, ch = p.onChange, ro = !ch;
+    var oth = (x.type === 'one' || x.type === 'many') && p.oth != null ? p.oth : null, othOn = qnOthOn(x, v, oth), othTx = String(p.other == null ? '' : p.other);
+    var done = qnFilled(x, v) && !(x.req && othOn && !othTx.trim());
     if (x.type === 'section') return h('h3', { className: 'qn-sec' }, h(Ico, { name: qnSecIco(x.text), size: 18 }), h('span', null, x.text));
     if (x.type === 'note') return h('div', { className: 'qn-note-box' }, h(Ico, { name: 'bulb', size: 20 }), h('div', null, paras(x.text)));
     var star = x.req ? h('span', { className: 'lor-req', 'aria-hidden': true }, '*') : null;
@@ -751,17 +790,29 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       }));
     }
     else if (x.type === 'one' || x.type === 'many') {
-      var yn = x.type === 'one' && qnYesNo(opts), ynIco = x.type === 'one' && opts.some(qnYes) && opts.some(qnNo);
-      input = h('div', { className: cx('qn-tiles', yn && 'is-yn', opts.length > 4 && 'is-many'), role: x.type === 'one' ? 'radiogroup' : 'group', 'aria-labelledby': id + '-l' }, opts.map(function (o, i) {
+      var yn = x.type === 'one' && qnYesNo(opts), ynIco = x.type === 'one' && opts.some(qnYes) && opts.some(qnNo), oi = opts.indexOf(oth);
+      var tiles = h('div', { className: cx('qn-tiles', yn && 'is-yn', opts.length > 4 && 'is-many'), role: x.type === 'one' ? 'radiogroup' : 'group', 'aria-labelledby': id + '-l' }, opts.map(function (o, i) {
         var on = x.type === 'one' ? v === o : arr.indexOf(o) >= 0;
         var mark = ynIco && (qnYes(o) ? 'yes' : qnNo(o) ? 'no' : '');
-        return h('label', { key: i, className: cx('qn-tile', on && 'is-on', x.type === 'many' && 'is-multi', mark && 'is-' + mark) },
-          h('input', { type: x.type === 'one' ? 'radio' : 'checkbox', className: 'qn-hide', name: id, checked: on, disabled: ro, onChange: function () { ch(x.type === 'one' ? o : on ? arr.filter(function (z) { return z !== o; }) : opts.filter(function (z) { return z === o || arr.indexOf(z) >= 0; })); } }),
+        /* выбрали «Boshqa» — курсор сразу в поле своего ответа */
+        var pick = function () {
+          ch(x.type === 'one' ? o : on ? arr.filter(function (z) { return z !== o; }) : opts.filter(function (z) { return z === o || arr.indexOf(z) >= 0; }));
+          if (i === oi && !on) setTimeout(function () { var el = document.getElementById(id + '-oth'); if (el) el.focus(); }, 40);
+        };
+        return h('label', { key: i, className: cx('qn-tile', on && 'is-on', x.type === 'many' && 'is-multi', mark && 'is-' + mark, i === oi && 'is-oth') },
+          h('input', { type: x.type === 'one' ? 'radio' : 'checkbox', className: 'qn-hide', name: id, checked: on, disabled: ro, 'aria-controls': i === oi && on ? id + '-oth' : undefined, onChange: pick }),
           mark ? h('span', { className: 'qn-tile-key is-ico', 'aria-hidden': true }, h(Ico, { name: mark === 'yes' ? 'check' : 'cross', size: 18, w: 2.2 }))
             : h('span', { className: 'qn-tile-key', 'aria-hidden': true }, String.fromCharCode(65 + i)),
           h('span', { className: 'qn-tile-t' }, o),
           yn ? null : h('span', { className: 'qn-box', 'aria-hidden': true }, h(Ico, { name: 'check', size: 14, w: 2.4 })));
       }));
+      /* «Boshqa» выбран — под вариантами строка своего ответа (той же буквы), до 200 знаков */
+      input = othOn ? h(F, null, tiles,
+        h('div', { className: cx('qn-oth', p.err === 'oth' && 'is-err') },
+          h('span', { className: 'qn-tile-key qn-oth-key', 'aria-hidden': true }, String.fromCharCode(65 + oi)),
+          h('input', { id: id + '-oth', className: 'lor-input qn-oth-in', value: othTx, maxLength: QN_OTH_MAX, readOnly: !p.onOther, placeholder: t('qn_oth_ph'), autoComplete: 'off',
+            'aria-label': qnOthLabel(oth) + ': ' + t('qn_oth_ph'), 'aria-invalid': p.err === 'oth' ? true : undefined, onChange: function (e) { if (p.onOther) p.onOther(e.target.value); } }),
+          h('span', { className: 'qn-oth-ico', 'aria-hidden': true }, h(Ico, { name: 'pen', size: 16 })))) : tiles;
     }
     else {
       /* оценка 1–5: с подписями (x.labels — «Umuman to‘g‘ri kelmaydi» … «To‘liq to‘g‘ri keladi») — широкие плитки */
@@ -784,7 +835,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       h('span', { className: 'qn-q', id: id + '-l' }, h('span', { className: cx('qn-n', done && 'is-done'), 'aria-hidden': true }, done ? h(Ico, { name: 'check', size: 13, w: 2.6 }) : p.n), h('span', null, x.text, star)),
       x.type === 'many' && !ro ? h('span', { className: 'lor-sm lor-muted qn-many' }, t('qn_many_hint')) : null,
       input,
-      p.err ? h('span', { className: 'lor-field-error' }, t('qn_req_err')) : null);
+      p.err ? h('span', { className: 'lor-field-error' }, t(p.err === 'oth' ? 'qn_oth_err' : 'qn_req_err')) : null);
   }
   /* o — { before(x), after(x) }: заметки до и после вопроса (предупреждение перед тестом, «shoshilmang») */
   function qnFields(q, a, set, errs, t, c, o) {
@@ -792,7 +843,9 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     return (q.questions || []).map(function (x) {
       if (!qnShowIf(x, a, c)) return null;
       if (x.type !== 'section' && x.type !== 'consent' && x.type !== 'note') n++;
-      var f = h(QnField, { key: x.id, t: t, q: x, n: n, value: a[x.id], err: errs && errs[x.id], onChange: set && !(o && o.ro && o.ro(x)) ? function (v) { set(x.id, v); } : null });
+      var rw = set && !(o && o.ro && o.ro(x));
+      var f = h(QnField, { key: x.id, t: t, q: x, n: n, value: a[x.id], err: errs && errs[x.id], onChange: rw ? function (v) { set(x.id, v); } : null,
+        oth: qnOthOpt(q, x), other: a[x.id + QN_OTH], onOther: rw ? function (s) { set(x.id + QN_OTH, s); } : null });
       var b = o && o.before ? o.before(x) : null, e = o && o.after ? o.after(x) : null;
       return (b && b.length) || e ? h(F, { key: x.id }, b, f, e) : f;
     });
@@ -849,7 +902,9 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var vis = function (x) { return qnShowIf(x, a[0], cons); };
     var steps = qnVisSteps(q, a[0], cons), num = {}, nn = 0;
     (q.questions || []).forEach(function (x) { if (x.type !== 'section' && x.type !== 'consent' && x.type !== 'note' && vis(x)) num[x.id] = ++nn; });
-    var all = qnAsk(q), ask = all.filter(vis), got = ask.filter(function (x) { return qnFilled(x, a[0][x.id]); }).length;
+    /* отвечен: обязательный с «Boshqa» — когда и свой ответ написан */
+    var full = function (x) { return qnFilled(x, a[0][x.id]) && !qnOthMiss(q, x, a[0]); };
+    var all = qnAsk(q), ask = all.filter(vis), got = ask.filter(full).length;
     /* «Javoblar sifati»: время между ответами на пункты теста 1–5 — только пока вкладка видна (скрытое время вычитается),
        паузы длиннее 5 минут не в счёт, первый ответ захода — без времени; сколько раз меняли ответ. Пишется в
        u.qa.meta = { rt: { id: мс }, changes } вместе с ответами (черновик и отправка). 5 ответов подряд быстрее 1 с —
@@ -877,7 +932,14 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     /* анкета уже отправлена: ответы теста — только посмотреть. Пройти тест заново — лишь по «Testni qayta topshirishni
        so‘rash» (qnRetake: первая попытка — в qa.prev), иначе правка обошла бы время ответов, счётчик изменений и повтор */
     var lockT = function (x) { return !due && qnTestItem(x); };
-    function set(id, v) { if (byId[id] && lockT(byId[id])) return; if (byId[id]) track(byId[id], v); a[1](function (o) { var n = Object.assign({}, o); n[id] = v; return n; }); if (errs[0][id]) errs[1](function (e) { var n = Object.assign({}, e); delete n[id]; return n; }); }
+    /* id + '__other' — свой ответ «Boshqa» вопроса id (тот же замок и та же ошибка); сняли «Boshqa» — свой ответ стирается */
+    function set(id, v) {
+      var own = id.slice(-QN_OTH.length) === QN_OTH && !byId[id], bid = own ? id.slice(0, -QN_OTH.length) : id, x = byId[bid];
+      if (x && lockT(x)) return;
+      if (x && !own) track(x, v);
+      a[1](function (o) { var n = Object.assign({}, o); n[id] = own ? String(v).slice(0, QN_OTH_MAX) : v; if (x && !own && !qnOthOn(x, v, qnOthOpt(q, x))) delete n[bid + QN_OTH]; return n; });
+      if (errs[0][bid]) errs[1](function (e) { var n = Object.assign({}, e); delete n[bid]; return n; });
+    }
     /* честное предупреждение перед тестом (q.testWarn: свой текст, false — выключено, нет — стандартный на языке
        сотрудника) — у первого вопроса шкал темперамента (или первого пункта теста 1–5); «пройдите ещё раз» — у первого
        пункта теста без ответа. На странице по шагам — сверху шага, в окне — перед вопросом */
@@ -893,11 +955,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         id === warnId ? h('div', { key: 'w', className: 'qn-note-box qn-warn' }, h(Ico, { name: 'shieldok', size: 20 }), h('div', null, paras(warnTxt))) : null].filter(Boolean);
     };
     var fastNote = function (x) { return fastQ[0] === x.id ? h('p', { key: 'fast', className: 'qn-fast', role: 'status' }, h(Ico, { name: 'clock', size: 16 }), h('span', null, t('qn_fast'))) : null; };
-    function answers() {
-      var o = Object.assign({}, prev);
-      all.forEach(function (x) { var v = a[0][x.id]; if (qnHas(v) && vis(x)) o[x.id] = typeof v === 'string' ? v.trim().slice(0, x.type === 'long' ? 4000 : 500) : v; else delete o[x.id]; });
-      return o;
-    }
+    function answers() { return qnAnsOut(q, prev, a[0], cons); }
     function draft() {
       var ans = answers(), js = JSON.stringify(ans);
       if (!due || js === saved.current) return;
@@ -908,7 +966,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     useEffect(function () { if (!due) return; var tm = setTimeout(draft, 1500); return function () { clearTimeout(tm); }; }, [a[0]]);
     function later() { draft(); if (p.onClose) p.onClose(); }
     function send() {
-      var e = {}; ask.forEach(function (x) { if (x.req && !qnFilled(x, a[0][x.id])) e[x.id] = 1; });
+      var e = {}; ask.forEach(function (x) { if (x.req && !qnFilled(x, a[0][x.id])) e[x.id] = 1; else if (qnOthMiss(q, x, a[0])) e[x.id] = 'oth'; });
       errs[1](e);
       if (Object.keys(e).length) {
         if (p.page) { var bad = steps.map(function (st) { return st.items.some(function (x) { return e[x.id]; }); }).indexOf(true); if (bad >= 0) stp[1](bad); }
@@ -948,7 +1006,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         /* без особых данных уже сохранённые ответы на [maxfiy] сотрутся — спросить, как и в «Rozilik» */
         if (!o.special && (qnSecStored(q, prev) || qnSecStored(q, a[0])) && !window.confirm(t('qn_cons_sp_off_q'))) return;
         p.update(function (d) { qnConsSet(d, u.id, o, at); });
-        if (!o.special) a[1](function (x) { var n = Object.assign({}, x); qnAsk(q).forEach(function (y) { if (y.secret) delete n[y.id]; }); return n; });
+        if (!o.special) a[1](function (x) { var n = Object.assign({}, x); qnAsk(q).forEach(function (y) { if (y.secret) { delete n[y.id]; delete n[y.id + QN_OTH]; } }); return n; });
         window.scrollTo(0, 0);
         /* анкета уже отправлена (спрашивали только согласие) — окно закрывается */
         if (only && !p.page) { SAY('qn_cons_saved'); if (p.onClose) p.onClose(); }
@@ -981,10 +1039,10 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         h(Btn, { variant: 'primary', arrow: true, onClick: p.onContinue }, t('qn_done_go'))));
     if (p.page) {
       var si = Math.min(stp[0], Math.max(0, steps.length - 1)), cs = steps[si] || { items: [] }, last = si >= steps.length - 1, pct = Math.round(got / Math.max(1, ask.length) * 100);
-      var stepOk = function (st) { return st.items.every(function (x) { return !x.req || qnFilled(x, a[0][x.id]); }); };
+      var stepOk = function (st) { return st.items.every(function (x) { return !x.req || full(x); }); };
       var go = function (i) { stp[1](i); errs[1]({}); window.scrollTo(0, 0); };
       var nextStep = function () {
-        var e = {}; cs.items.forEach(function (x) { if (x.req && !qnFilled(x, a[0][x.id])) e[x.id] = 1; });
+        var e = {}; cs.items.forEach(function (x) { if (x.req && !qnFilled(x, a[0][x.id])) e[x.id] = 1; else if (qnOthMiss(q, x, a[0])) e[x.id] = 'oth'; });
         errs[1](e);
         if (Object.keys(e).length) { setTimeout(function () { var el = document.querySelector('.qn-field.is-err'); if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, 30); return; }
         draft(); go(si + 1);
@@ -996,7 +1054,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           h('nav', { className: 'qn-steps', 'aria-label': t('qn_steps') },
             h('span', { className: 'qn-steps-t' }, String(q.title || '').trim() || t('qn_title'), h('small', null, tpl(t('qn_progress'), { n: got, m: ask.length }))),
             steps.map(function (st, i) {
-              var ok = stepOk(st), n = st.items.filter(function (x) { return qnFilled(x, a[0][x.id]); }).length;
+              var ok = stepOk(st), n = st.items.filter(full).length;
               return h('button', { key: i, type: 'button', className: cx('qn-stp', i === si && 'is-on', ok && 'is-done'), 'aria-current': i === si ? 'step' : undefined, onClick: function () { draft(); go(i); } },
                 h('span', { className: 'qn-stp-ico' }, h(Ico, { name: ok && i !== si ? 'check' : st.sec ? qnSecIco(st.sec.text) : 'user', size: 16, w: ok && i !== si ? 2.4 : 1.6 })),
                 h('span', { className: 'qn-stp-t' }, secName(st)),
@@ -1008,7 +1066,11 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
               h('div', null, h('span', { className: 'lor-eyebrow' }, tpl(t('qn_step_n'), { n: si + 1, m: steps.length })), h('h2', { className: 'lor-h', id: 'qn-h' }, secName(cs)))),
             si === 0 ? h('div', { className: 'qn-step-intro' }, String(q.intro || '').trim() ? h('div', { className: 'intro-text qn-intro' }, paras(q.intro)) : null, h('p', { className: 'lor-sm lor-muted qn-note' }, t('qn_note_emp'))) : null,
             [].concat.apply([], cs.items.map(function (x) { return noteOf(x.id); })),
-            h('div', { className: 'qn-list' }, cs.items.map(function (x) { var f = h(QnField, { key: x.id, t: t, q: x, n: num[x.id], value: a[0][x.id], err: errs[0][x.id], onChange: function (v) { set(x.id, v); } }), fn = fastNote(x); return fn ? h(F, { key: x.id }, f, fn) : f; })),
+            h('div', { className: 'qn-list' }, cs.items.map(function (x) {
+              var f = h(QnField, { key: x.id, t: t, q: x, n: num[x.id], value: a[0][x.id], err: errs[0][x.id], onChange: function (v) { set(x.id, v); },
+                oth: qnOthOpt(q, x), other: a[0][x.id + QN_OTH], onOther: function (s) { set(x.id + QN_OTH, s); } }), fn = fastNote(x);
+              return fn ? h(F, { key: x.id }, f, fn) : f;
+            })),
             h('div', { className: 'qn-page-foot' },
               si > 0 ? h(Btn, { variant: 'ghost', onClick: function () { draft(); go(si - 1); } }, t('prev')) : h('span'),
               h('span', { className: 'lor-sm lor-muted qn-saved' }, draftAt[0] ? '✓ ' + t('qn_draft_saved') : ''),
@@ -2032,7 +2094,9 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     /* карточка анкеты: «показать скрытое», «печать», раскрыть */
     eye: 'M2.5 12s3.5-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12zM12 9.2a2.8 2.8 0 1 0 0 5.6a2.8 2.8 0 0 0 0-5.6',
     print: 'M7 8V3.5h10V8M7 17H4.5V9.5A1.5 1.5 0 0 1 6 8h12a1.5 1.5 0 0 1 1.5 1.5V17H17M7 13.5h10V21H7z',
-    chev: 'M6.5 9.5l5.5 5.5 5.5-5.5'
+    chev: 'M6.5 9.5l5.5 5.5 5.5-5.5',
+    /* свой ответ «Boshqa» */
+    pen: 'M4.5 19.5h4l10.2-10.2a2.1 2.1 0 0 0-4-4L4.5 15.5zM13.2 6.8l4 4'
   };
   /* иконка раздела анкеты — по словам в названии (uz / ru / en) */
   var QN_SEC_ICO = [[/rozilik|tasdiq|соглас|consent/i, 'shieldok'], [/kartoch|карточ|card/i, 'pass'], [/shaxsiy|личн|personal/i, 'user'], [/nomzod|vakans|кандидат|candidat/i, 'case'],
@@ -7827,7 +7891,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var rows = [['ID', 'Xodim', 'Lavozim', 'Bo‘lim', 'Yuborilgan', T0('qn_cons_box_t')].concat(tm ? [T0('qn_tm_card')] : [], hq ? [T0('qn_q_t')] : [], scs.map(function (s) { return s.name + ' (1–5)'; }), scs.map(function (s) { return s.name; }), ask.map(function (x) { return x.text; }))];
     db.users.filter(function (u) { return u.role === 'employee' && u.qa; }).forEach(function (u) {
       var a = u.qa.answers || {}, res = qnScore(q, u), ta = qnTemperAll(q, res);
-      rows.push([u.id, u.name, u.position || '', u.department || '', u.qa.at ? fmtDate(u.qa.at) : '—', cons(u)].concat(tm ? [qnTmText(T0, ta)] : [], hq ? [qual(u)] : [], res.map(function (r) { return !r.n ? '' : r.few ? T0('qn_few') + ' (' + r.n + ' / ' + r.total + ')' : qnNum(T0, r.mean); }), res.map(function (r) { return r.n && !r.few ? r.band : ''; }), ask.map(function (x) { return x.secret && !qnCons(u) ? '' : qnText(x, a[x.id]); })));
+      rows.push([u.id, u.name, u.position || '', u.department || '', u.qa.at ? fmtDate(u.qa.at) : '—', cons(u)].concat(tm ? [qnTmText(T0, ta)] : [], hq ? [qual(u)] : [], res.map(function (r) { return !r.n ? '' : r.few ? T0('qn_few') + ' (' + r.n + ' / ' + r.total + ')' : qnNum(T0, r.mean); }), res.map(function (r) { return r.n && !r.few ? r.band : ''; }), ask.map(function (x) { return x.secret && !qnCons(u) ? '' : qnText(x, a[x.id], a[x.id + QN_OTH]); })));
     });
     return '﻿' + rows.map(function (r) { return r.map(cell).join(';'); }).join('\r\n');
   }
@@ -7836,7 +7900,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
      сильнее всего сдвинувших балл (проверить вывод в разговоре), — за кнопкой «Javoblar (3)»; в печати раскрыты */
   function QnBars(p) {
     var t = p.t, open = useState({}), pos = function (m) { return Math.max(0, Math.min(100, (m - 1) / 4 * 100)); };
-    var ans = function (x, v) { var labs = x.type === 'scale' && (x.labels || []).length === 5 ? x.labels : null; return labs ? labs[v - 1] + ' (' + v + ')' : qnText(x, v); };
+    var ans = function (x, v, o) { var labs = x.type === 'scale' && (x.labels || []).length === 5 ? x.labels : null; return labs ? labs[v - 1] + ' (' + v + ')' : qnText(x, v, o); };
     return h('div', { className: 'qn-bars' },
       p.ax ? h('div', { className: 'qn-ax', 'aria-hidden': true }, [1, 2, 3, 4, 5].map(function (n) { return h('span', { key: n, style: { left: (n - 1) * 25 + '%' } }, n); })) : null,
       p.res.map(function (r) {
@@ -7861,7 +7925,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
               return h('li', { key: z.x.id },
                 h('span', { className: 'qn-why-dir', 'aria-hidden': true }, up ? '↑' : '↓'),
                 h('span', { className: 'qn-why-t' }, s.length > 110 ? s.slice(0, 108) + '…' : s),
-                h('small', null, ans(z.x, z.a) + (z.x.rev ? ' · ' + t('qn_rev') : '')));
+                h('small', null, ans(z.x, z.a, z.o) + (z.x.rev ? ' · ' + t('qn_rev') : '')));
             }))) : null);
       }));
   }
@@ -7977,10 +8041,10 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     return re ? s.replace(re, '$1[ism]') : s;
   }
   /* ответ для ИИ: дата рождения → «yosh guruhi: 25–34» (нет года — ничего), остальное — текстом без имени и контактов */
-  function qnAiAns(x, v, now, u) {
+  function qnAiAns(x, v, now, u, oth) {
     if (!qnHas(v)) return '';
     if (qnIsBirth(x)) { var g = qnAgeGroup(v, now); return g ? 'yosh guruhi: ' + g : ''; }
-    return qnScrub(qnText(x, v), u);
+    return qnScrub(qnText(x, v, oth), u);
   }
   /* шкала для ИИ: «Muloqot: 3,4 / 5 (O‘rta)» или «kam javob (6 / 10) — talqin qilinmaydi» */
   function qnAiScale(r) { var T0 = T('uz'); return r.s.name + ': ' + (r.few ? T0('qn_few_n').replace('{n}', r.n).replace('{m}', r.total) : qnNum(T0, r.mean) + ' / 5' + (r.band ? ' (' + r.band + ')' : '')); }
@@ -7994,7 +8058,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var a = (u.qa && u.qa.answers) || {}, n = 0, T0 = T('uz'), measured = !!ta || res.some(function (r) { return r.n; }), emp = u.role === 'employee' && u.status !== 'candidate';
     var qa = (q.questions || []).filter(function (x) { return x.type === 'section' || (!qnAiSkip(x) && qnShowIf(x, a)); }).map(function (x) {
       if (x.type === 'section') return '\n## ' + x.text;
-      n++; return n + '. ' + x.text + '\n   Javob: ' + (qnAiAns(x, a[x.id], o.now, u) || '—');
+      n++; return n + '. ' + x.text + '\n   Javob: ' + (qnAiAns(x, a[x.id], o.now, u, a[x.id + QN_OTH]) || '—');
     }).join('\n');
     var sc = res.filter(function (r) { return r.n; }).map(function (r) { return '- ' + qnAiScale(r); }).join('\n');
     var notes = (o.notes || []).filter(function (x) { return typeof x === 'string' && x.trim(); });
@@ -8071,7 +8135,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var list = rows.map(function (r, i) {
       var a = r.u.qa.answers || {};
       var sc = r.res.filter(function (x) { return x.n; }).map(qnAiScale).join('; ');
-      var ka = keys.filter(function (x) { return qnShowIf(x, a); }).map(function (x) { return qnShort(x) + ': ' + String(qnAiAns(x, a[x.id], now, r.u) || '—').slice(0, 120); }).join('; ');
+      var ka = keys.filter(function (x) { return qnShowIf(x, a); }).map(function (x) { return qnShort(x) + ': ' + String(qnAiAns(x, a[x.id], now, r.u, a[x.id + QN_OTH]) || '—').slice(0, 120); }).join('; ');
       return '#' + (i + 1) + ' — ' + ([r.u.position, r.u.department].filter(Boolean).join(', ') || '—') + (sc ? ' | ' + sc : '') + (ka ? ' | ' + ka : '');
     });
     return 'Siz BURAQ Logistics kompaniyasida HR-tahlilchi yordamchisisiz. Quyida xodimlarning anketa va o‘z-o‘zini baholash testi natijalari (ism o‘rniga raqam). Rahbariyat (CEO va SOP menejeri) uchun JAMOA haqida qisqa qoralama tuzing: xodimlar o‘zlarini qanday tasvirlaydi (umumlashtirib), jamoaning kuchli tomonlari, muhokama uchun ko‘nikma va rollardagi bo‘shliqlar, ishga oid xavflar va amaliy qadamlar.\n' +
@@ -8209,7 +8273,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         !busy[0] && enough ? muted(t('qn_team_none')) : null);
   }
   /* ответ для CEO и SOP-менеджера: скрытый ([maxfiy]) — точками, пока не нажали «показать» */
-  function qnShow(x, v, open) { var s = qnText(x, v); return x.secret && s && !open ? '••••••' : s; }
+  function qnShow(x, v, open, oth) { var s = qnText(x, v, oth); return x.secret && s && !open ? '••••••' : s; }
   function qnKeys(q) { return qnAsk(q).filter(function (x) { return x.key && x.type !== 'consent'; }); }
   /* короткая подпись вопроса для столбца и карточки: первое предложение, без скобок */
   function qnShort(x) { var s = String(x.text || '').replace(/\s*\([^)]*\)/g, '').trim(), m = /^(.+?[?.!])(\s|$)/.exec(s); s = m ? m[1] : s; return s.length > 60 ? s.slice(0, 58) + '…' : s; }
@@ -8329,7 +8393,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
             h(Btn, { variant: 'outline', size: 'sm', className: 'qn-ans-btn', onClick: print }, h(Ico, { name: 'print', size: 16 }), t('qn_print'))),
           /* согласия: шаг согласий (с датой и версией) и вопросы-согласия анкеты — плашками, полный текст — в подсказке и в печати */
           h(QnConsRow, { t: t, u: u, q: q, a: a, cons: cons, wait: secAny && !c })),
-        keys.length ? h('dl', { className: 'qn-keys' }, keys.map(function (x) { var v = qnShow(x, a[x.id], open[0]); return h('div', { key: x.id, className: 'qn-key' }, h('dt', { title: x.text }, qnShort(x)), h('dd', { className: v ? '' : 'lor-muted' }, v || '—')); })) : null,
+        keys.length ? h('dl', { className: 'qn-keys' }, keys.map(function (x) { var v = qnShow(x, a[x.id], open[0], a[x.id + QN_OTH]); return h('div', { key: x.id, className: 'qn-key' }, h('dt', { title: x.text }, qnShort(x)), h('dd', { className: v ? '' : 'lor-muted' }, v || '—')); })) : null,
         /* тест: склонность полосой, «Javoblar sifati» — до шкал (можно ли толковать), шкалы списком */
         prof ? h(QnProfile, { t: t, q: q, res: res, ta: ta, why: true, mid: h(QnQual, { t: t, q: q, u: u, user: p.user, ro: p.ro, update: p.update, say: p.say }) })
           : h(QnQual, { t: t, q: q, u: u, user: p.user, ro: p.ro, update: p.update, say: p.say }),
@@ -8339,7 +8403,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         h('dl', { className: 'qn-dl' }, (q.questions || []).map(function (x) {
           if (x.type === 'section') return h('h3', { key: x.id, className: 'qn-sec' }, h(Ico, { name: qnSecIco(x.text), size: 18 }), h('span', null, x.text));
           if (x.type === 'consent' || x.type === 'note' || !qnShowIf(x, a, c)) return null;
-          n++; var v = qnShow(x, a[x.id], open[0]);
+          n++; var v = qnShow(x, a[x.id], open[0], a[x.id + QN_OTH]);
           return h('div', { key: x.id, className: cx('qn-dl-row', x.secret && 'is-secret') }, h('dt', null, n + '. ' + x.text), h('dd', { className: v ? '' : 'lor-muted' }, v || '—'));
         })),
         h('div', { className: 'lor-modal-actions qn-noprint' }, h(Btn, { variant: 'primary', onClick: p.onClose }, t('close')))));
@@ -8382,13 +8446,13 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           h('tbody', null, rows.filter(function (r) {
             if (!needle) return true;
             var a = r.u.qa.answers || {};
-            return [r.u.name, r.u.position, r.u.department].concat(keys.map(function (x) { return x.secret ? '' : qnText(x, a[x.id]); })).join(' ').toLowerCase().indexOf(needle) >= 0;
+            return [r.u.name, r.u.position, r.u.department].concat(keys.map(function (x) { return x.secret ? '' : qnText(x, a[x.id], a[x.id + QN_OTH]); })).join(' ').toLowerCase().indexOf(needle) >= 0;
           }).map(function (r) {
             var a = r.u.qa.answers || {};
             return h('tr', { key: r.u.id, tabIndex: 0, onClick: function () { p.onOpen(r.u.id); }, onKeyDown: function (e) { if (e.key === 'Enter') p.onOpen(r.u.id); } },
               h('th', { scope: 'row' }, h('span', { className: 'qn-tbl-who' }, h(Av, { name: r.u.name, src: r.u.avatar, size: 28 }), h('span', null, h('b', null, r.u.name), h('small', null, r.u.position || ''), h(QnConsChips, { t: t, u: r.u })), r.u.qaReport && r.u.qaReport.data && qnAiAllowed(r.u) ? h('span', { className: 'qn-ai-chip' }, 'AI') : null)),
               qnHasTemper(q) ? h('td', null, tmCell(r)) : null,
-              keys.map(function (x) { return h('td', { key: x.id }, qnShow(x, a[x.id], false) || '—'); }),
+              keys.map(function (x) { return h('td', { key: x.id }, qnShow(x, a[x.id], false, a[x.id + QN_OTH]) || '—'); }),
               h('td', { className: 'qn-tbl-date' }, fmtDate(r.u.qa.at), qnHasTemper(q) ? null : qChip(r)));
           }))))) : null,
       keys.length ? null : h('div', { className: 'qn-people' }, rows.map(function (r) {
@@ -8632,9 +8696,12 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
                   h('span', { className: 'lor-sm lor-muted' }, t('qn_grid_rows'))) : null,
                 choice || grid ? h('div', { className: 'qn-item-opts' },
                   (x.options || []).map(function (o, k) {
+                    /* «Boshqa» со своим полем — пометка «o‘z javobi bilan» (с вопросом по условию [agar: Boshqa] её нет) */
+                    var own = choice && (x.options || []).indexOf(qnOthOpt(v, x)) === k;
                     return h('div', { key: k, className: 'qn-item-opt' },
                       grid ? null : h('span', { className: cx('qn-mark', x.type === 'many' && 'is-sq'), 'aria-hidden': true }),
                       h('input', { className: 'lor-input', value: o, readOnly: ro, placeholder: tpl(t(grid ? 'qn_row_ph' : 'qn_opt_ph'), { n: k + 1 }), 'aria-label': tpl(t('qn_opt_ph'), { n: k + 1 }), onChange: function (e) { var val = e.target.value; setOpt(i, k, function (y) { y.options[k] = val; }); } }),
+                      own ? h('span', { className: 'qn-oth-tag', title: t('qn_oth_tag_t') }, h(Ico, { name: 'pen', size: 14 }), h('span', null, t('qn_oth_tag'))) : null,
                       scored ? h('input', { className: 'lor-input qn-pts', type: 'number', step: 1, value: (x.pts || [])[k] || 0, readOnly: ro, title: t('qn_pts'), 'aria-label': t('qn_pts') + ' — ' + (o || k + 1), onChange: function (e) { var val = +e.target.value || 0; setOpt(i, k, function (y) { y.pts[k] = val; }); } }) : null,
                       ro ? null : h('button', { type: 'button', className: 'in-dl-mv qn-del', 'aria-label': t('remove'), onClick: function () { setOpt(i, k, function (y) { y.options.splice(k, 1); y.pts.splice(k, 1); }); } }, '×'));
                   }),

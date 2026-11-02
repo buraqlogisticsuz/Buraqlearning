@@ -3816,6 +3816,17 @@ input.org-name:hover, input.org-name:focus { border-color: var(--line); backgrou
 .qn-tile.is-yes.is-on .qn-tile-key { background: var(--blue-text); border-color: var(--blue-text); color: var(--on-blue); }
 .qn-tile.is-no.is-on { background: var(--red-soft); border-color: var(--red-text); box-shadow: inset 0 0 0 1px var(--red-text); }
 .qn-tile.is-no.is-on .qn-tile-key { background: var(--red); border-color: var(--red); color: var(--on-red); }
+/* «Boshqa» со своим ответом: под вариантами — строка выбранного варианта (та же буква, те же цвета), поле до 200 знаков */
+.qn-oth { display: flex; align-items: center; gap: 10px; padding: 6px 12px; border: var(--hairline) solid var(--navy); border-radius: var(--radius-md); background: var(--blue-soft); box-shadow: inset 0 0 0 1px var(--navy); animation: qn-oth-in .2s var(--ease-out); }
+.qn-oth .qn-oth-key { background: var(--navy); border-color: var(--navy); color: var(--on-navy); }
+.qn-oth .qn-oth-in { flex: 1; min-width: 0; height: 38px; font-size: 14px; }
+.qn-oth-ico { flex: none; display: inline-flex; color: var(--ink-muted); }
+.qn-oth.is-err { border-color: var(--red-text); box-shadow: inset 0 0 0 1px var(--red-text); }
+.qn-oth.is-err .qn-oth-in { border-color: var(--red-text); }
+@keyframes qn-oth-in { from { opacity: 0; transform: translateY(-4px); } }
+/* в редакторе — пометка у такого варианта */
+.qn-oth-tag { flex: none; display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: var(--radius-pill); background: var(--blue-soft); color: var(--blue-text); font-size: 12px; line-height: 18px; white-space: nowrap; cursor: help; }
+@media (max-width: 560px) { .qn-oth-tag > span { display: none; } .qn-oth { padding: 6px 10px; gap: 8px; } }
 /* уровни (языки) */
 .qn-lv { display: flex; flex-direction: column; gap: 8px; }
 .qn-lv-row { display: grid; grid-template-columns: 130px minmax(0, 1fr); align-items: center; gap: 10px; }
@@ -3880,7 +3891,7 @@ input.org-name:hover, input.org-name:focus { border-color: var(--line); backgrou
   .qn-lv-pill { flex: 1 1 calc(33.33% - 4px); min-width: 0; padding: 0 4px; font-size: 12px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .qn-step, .qn-done, .qn-done-ico, .qn-n.is-done, .qn-box svg, .qn-stp-ico svg, .qn-lv-name svg { animation: none !important; }
+  .qn-step, .qn-done, .qn-done-ico, .qn-n.is-done, .qn-box svg, .qn-stp-ico svg, .qn-lv-name svg, .qn-oth { animation: none !important; }
   .qn-tile:hover, .qn-tile:active, .qn-sc.is-on, .qn-sc:active, .qn-lv-pill:active { transform: none; }
 }
 
