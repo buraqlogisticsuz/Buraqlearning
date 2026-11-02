@@ -1600,6 +1600,46 @@ try {
   assert.deepEqual(await rejected(E), [], 'сервер принял отзыв');
   step('анкета до шага согласий: при входе — только согласие (без особых — вопрос, паспорт стёрт), у SOP паспорт закрыт; отзыв согласия на обработку в профиле');
 
+  // ---------- дневная тема на телефоне в тёмном режиме: в приложении выбран «Kunduzgi» ----------
+  // браузер рисует поля, календарь и автозаполнение светлыми (раньше — серые поля «как выключенные»); поле белое
+  // с заметной рамкой, у карточки входа край и тень; шапка — фирменный синий; уведомления не уезжают за край
+  {
+    const tctx = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: 'dark' });
+    await tctx.addInitScript(() => { try { localStorage.setItem('lor-theme', 'light'); } catch (e) {} });
+    const T = await tctx.newPage();
+    T.on('pageerror', e => errors.push('день: ' + e.message));
+    await T.goto(srv.url, { waitUntil: 'networkidle' });
+    const look = await T.evaluate(() => {
+      const cs = s => getComputedStyle(document.querySelector(s)), root = getComputedStyle(document.documentElement);
+      const af = []; const walk = rs => { for (const r of rs) { if (r.cssRules && !r.selectorText) walk(r.cssRules); else if (r.selectorText && /autofill/.test(r.selectorText) && !/focus-visible/.test(r.selectorText)) af.push(r.style); } };
+      for (const s of document.styleSheets) { try { walk(s.cssRules); } catch (e) {} }
+      return { scheme: root.colorScheme, inBg: cs('#f-login').backgroundColor, inInk: cs('#f-login').color, inEdge: cs('#f-login').borderTopColor,
+        cardEdge: cs('.lg-card').borderTopColor, cardShadow: cs('.lg-card').boxShadow, solid: root.getPropertyValue('--field-solid').trim(),
+        afFill: af.map(x => x.getPropertyValue('-webkit-text-fill-color')), afCover: af.map(x => x.getPropertyValue('box-shadow')) };
+    });
+    assert.equal(look.scheme, 'light', 'светлая схема для браузера: ' + JSON.stringify(look));
+    assert.deepEqual([look.inBg, look.inInk, look.inEdge], ['rgb(255, 255, 255)', 'rgb(14, 46, 84)', 'rgb(110, 125, 145)'], 'поле белое, текст синий, рамка заметная');
+    assert.equal(look.cardEdge, 'rgba(14, 46, 84, 0.2)');
+    assert.match(look.cardShadow, /rgba\(14, 46, 84, 0\.08\) 0px 1px 2px/, 'близкая тень под карточкой');
+    assert.equal(look.solid, '#ffffff');
+    assert.deepEqual(look.afFill, ['var(--ink)'], 'автозаполнение: текст своего цвета');
+    assert.match(look.afCover[0], /var\(--field-solid\) inset/, 'автозаполнение: поле своего цвета');
+    await T.fill('#f-login', srv.admin.login); await T.fill('#f-password', srv.admin.password); await T.click('button[type="submit"]');
+    await T.waitForFunction(() => !document.querySelector('#f-password'), null, { timeout: 15000 }); await T.waitForTimeout(600);
+    for (let i = 0; i < 4 && await T.locator('.lor-scrim .lor-modal-x:visible').count(); i++) { await T.locator('.lor-scrim .lor-modal-x:visible').first().click(); await T.waitForTimeout(250); }
+    assert.equal(await T.evaluate(() => getComputedStyle(document.querySelector('.app-header')).backgroundColor), 'rgba(14, 46, 84, 0.97)', 'шапка — синий бренда');
+    await T.locator('.lor-bell:visible').first().click(); await T.waitForSelector('.notif-pop');
+    const pop = await T.evaluate(() => { const r = document.querySelector('.notif-pop').getBoundingClientRect(); return [r.left, r.right]; });
+    assert.ok(pop[0] >= 8 && pop[1] <= 382, 'список уведомлений на экране: ' + pop);
+    await shot(T, '28-day-phone');
+    // «Tungi» — ночные значения прежние
+    await T.evaluate(() => document.documentElement.setAttribute('data-theme', 'dark')); await T.waitForTimeout(400);
+    const night = await T.evaluate(() => { const r = getComputedStyle(document.documentElement); return [r.colorScheme, r.getPropertyValue('--glass-navy').trim(), r.getPropertyValue('--glass-edge').trim(), r.getPropertyValue('--field').trim()]; });
+    assert.deepEqual(night, ['dark', 'rgba(6, 20, 38, .78)', 'rgba(255, 255, 255, .11)', 'rgba(16, 37, 64, .91)'], 'ночь не изменилась');
+    await tctx.close();
+    step('день на тёмном телефоне: светлые поля и автозаполнение, карточка входа с краем, шапка синяя, уведомления на экране; ночь прежняя');
+  }
+
   // ---------- демо больше нет: ?demo=1 — тот же вход на сервер; без адреса сервера — «Server ulanmagan» ----------
   const D = await device('бывшее демо', '?demo=1');
   assert.equal(await D.locator('.demo-box').count(), 0, 'демо-входов нет');

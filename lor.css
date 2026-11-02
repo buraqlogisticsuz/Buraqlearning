@@ -4310,3 +4310,88 @@ select.lor-input.slim:not([multiple]) { background-position: right 10px center; 
 @media (max-width: 480px) { .app-header { --logo-h: 24px; } }
 @media (max-width: 420px) { .app-header { --logo-h: 22px; } .app-header.is-stacked .app-subnav { padding: 0 10px; column-gap: 22px; } }
 @media (max-width: 360px) { .app-header { --logo-h: 20px; } }
+
+/* =====================================================================
+   DAY PASS — the light theme, audited page by page («Kunduzgi» looked washed out).
+   Light values only — night is untouched (see the note under the token block).
+   Colours stay the five brand ones — navy and white tints, nothing new.
+   ===================================================================== */
+/* The page says which scheme it is in. Without this a phone or laptop in dark mode with «Kunduzgi» picked
+   drew form controls, scrollbars, the date picker and Chrome's autofill dark — grey fields that looked disabled. */
+:root { color-scheme: light; }
+:root {
+  /* a brighter, calmer backdrop: less grey haze at the bottom, less pink at the top */
+  --bg-base: #e8eef6;
+  --bg-b1: rgba(3, 76, 170, .26);
+  --bg-b2: rgba(222, 4, 65, .11);
+  --bg-b3: rgba(14, 46, 84, .09);
+  --bg-b4: rgba(191, 191, 191, .14);
+  /* text and edges a step firmer */
+  --ink-muted: #45586f;
+  --border: #6e7d91;
+  --line: rgba(14, 46, 84, .15);
+  /* panels read as white sheets with a navy hairline, not grey glass with a white rim lost on a white page */
+  --glass-pane: rgba(255, 255, 255, .84);
+  --glass-wash: rgba(255, 255, 255, .56);
+  --glass-read: rgba(255, 255, 255, .97);
+  --glass-edge: rgba(14, 46, 84, .12);
+  --glass-hi: inset 0 1px 0 rgba(255, 255, 255, .95);
+  --glass-sheen: linear-gradient(165deg, rgba(255, 255, 255, .5), rgba(255, 255, 255, 0) 60%);
+  /* the header is brand navy, not navy thinned to grey-blue by the light page under it */
+  --glass-navy: rgba(14, 46, 84, .97);
+  /* fields: white with a clear border; autofill gets the same solid fill */
+  --field: var(--white);
+  --field-solid: var(--white);
+  /* the login card: a near-white sheet with a visible edge and a close shadow under the soft one */
+  --gc-edge: rgba(14, 46, 84, .2); --gc-edge-hi: rgba(14, 46, 84, .3); --gc-f1: rgba(255, 255, 255, .97); --gc-f2: rgba(255, 255, 255, .9);
+  --gc-drop: rgba(14, 46, 84, .36); --gc-field: var(--white);
+  --gc-ring: 0 1px 2px rgba(14, 46, 84, .08), 0 8px 20px -8px rgba(14, 46, 84, .18);
+}
+/* night keeps its own values: the dark selectors above (:root:not([data-theme="light"]) in the media query and
+   :root[data-theme="dark"]) outrank a bare :root, so nothing in the block above reaches it. Only the tokens
+   that are new here need a night value — the one night effectively had before. */
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --field: var(--glass-read); --field-solid: var(--glass-pop); --gc-ring: 0 0 0 0 transparent; } }
+:root[data-theme="dark"] { --field: var(--glass-read); --field-solid: var(--glass-pop); --gc-ring: 0 0 0 0 transparent; }
+/* «Reduce transparency» on the device: solid sheets, as the glass layer intends (the day values above would undo it) */
+@media (prefers-reduced-transparency: reduce) {
+  :root { --glass-pane: var(--white); --glass-read: var(--white); --glass-pop: var(--white); --glass-navy: var(--navy); --glass-wash: #f1f4f8; --glass-tint: #e9edf2; --glass-sheen: none; }
+}
+/* «Kun hikmati» sits on the always-navy hero: it keeps the night values whatever the theme */
+.lor-login-hero { --gc-ring: 0 0 0 0 transparent; }
+
+.lor-input, textarea.lor-input, select.lor-input, .rte-area { background-color: var(--field); }
+.lor-login-card.lg-card { box-shadow: var(--gc-ring), 0 28px 60px -28px var(--gc-drop), inset 0 1px 0 var(--gc-hi); }
+
+/* Browser autofill (Chrome, Edge, Safari) paints its own tint over the field with !important — grey on a dark
+   device, blue on a light one, so the filled Login/Parol looked disabled. A solid inset shadow covers it in the
+   field's own colour, the text keeps the ink colour, and the tint's fade-in is pushed out of reach. */
+:is(.lor-input:-webkit-autofill, .lor-input:autofill),
+:is(.lor-input:-webkit-autofill:hover, .lor-input:autofill:hover),
+:is(.lor-input:-webkit-autofill:focus, .lor-input:autofill:focus) {
+  -webkit-text-fill-color: var(--ink); caret-color: var(--ink);
+  -webkit-box-shadow: 0 0 0 1000px var(--field-solid) inset; box-shadow: 0 0 0 1000px var(--field-solid) inset;
+  transition: background-color 600000s 0s, color 600000s 0s;
+}
+:is(.lor-input:-webkit-autofill:focus-visible, .lor-input:autofill:focus-visible) {
+  -webkit-box-shadow: 0 0 0 1000px var(--field-solid) inset, var(--focus-ring); box-shadow: 0 0 0 1000px var(--field-solid) inset, var(--focus-ring);
+}
+/* small controls — the round/square answer marks and the 1–5 buttons — get the field border, not a divider line */
+:root { --ctl-edge: var(--border); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --ctl-edge: var(--line); } }
+:root[data-theme="dark"] { --ctl-edge: var(--line); }
+.qn-box, .qn-sc { border-color: var(--ctl-edge); }
+.qn-tile.is-on .qn-box, .qn-consent.is-done .qn-box, .qn-sc.is-on { border-color: var(--navy); }
+.qn-sc:hover { border-color: var(--blue-text); }
+/* phone: the bell sits far from the right edge, so a list hung off the bell ran off the left of the screen —
+   it hangs off the header row instead, full width with the same 10px margins as the profile menu */
+@media (max-width: 480px) {
+  .app-header .bell-wrap { position: static; }
+  .app-header .notif-pop { left: 10px; right: 10px; width: auto; top: 62px; }
+}
+/* an «off» switch is a grey track with a white knob — a divider-thin track read as a disabled control */
+:root { --sw-off: rgba(14, 46, 84, .26); --sw-knob: var(--white); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --sw-off: var(--line); --sw-knob: var(--surface-raised); } }
+:root[data-theme="dark"] { --sw-off: var(--line); --sw-knob: var(--surface-raised); }
+.sw { background: var(--sw-off); }
+.sw i { background: var(--sw-knob); }
+.hint-sw.is-on .sw { background: var(--red); }
