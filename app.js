@@ -628,6 +628,44 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     };
   }
   function qnTmText(t, ta) { if (!ta) return ''; var x = qnTmParts(t, ta); return x.kind + (x.detail ? ': ' + x.detail : '') + (x.weak ? '; ' + x.weak : ''); }
+  /* ---------- данные для графиков «Savolnoma» (сами графики — QnHBars) ----------
+     шкала темперамента: в «max» — у неё свой темперамент (temper.map), в «en» — экстраверсия или нейротизм */
+  function qnIsTm(q, sc) { var tp = q && q.temper; return qnHasTemper(q) && (tp.mode === 'max' ? !!(tp.map || {})[sc.id] : sc.id === tp.e || sc.id === tp.n); }
+  /* профиль человека: шкалы темперамента (по порядку анкеты, не по баллу — так карточки сравнимы), затем остальные
+     («Ishonchlilik», в «en» — искренность), sep — первая из остальных (над ней черта). lead — шкала ведущей склонности
+     («max»: yetakchi — одна, aralash profil — две); выделение (emph) есть только тогда: синий = ведущая, остальные
+     приглушены. Склонности нет (нет явного лидера, «en», kam javob) — все приглушены; в анкете нет темперамента — все
+     одним цветом (один ряд данных, выделять нечего) */
+  function qnProfRows(q, res, ta) {
+    var tp = q && q.temper, top = ta && ta.mode === 'max' ? (ta.kind === 'lead' ? [ta.main] : ta.kind === 'mixed' ? ta.pair : []) : [];
+    var tm = res.filter(function (r) { return qnIsTm(q, r.s); }), other = res.filter(function (r) { return tm.indexOf(r) < 0; });
+    var rows = tm.concat(other).map(function (r, i) {
+      var lead = tm.indexOf(r) >= 0 && top.indexOf((tp.map || {})[r.s.id]) >= 0;
+      return { r: r, tm: tm.indexOf(r) >= 0, lead: lead, sep: !!tm.length && i === tm.length };
+    });
+    var emph = rows.some(function (x) { return x.lead; });
+    rows.forEach(function (x) { x.tone = emph ? (x.lead ? 'acc' : 'mute') : qnHasTemper(q) ? 'mute' : 'acc'; });
+    return { rows: rows, emph: emph, kind: emph ? ta.kind : '' };
+  }
+  /* по коллективу (list — [{ res, ta }] тех, кто отправил): по шкале — среднее, меньший и больший из баллов тех, у кого
+     шкала толкуется (n — сколько таких; ok — n ≥ min); склонности — сколько людей с каждой ведущей (k — темперамент)
+     и сколько без одной ведущей: aralash profil, aniq yetakchi yo‘q («max») или turlar oralig‘ida («en»), kam javob —
+     если есть. people — у скольких тест посчитан (хоть одна шкала толкуется); nt — у скольких есть склонность.
+     Графики — от min человек (QN_TEAM_MIN): при меньшем числе среднее мало что значит, а человека легко узнать */
+  function qnTeam(q, list, min) {
+    var sc = ((q && q.scales) || []).map(function (s, i) {
+      var xs = list.map(function (r) { return r.res[i]; }).filter(function (r) { return r && r.n && !r.few; }).map(function (r) { return r.mean; });
+      return { s: s, tm: qnIsTm(q, s), n: xs.length, ok: xs.length >= min, avg: xs.length ? xs.reduce(function (a, b) { return a + b; }, 0) / xs.length : null,
+        lo: xs.length ? Math.min.apply(null, xs) : null, hi: xs.length ? Math.max.apply(null, xs) : null };
+    }).filter(function (x) { return list.some(function (r) { var z = r.res.filter(function (y) { return y.s.id === x.s.id; })[0]; return z && z.total; }); });
+    var cnt = {}, nt = 0;
+    list.forEach(function (r) { if (!r.ta) return; nt++; var k = r.ta.kind === 'lead' ? r.ta.main : r.ta.kind; cnt[k] = (cnt[k] || 0) + 1; });
+    var en = !!(q && q.temper && q.temper.mode !== 'max');
+    var dist = QN_TEMPERS.map(function (k) { return { k: k, n: cnt[k] || 0, lead: true }; })
+      .concat((en ? ['between'] : ['mixed', 'none']).concat(cnt.few ? ['few'] : []).map(function (k) { return { k: k, n: cnt[k] || 0, lead: false }; }));
+    var people = list.filter(function (r) { return r.ta || r.res.some(function (x) { return x.n && !x.few; }); }).length;
+    return { sc: sc, dist: qnHasTemper(q) ? dist : [], nt: nt, people: people, ok: people >= min, distOk: nt >= min };
+  }
   /* ---------- «Javoblar sifati» — проверки качества ответов в тесте (не людей): светофор с причинами словами, без балла
      0–100 и никогда не основание для отказа. Пункты теста 1–5 (qnQItem) в порядке показа: скорость — медиана времени между
      ответами (u.qa.meta.rt, мс; пишет окно анкеты), самая длинная серия одинаковых, доля «3», обратные пары (x.pair:
@@ -7898,72 +7936,160 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     });
     return '﻿' + rows.map(function (r) { return r.map(cell).join(';'); }).join('\r\n');
   }
-  /* шкалы одного человека — компактный список: строка «шкала · 4,1 / 5 · вывод границы», под ней полоса 1–5 (черта —
-     среднее, тень — погрешность ±QN_SEM, засечки 2–3–4); общая ось 1–5 — одна над списком (ax). why — 2–3 ответа,
-     сильнее всего сдвинувших балл (проверить вывод в разговоре), — за кнопкой «Javoblar (3)»; в печати раскрыты */
-  function QnBars(p) {
-    var t = p.t, open = useState({}), pos = function (m) { return Math.max(0, Math.min(100, (m - 1) / 4 * 100)); };
-    var ans = function (x, v, o) { var labs = x.type === 'scale' && (x.labels || []).length === 5 ? x.labels : null; return labs ? labs[v - 1] + ' (' + v + ')' : qnText(x, v, o); };
-    return h('div', { className: 'qn-bars' },
-      p.ax ? h('div', { className: 'qn-ax', 'aria-hidden': true }, [1, 2, 3, 4, 5].map(function (n) { return h('span', { key: n, style: { left: (n - 1) * 25 + '%' } }, n); })) : null,
-      p.res.map(function (r) {
-        var ok = r.n > 0 && !r.few, val = ok ? qnNum(t, r.mean) + ' / 5' : '—', why = !!p.why && ok && r.top.length > 0, on = why && !!open[0][r.s.id], wid = 'qn-why-' + r.s.id;
-        var band = ok ? [r.band, r.n < r.total ? tpl(t('qn_answered'), { n: r.n, m: r.total }) : ''].filter(Boolean).join(' · ') : r.n ? tpl(t('qn_few_n'), { n: r.n, m: r.total }) : t('qn_res_noans');
-        return h('div', { key: r.s.id, className: cx('qn-bar', !ok && 'is-few', on && 'is-open') },
-          h('div', { className: 'qn-bar-top' },
-            h('span', { className: 'qn-bar-name' }, r.s.name),
-            h('span', { className: 'qn-bar-n' }, val),
-            band ? h('span', { className: 'qn-bar-band' }, band) : null,
-            why ? h('button', { type: 'button', className: 'qn-why-tg qn-noprint', 'aria-expanded': on, 'aria-controls': wid, title: t('qn_why'),
-              onClick: function () { var o = Object.assign({}, open[0]); o[r.s.id] = !on; open[1](o); } },
-              tpl(t('qn_why_n'), { n: r.top.length }), h(Ico, { name: 'chev', size: 14, w: 2 })) : null),
-          h('span', { className: 'qn-meter', role: 'img', 'aria-label': r.s.name + ': ' + (ok ? val + ' (±' + qnNum(t, QN_SEM) + ')' + (band ? ', ' + band : '') : band) },
-            ok ? h('i', { className: 'qn-meter-fill', style: { width: pos(r.mean) + '%' } }) : null,
-            ok ? h('i', { className: 'qn-meter-sem', style: { left: pos(r.mean - QN_SEM) + '%', right: (100 - pos(r.mean + QN_SEM)) + '%' } }) : null,
-            ok ? h('i', { className: 'qn-meter-dot', style: { left: pos(r.mean) + '%' } }) : null),
-          why ? h('div', { id: wid, className: 'qn-why', hidden: !on },
-            h('span', { className: 'qn-why-h' }, t('qn_why')),
-            h('ul', null, r.top.map(function (z) {
-              var s = String(z.x.text || ''), up = z.v > 3;
-              return h('li', { key: z.x.id },
-                h('span', { className: 'qn-why-dir', 'aria-hidden': true }, up ? '↑' : '↓'),
-                h('span', { className: 'qn-why-t' }, s.length > 110 ? s.slice(0, 108) + '…' : s),
-                h('small', null, ans(z.x, z.a, z.o) + (z.x.rev ? ' · ' + t('qn_rev') : '')));
-            }))) : null);
-      }));
+  /* ---------- графики «Savolnoma» — горизонтальные полосы на общей оси, inline SVG без библиотек ----------
+     Координаты по x — в процентах ширины (у SVG нет viewBox): текст не масштабируется и на телефоне не мельчает.
+     Строка: имя слева (в узком блоке — над полосой), полоса от начала оси — квадратная у оси, скруглённая 4 px на
+     конце, 14 px; kind 'sem' — за концом тень ±p.sem (погрешность), 'range' — «усы» r.a…r.b (меньший и больший балл)
+     с ободком цвета фона, 'plain' — ничего. Значение — сразу за ними, цветом текста (не цветом полосы). Цвет полосы —
+     по роли (r.tone): acc — синий (--blue, в тёмной теме --blue-text), mute — приглушённый (--gray, в тёмной —
+     полупрозрачный); новых цветов нет — только токены lor.css. Сетка — волосные линии --line в p.grid, ось — p.ticks
+     внизу. r.sep — с этой строки новая группа: над ней тонкая черта и подпись. Доступность: role=img и aria-label
+     (p.label — сводка словами), рядом — скрытая таблица с теми же числами (p.table); у полосы — подсказка (title).
+     Полосы вырастают при открытии (при prefers-reduced-motion — сразу: общее правило lor.css), в печати — целиком */
+  function QnHBars(p) {
+    var d0 = p.d[0], d1 = p.d[1], X = function (v) { return Math.max(0, Math.min(100, (v - d0) / (d1 - d0) * 100)); }, pc = function (v) { return X(v) + '%'; };
+    var groups = [], k = 0;
+    p.rows.forEach(function (r) { if (!groups.length || r.sep) groups.push({ l: r.sep || '', rows: [] }); groups[groups.length - 1].rows.push(r); });
+    /* «усы» min–max: поверх полосы — цветом фона (вырезаны в полосе), за её концом — цветом текста */
+    function whisk(r) {
+      var L = function (k, cls, x1, x2, y1, y2) { return h('line', { key: k, className: cls, x1: pc(x1), x2: pc(x2), y1: y1, y2: y2 }); }, v = r.v;
+      return [r.a < v ? L('in', 'is-in', r.a, Math.min(r.b, v), 12, 12) : null, r.b > v ? L('out', '', Math.max(r.a, v), r.b, 12, 12) : null,
+        L('ca', r.a < v ? 'is-in' : '', r.a, r.a, 7, 17), L('cb', r.b < v ? 'is-in' : '', r.b, r.b, 7, 17)];
+    }
+    function row(r) {
+      var i = k++, has = r.v != null, w = has ? X(r.v) : 0, late = { animationDelay: i * 60 + 360 + 'ms' };
+      var end = !has ? d0 : p.kind === 'sem' ? Math.min(d1, r.v + p.sem) : p.kind === 'range' ? Math.max(r.v, r.b) : r.v;
+      return h('div', { key: r.k, className: cx('qn-hb-row', 'is-' + (r.tone || 'acc'), r.lead && 'is-lead', !has && 'is-none') },
+        h('span', { className: 'qn-hb-name' }, r.name),
+        h('svg', { className: 'qn-hb-svg', height: 24, 'aria-hidden': true, focusable: 'false' },
+          has && r.tip ? h('title', null, r.tip) : null,
+          has && p.kind === 'sem' ? h('rect', { className: 'qn-hb-sem', style: late, x: pc(r.v - p.sem), width: (X(r.v + p.sem) - X(r.v - p.sem)) + '%', y: 2, height: 20, rx: 4 }) : null,
+          /* полоса — подложка цветом фона и сама полоса: полупрозрачная (тёмная тема) не просвечивает тенью погрешности */
+          has ? h('g', { className: 'qn-hb-bar', style: { animationDelay: i * 60 + 'ms' } }, ['qn-hb-under', 'qn-hb-fill'].map(function (c) {
+            return h('g', { key: c, className: c }, h('rect', { x: 0, width: w + '%', y: 5, height: 14, rx: 4 }), w > 3 ? h('rect', { x: 0, width: 4, y: 5, height: 14 }) : null);
+          })) : null,
+          has && p.kind === 'range' ? h('g', { className: 'qn-hb-rng', style: late }, whisk(r)) : null,
+          h('text', { className: has ? 'qn-hb-v' : 'qn-hb-na', style: has ? late : null, x: pc(end), dx: has ? 6 : 8, y: 12, dy: '.35em' }, has ? r.lab : r.note || '—')));
+    }
+    var grid = h('svg', { className: 'qn-hb-grid', 'aria-hidden': true, focusable: 'false' },
+      (p.grid || []).map(function (v) { return h('line', { key: v, className: v === d0 ? 'is-base' : '', x1: pc(v), x2: pc(v), y1: 0, y2: '100%' }); }));
+    return h('figure', { className: cx('qn-hb', p.className) },
+      p.title || (p.legend && p.legend.length) ? h('figcaption', { className: 'qn-hb-cap' },
+        p.title ? h('span', { className: 'qn-hb-t' }, h('span', { className: 'lor-eyebrow' }, p.title), p.sub ? h('small', null, p.sub) : null) : null,
+        p.legend && p.legend.length ? h('ul', { className: 'qn-hb-leg', 'aria-hidden': true }, p.legend.map(function (x) { return h('li', { key: x.k }, h('i', { className: 'qn-hb-sw is-' + x.k }), x.l); })) : null) : null,
+      h('div', { className: 'qn-hb-plot', role: 'img', 'aria-label': p.label },
+        groups.map(function (g, gi) {
+          return h(React.Fragment, { key: gi },
+            g.l ? h('div', { className: 'qn-hb-sep', 'aria-hidden': true }, h('span', null, g.l)) : null,
+            h('div', { className: 'qn-hb-grp' }, grid, g.rows.map(row)));
+        }),
+        h('div', { className: 'qn-hb-axrow', 'aria-hidden': true }, h('span', null),
+          h('svg', { className: 'qn-hb-ax', height: 16, focusable: 'false' }, p.ticks.map(function (v) { return h('text', { key: v, x: pc(v), y: 12, textAnchor: 'middle' }, p.tick ? p.tick(v) : String(v)); })))),
+      /* таблица — в скрытой обёртке: сама таблица 1 px не сжимается и раздвинула бы страницу вбок */
+      p.table ? h('div', { className: 'sr-only qn-hb-tbl' }, h('table', null,
+        h('caption', null, p.title || p.label),
+        h('thead', null, h('tr', null, p.table.head.map(function (c, i) { return h('th', { key: i, scope: 'col' }, c); }))),
+        h('tbody', null, p.table.rows.map(function (r, i) { return h('tr', { key: i }, r.map(function (c, j) { return h(j ? 'td' : 'th', { key: j, scope: j ? undefined : 'row' }, c); })); })))) : null);
   }
-  /* склонность по тесту — полосой во всю ширину над шкалами: «Aralash profil — sangvinik va xolerik uslublari» (без «он —
-     холерик»), «hech bir moyillik kuchli emas», справа средние четырёх шкал плашками (ведущие — выделены) */
+  /* «Profil» человека: шкала — полоса 1–5 (среднее ответов) с тенью ±QN_SEM, ведущая склонность синим, остальные
+     приглушены (qnProfRows), шкалы не темперамента — под чертой; «kam javob» — без полосы, словами */
+  function QnProfChart(p) {
+    var t = p.t, pr = qnProfRows(p.q, p.res, p.ta), sem = qnNum(t, QN_SEM);
+    var val = function (r) { return r.n && !r.few ? qnNum(t, r.mean) : r.n ? tpl(t('qn_few_s'), { n: r.n, m: r.total }) : t('qn_res_noans'); };
+    var rows = pr.rows.map(function (x) {
+      var r = x.r, ok = r.n > 0 && !r.few;
+      return { k: r.s.id, name: r.s.name, v: ok ? r.mean : null, lab: ok ? qnNum(t, r.mean) : '', tone: x.tone, lead: x.lead, sep: x.sep ? t('qn_grp_other') : '', note: val(r),
+        tip: r.s.name + ': ' + val(r) + ' (±' + sem + ')' + (ok && r.band ? ' · ' + r.band : '') };
+    });
+    var legend = (pr.emph ? [{ k: 'acc', l: t(pr.kind === 'mixed' ? 'qn_tmk_mixed' : 'qn_tmk_lead') }] : []).concat([{ k: 'sem', l: tpl(t('qn_pc_sem'), { d: sem }) }]);
+    return h(QnHBars, { className: 'qn-pc', title: t('qn_pc_t'), legend: legend, rows: rows, d: [1, 5], kind: 'sem', sem: QN_SEM, grid: [1, 2, 3, 4, 5], ticks: [1, 2, 3, 4, 5],
+      label: t('qn_pc_t') + ' (1–5): ' + pr.rows.map(function (x) { return x.r.s.name + ' ' + val(x.r); }).join('; ') + (p.ta ? '. ' + qnTmText(t, p.ta) : ''),
+      table: { head: [t('qn_tbl_sc'), t('qn_tbl_avg'), t('qn_tbl_band')], rows: pr.rows.map(function (x) { var r = x.r, ok = r.n > 0 && !r.few; return [r.s.name, ok ? val(r) + ' ±' + sem : val(r), ok ? r.band || '' : '']; }) } });
+  }
+  /* под графиком — компактный список: шкала · вывод границы (или «kam javob», «n / m javob») · «Javoblar (n)» — 2–3
+     ответа, сильнее всего сдвинувших балл (проверить вывод в разговоре); в печати раскрыты. Строки без вывода и
+     без ответов не показываются */
+  function QnScaleList(p) {
+    var t = p.t, open = useState({});
+    var ans = function (x, v, o) { var labs = x.type === 'scale' && (x.labels || []).length === 5 ? x.labels : null; return labs ? labs[v - 1] + ' (' + v + ')' : qnText(x, v, o); };
+    var list = qnProfRows(p.q, p.res, p.ta).rows.map(function (x) {
+      var r = x.r, ok = r.n > 0 && !r.few, why = !!p.why && ok && r.top.length > 0;
+      var band = ok ? [r.band, r.n < r.total ? tpl(t('qn_answered'), { n: r.n, m: r.total }) : ''].filter(Boolean).join(' · ') : r.n ? tpl(t('qn_few_n'), { n: r.n, m: r.total }) : t('qn_res_noans');
+      return { r: r, ok: ok, why: why, band: band, tone: x.tone };
+    }).filter(function (x) { return x.band || x.why; });
+    if (!list.length) return null;
+    return h('ul', { className: 'qn-sl' }, list.map(function (x) {
+      var r = x.r, on = x.why && !!open[0][r.s.id], wid = 'qn-why-' + r.s.id;
+      return h('li', { key: r.s.id, className: cx('qn-sl-row', 'is-' + x.tone, !x.ok && 'is-few', on && 'is-open') },
+        h('div', { className: 'qn-sl-top' },
+          h('i', { className: 'qn-hb-sw is-' + x.tone, 'aria-hidden': true }),
+          h('span', { className: 'qn-sl-name' }, r.s.name),
+          h('span', { className: 'qn-sl-band' }, x.band),
+          x.why ? h('button', { type: 'button', className: 'qn-why-tg qn-noprint', 'aria-expanded': on, 'aria-controls': wid, title: t('qn_why'),
+            onClick: function () { var o = Object.assign({}, open[0]); o[r.s.id] = !on; open[1](o); } },
+            tpl(t('qn_why_n'), { n: r.top.length }), h(Ico, { name: 'chev', size: 14, w: 2 })) : null),
+        x.why ? h('div', { id: wid, className: 'qn-why', hidden: !on },
+          h('span', { className: 'qn-why-h' }, t('qn_why')),
+          h('ul', null, r.top.map(function (z) {
+            var s = String(z.x.text || ''), up = z.v > 3;
+            return h('li', { key: z.x.id },
+              h('span', { className: 'qn-why-dir', 'aria-hidden': true }, up ? '↑' : '↓'),
+              h('span', { className: 'qn-why-t' }, s.length > 110 ? s.slice(0, 108) + '…' : s),
+              h('small', null, ans(z.x, z.a, z.o) + (z.x.rev ? ' · ' + t('qn_rev') : '')));
+          }))) : null);
+    }));
+  }
+  /* склонность по тесту — полосой во всю ширину над графиком: «Aralash profil — sangvinik va xolerik uslublari» (без
+     «он — холерик»), «hech bir moyillik kuchli emas»; баллы шкал — на графике ниже */
   function TemperCard(p) {
     var t = p.t, ta = p.ta;
     if (!ta) return null;
-    var x = qnTmParts(t, ta), top = ta.kind === 'lead' ? [ta.main] : ta.kind === 'mixed' ? ta.pair : [];
+    var x = qnTmParts(t, ta);
     return h('div', { className: cx('qn-temper', 'is-' + ta.kind) },
       h('div', { className: 'qn-temper-main' },
         h('span', { className: 'lor-eyebrow' }, t('qn_tm_card')),
         h('p', { className: 'qn-temper-t' }, h('b', null, x.kind), x.detail ? h('span', { className: 'qn-temper-d' }, ' — ' + x.detail) : null),
-        x.weak ? h('span', { className: 'qn-temper-2' }, x.weak) : null),
-      ta.kind !== 'few' && ta.list.length > 1 ? h('ul', { className: 'qn-temper-ms' }, ta.list.map(function (z) {
-        return h('li', { key: z.k, className: top.indexOf(z.k) >= 0 ? 'is-top' : '' }, t('qn_tma_' + z.k) + ' ', h('b', null, qnNum(t, z.m)));
-      })) : null);
+        x.weak ? h('span', { className: 'qn-temper-2' }, x.weak) : null));
   }
   /* профиль по шкалам — руководителю (карточка) и самому сотруднику (окно анкеты): сверху склонность полосой, затем mid
-     (в карточке — «Javoblar sifati»), шкалы темперамента и отдельно остальные («Ishonchlilik») — одним списком с общей
-     осью 1–5, пояснение к полосам и постоянная оговорка */
+     (в карточке — «Javoblar sifati»), график «Profil», под ним выводы границ и ответы, пояснение и постоянная оговорка */
   function QnProfile(p) {
-    var t = p.t, tp = p.q && p.q.temper, res = p.res.filter(function (r) { return r.total; });
+    var t = p.t, res = p.res.filter(function (r) { return r.total; });
     if (!res.length && !p.ta) return null;
-    var isTm = function (r) { return !!tp && (tp.mode === 'max' ? !!(tp.map || {})[r.s.id] : r.s.id === tp.e || r.s.id === tp.n); };
-    var tm = qnHasTemper(p.q) ? res.filter(isTm) : [], other = res.filter(function (r) { return tm.indexOf(r) < 0; }), two = tm.length && other.length;
-    var grp = function (list, k, first) { return h('div', { className: cx('qn-prof-grp', two && !first && 'is-apart') }, two ? h('span', { className: 'lor-eyebrow' }, t(k)) : null, h(QnBars, { t: t, res: list, why: p.why, ax: first })); };
     return h('div', { className: 'qn-prof' },
       p.ta ? h(TemperCard, { t: t, ta: p.ta }) : null,
       p.mid || null,
       res.length ? h('div', { className: 'qn-prof-sc' },
-        tm.length ? grp(tm, 'qn_grp_tm', true) : null,
-        other.length ? grp(other, 'qn_grp_other', !tm.length) : null,
-        h('p', { className: 'lor-sm lor-muted qn-prof-hint' }, tpl(t('qn_bars_hint'), { d: qnNum(t, QN_SEM) }))) : null,
+        h(QnProfChart, { t: t, q: p.q, res: res, ta: p.ta }),
+        h(QnScaleList, { t: t, q: p.q, res: res, ta: p.ta, why: p.why }),
+        h('p', { className: 'lor-sm lor-muted qn-prof-hint' }, t('qn_pc_hint'))) : null,
       h('p', { className: 'qn-foot' }, t('qn_foot')));
+  }
+  /* «Natijalar» → по коллективу: средние шкал с «усами» min–max и сколько у кого ведущая склонность — графиками,
+     от QN_TEAM_MIN человек с посчитанным тестом (qnTeam); меньше — подсказка вместо графиков */
+  function QnTeamCharts(p) {
+    var t = p.t, q = p.q, st = qnTeam(q, p.rows, QN_TEAM_MIN), sc = st.sc;
+    if (!sc.length && !st.dist.length) return null;
+    if (!st.ok) return h('p', { className: 'lor-sm qn-tc-min' }, tpl(t('qn_tc_min'), { n: QN_TEAM_MIN, m: st.people }));
+    var tmFirst = sc.filter(function (x) { return x.tm; }).concat(sc.filter(function (x) { return !x.tm; })), nTm = sc.filter(function (x) { return x.tm; }).length;
+    var avgRows = tmFirst.map(function (x, i) {
+      var lab = x.ok ? qnNum(t, x.avg) : '';
+      return { k: x.s.id, name: x.s.name, v: x.ok ? x.avg : null, a: x.lo, b: x.hi, lab: lab, tone: 'acc', sep: nTm && i === nTm ? t('qn_grp_other') : '',
+        note: tpl(t('qn_tc_few'), { n: x.n }), tip: x.ok ? tpl(t('qn_tc_item'), { s: x.s.name, v: lab, a: qnNum(t, x.lo), b: qnNum(t, x.hi), n: x.n }) : '' };
+    });
+    var dl = function (k) { var s = QN_TEMPERS.indexOf(k) >= 0 ? tpl(t('qn_tmd_lead'), { t: t('qn_tma_' + k) }) : k === 'few' ? t('qn_few') : t('qn_tmk_' + k); return s.charAt(0).toUpperCase() + s.slice(1); };
+    var max = Math.max.apply(null, st.dist.map(function (x) { return x.n; }).concat([1])), step = max <= 6 ? 1 : max <= 12 ? 2 : max <= 30 ? 5 : 10, top = Math.ceil(max / step) * step, ticks = [];
+    for (var v = 0; v <= top; v += step) ticks.push(v);
+    var distRows = st.dist.map(function (x, i) { return { k: x.k, name: dl(x.k), v: x.n, lab: String(x.n), tone: x.lead ? 'acc' : 'mute', sep: i && !x.lead && st.dist[i - 1].lead ? t('qn_tc_nolead') : '', tip: dl(x.k) + ': ' + tpl(t('qn_tc_ppl'), { n: x.n }) }; });
+    return h('div', { className: 'qn-tc' },
+      sc.length ? h(QnHBars, { className: 'qn-tc-avg', title: t('qn_tc_avg_t'), sub: tpl(t('qn_tc_by'), { n: st.people }), rows: avgRows, d: [1, 5], kind: 'range', grid: [1, 2, 3, 4, 5], ticks: [1, 2, 3, 4, 5],
+        legend: [{ k: 'acc', l: t('qn_tc_avg') }, { k: 'rng', l: t('qn_tc_rng') }],
+        label: t('qn_tc_avg_t') + ' (1–5): ' + avgRows.map(function (r) { return r.v == null ? r.name + ' — ' + r.note : r.tip; }).join('; '),
+        table: { head: [t('qn_tbl_sc'), t('qn_tbl_avg'), t('qn_tc_lo'), t('qn_tc_hi'), t('qn_tc_n')], rows: tmFirst.map(function (x) { return [x.s.name, x.ok ? qnNum(t, x.avg) : tpl(t('qn_tc_few'), { n: x.n }), x.ok ? qnNum(t, x.lo) : '', x.ok ? qnNum(t, x.hi) : '', String(x.n)]; }) } }) : null,
+      st.dist.length ? (st.distOk ? h(QnHBars, { className: 'qn-tc-dist', title: t('qn_tc_dist_t'), sub: tpl(t('qn_tc_by'), { n: st.nt }), rows: distRows, d: [0, top], kind: 'plain', grid: ticks, ticks: ticks,
+        label: t('qn_tc_dist_t') + ': ' + distRows.map(function (r) { return r.tip; }).join('; '),
+        table: { head: [t('qn_tc_style'), t('qn_tc_n')], rows: distRows.map(function (r) { return [r.name, r.lab]; }) } })
+        : h('p', { className: 'lor-sm qn-tc-min' }, tpl(t('qn_tc_min'), { n: QN_TEAM_MIN, m: st.nt }))) : null);
   }
   /* AI-вывод по ответам: только для CEO, SOP-менеджера и руководителя (сервер не отдаёт users[].qaReport сотруднику).
      ИИ пересказывает измеренное, а не угадывает характер: баллы и склонность — как их посчитала программа (теста нет —
@@ -8417,11 +8543,6 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var sent = emps.filter(function (u) { return u.qa && u.qa.at; }).sort(function (a, b) { return b.qa.at - a.qa.at; }), wait = emps.filter(function (u) { return !(u.qa && u.qa.at); });
     var needle = qs[0].trim().toLowerCase();
     var rows = sent.map(function (u) { var res = qnScore(q, u); return { u: u, res: res, ta: qnTemperAll(q, res), qq: qnQuality(q, u.qa.answers, u.qa.meta) }; });
-    /* по коллективу: у скольких ведущая склонность каждого стиля, у скольких профиль смешанный / без явного лидера / мало ответов */
-    var tm = {}; rows.forEach(function (r) { var k = r.ta ? (r.ta.kind === 'lead' ? r.ta.main : r.ta.kind) : ''; if (k) tm[k] = (tm[k] || 0) + 1; });
-    var tmCells = QN_TEMPERS.map(function (k) { return { k: k, n: tm[k] || 0, l: tpl(t('qn_tmd_lead'), { t: t('qn_tma_' + k) }) }; })
-      .concat(['mixed', 'none', 'between', 'few'].filter(function (k) { return k === 'mixed' || tm[k]; }).map(function (k) { return { k: k, n: tm[k] || 0, l: t('qn_tmk_' + k) }; }));
-    var scs = (q.scales || []).map(function (sc, i) { var xs = rows.map(function (r) { return r.res[i]; }).filter(function (r) { return r && r.n && !r.few; }); return { s: sc, avg: xs.length ? xs.reduce(function (s, r) { return s + r.mean; }, 0) / xs.length : null }; });
     /* «Javoblar sifati» — маленькой плашкой рядом с результатом (жёлтый / красный, «просили пройти ещё раз»); не сортирует */
     var qChip = function (r) {
       var lv = r.qq && (r.qq.level === 'amber' || r.qq.level === 'red') ? r.qq.level : null, w = r.u.qa.retake;
@@ -8434,9 +8555,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         h('span', { className: 'lor-eyebrow' }, t('qn_res_team')),
         h('b', { className: 'in-stat-n' }, sent.length + ' / ' + emps.length),
         h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, tpl(t('qn_stat'), { n: sent.length, m: emps.length })),
-        qnHasTemper(q) ? h('span', { className: 'lor-eyebrow qn-tm-eb' }, t('qn_tm_card')) : null,
-        qnHasTemper(q) ? h('div', { className: 'qn-tm-grid' }, tmCells.map(function (c) { return h('div', { key: c.k, className: cx('qn-tm-cell', 'is-' + c.k) }, h('b', null, c.n), h('span', null, c.l)); })) : null,
-        scs.some(function (x) { return x.avg != null; }) ? h('div', { className: 'qn-avg' }, scs.map(function (x) { return x.avg == null ? null : h('span', { key: x.s.id, className: 'in-chip' }, x.s.name + ': ' + tpl(t('qn_res_avg'), { n: qnNum(t, x.avg) }) + ' / 5'); })) : null,
+        /* графики по коллективу: средние шкал (1–5) с разбросом и склонности — от QN_TEAM_MIN человек */
+        h(QnTeamCharts, { t: t, q: q, rows: rows }),
         h('p', { className: 'lor-sm lor-muted qn-disc' }, t('qn_foot'))),
       h(QnTeamAi, Object.assign({}, p, { rows: rows })),
       /* главные ответы ([asosiy]) — таблицей: строка на человека, поиск по имени, должности и ответам */

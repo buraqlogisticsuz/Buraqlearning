@@ -19,7 +19,7 @@ vm.runInContext('function tpl(s, o) { return s.replace(/\\{(\\w+)\\}/g, function
   'var lastId = 0; function nextId() { return ++lastId; }\n' +
   'function fmtDate(ts) { return String(ts); }\n' +
   part('  var QN_TYPES', '  function qnYes(') + part('  var LANG_NAME', '  function stems(') +
-  part('  function qnCsv(', '  /* шкалы одного человека') + part('  function qnNew(', '  function docxQnText(') +
+  part('  function qnCsv(', '  /* ---------- графики «Savolnoma»') + part('  function qnNew(', '  function docxQnText(') +
   part('  /* AI-вывод по ответам', '  function QnAi(') + part('  /* ответ для CEO и SOP-менеджера: скрытый', '  /* карточка одного сотрудника'), ctx);
 const { qnIsOth, qnOthOpt, qnOthOn, qnOthMiss, qnOthLabel, qnText, qnAnsOut, qnShow, qnCsv, qnAiPrompt, qnTeamPrompt, qnConsSet, qnRetake, qnScore, qnTemperAll, qnFromText, qnDone } = ctx;
 const J = x => JSON.parse(JSON.stringify(x));

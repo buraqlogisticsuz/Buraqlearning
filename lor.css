@@ -3529,17 +3529,10 @@ button.qn-fold-tg:hover { background: var(--surface-sunken); color: var(--blue-t
 .qn-disc { margin: 0; }
 .qn-res { display: flex; flex-direction: column; gap: var(--space-4); }
 .qn-team { display: flex; flex-direction: column; gap: 8px; }
-/* по коллективу — сколько у кого ведущая склонность / смешанный профиль: нейтрально, без цветных «ярлыков» темперамента */
-.qn-tm-eb { margin-top: 4px; }
-.qn-tm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
-.qn-tm-cell { display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; border-radius: var(--radius-md); background: var(--surface-sunken); color: var(--ink); }
-.qn-tm-cell b { font-size: 28px; line-height: 32px; font-weight: 400; font-variant-numeric: tabular-nums; }
-.qn-tm-cell span { font-size: 13px; line-height: 18px; color: var(--ink-muted); }
 .qn-tm-kind { display: inline-flex; flex-direction: column; gap: 1px; font-size: 13px; line-height: 18px; color: var(--ink); }
 .qn-tm-kind b { font-weight: 500; }
 .qn-tm-kind small { font-size: 12px; line-height: 16px; color: var(--ink-muted); }
 .qn-person-top .qn-tm-kind { flex: none; max-width: 45%; text-align: right; }
-.qn-avg { display: flex; flex-wrap: wrap; gap: 6px; }
 .qn-people { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--space-3); }
 .qn-person { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border: var(--hairline) solid var(--line); border-radius: var(--radius-lg); background: var(--surface-raised); color: var(--ink); font: inherit; text-align: left; cursor: pointer; transition: border-color var(--t-sm) var(--ease); }
 .qn-person:hover { border-color: var(--blue-text); }
@@ -3553,38 +3546,13 @@ button.qn-fold-tg:hover { background: var(--surface-sunken); color: var(--blue-t
 .qn-person-go { display: flex; align-items: center; justify-content: flex-end; gap: 8px; font-size: 13px; color: var(--red-text); }
 .qn-person-go::after { content: '→'; }
 .qn-ai-chip { padding: 2px 8px; border-radius: var(--radius-pill); background: var(--blue-soft); color: var(--blue-text); font-size: 11px; }
-/* профиль по шкалам: склонность полосой во всю ширину, шкалы списком — строка «шкала · 4,1 / 5 · вывод», под ней полоса;
-   общая ось 1–5 одна над списком (.qn-ax), засечки 2–3–4 — на каждой полосе; ответы под шкалой — за «Javoblar (3)» */
+/* профиль по шкалам: склонность полосой во всю ширину, затем график «Profil» (.qn-hb), под ним — выводы границ и
+   «Javoblar (3)» списком (.qn-sl) */
 .qn-temper { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px var(--space-4); padding: 12px 16px; border-radius: var(--radius-md); border: var(--hairline) solid var(--line); background: var(--surface-sunken); color: var(--ink); }
 .qn-temper-main { flex: 1 1 260px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .qn-temper-t { margin: 0; font-size: 16px; line-height: 22px; }
 .qn-temper-t b { font-weight: 500; }
 .qn-temper-2 { font-size: 13px; line-height: 18px; color: var(--ink-muted); }
-.qn-temper-ms { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
-.qn-temper-ms li { padding: 2px 10px; border-radius: var(--radius-pill); border: var(--hairline) solid var(--line); background: var(--surface-raised); color: var(--ink-muted); font-size: 12px; line-height: 18px; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.qn-temper-ms li b { font-weight: 500; color: var(--ink); }
-.qn-temper-ms li.is-top { border-color: var(--blue-text); color: var(--blue-text); }
-.qn-temper-ms li.is-top b { color: var(--blue-text); }
-.qn-bars { display: flex; flex-direction: column; gap: 14px; }
-.qn-ax { position: relative; height: 14px; margin-bottom: -6px; font-size: 11px; line-height: 14px; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
-.qn-ax span { position: absolute; top: 0; transform: translateX(-50%); }
-.qn-ax span:first-child { transform: none; }
-.qn-ax span:last-child { transform: translateX(-100%); }
-.qn-bar { display: flex; flex-direction: column; gap: 7px; }
-.qn-bar-top { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 10px; font-size: 14px; line-height: 20px; color: var(--ink); }
-.qn-bar-n { font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.qn-bar-band { min-width: 0; font-size: 13px; line-height: 20px; color: var(--ink-muted); }
-.qn-bar.is-few .qn-bar-n { font-weight: 400; color: var(--ink-muted); }
-.qn-why-tg { margin-left: auto; display: inline-flex; align-items: center; gap: 2px; height: 24px; padding: 0 6px 0 10px; border: 0; border-radius: var(--radius-pill); background: transparent; color: var(--blue-text); font: inherit; font-size: 12px; line-height: 16px; cursor: pointer; white-space: nowrap; align-self: center; }
-.qn-why-tg:hover { background: var(--blue-soft); }
-.qn-why-tg svg { flex: none; transition: transform var(--t-sm) var(--ease); }
-.qn-bar.is-open .qn-why-tg svg { transform: rotate(180deg); }
-.qn-meter { position: relative; display: block; height: 8px; border-radius: var(--radius-sm); background: var(--line); }
-.qn-meter::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(to right, transparent calc(25% - 1px), var(--surface-raised) calc(25% - 1px) 25%, transparent 25% calc(50% - 1px), var(--surface-raised) calc(50% - 1px) 50%, transparent 50% calc(75% - 1px), var(--surface-raised) calc(75% - 1px) 75%, transparent 75%); }
-.qn-meter i { position: absolute; display: block; }
-.qn-meter-fill { left: 0; top: 0; bottom: 0; border-radius: var(--radius-sm); background: var(--blue-text); opacity: .55; }
-.qn-meter-sem { top: -4px; bottom: -4px; border-radius: var(--radius-sm); background: var(--blue-text); opacity: .22; }
-.qn-meter-dot { z-index: 1; top: -5px; bottom: -5px; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--ink); }
 .qn-why { display: flex; flex-direction: column; gap: 4px; padding: 8px 12px; border-radius: var(--radius-sm); background: var(--surface-sunken); }
 .qn-why[hidden] { display: none; }
 .qn-why-h { font-size: 12px; line-height: 16px; color: var(--ink-muted); }
@@ -3594,19 +3562,91 @@ button.qn-fold-tg:hover { background: var(--surface-sunken); color: var(--blue-t
 .qn-why li small { font-size: 12px; color: var(--ink-muted); text-align: right; }
 .qn-prof { display: flex; flex-direction: column; gap: var(--space-4); }
 .qn-prof-sc { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
-.qn-prof-grp { display: flex; flex-direction: column; gap: 10px; }
-.qn-prof-grp.is-apart { padding-top: var(--space-4); border-top: var(--hairline) dashed var(--border); }
 .qn-prof-hint { margin: 0; }
+/* ---------- графики «Savolnoma» (QnHBars): горизонтальные полосы на общей оси, SVG с координатами в % ширины ----------
+   Цвета — только токены lor.css: acc — синий (--blue; в тёмной теме — светлее, --blue-text: --blue на тёмно-синем не
+   виден), mute — серый (--gray; в тёмной — вполовину прозрачный, чтобы не спорил с синим); тень погрешности и «усы» —
+   цветом текста, сетка — волосные линии --line. Значения подписаны у каждой полосы, рядом скрытая таблица — поэтому
+   светлому серому (контраст ниже 3:1) не нужно читаться самому. Узкий блок (@container < 440 px) — имя над полосой */
+.qn-hb, .qn-sl { --hb-acc: var(--blue); --hb-mute: var(--gray); --hb-mute-o: 1; --hb-sem-o: .09; --hb-bg: var(--surface-raised); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .qn-hb, :root:not([data-theme="light"]) .qn-sl { --hb-acc: var(--blue-text); --hb-mute-o: .5; --hb-sem-o: .12; } }
+:root[data-theme="dark"] .qn-hb, :root[data-theme="dark"] .qn-sl { --hb-acc: var(--blue-text); --hb-mute-o: .5; --hb-sem-o: .12; }
+.qn-hb { container-type: inline-size; margin: 0; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+.qn-hb-cap { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 6px 16px; }
+.qn-hb-t { display: inline-flex; align-items: baseline; flex-wrap: wrap; gap: 2px 10px; }
+.qn-hb-t small { font-size: 12px; line-height: 16px; color: var(--ink-muted); }
+.qn-hb-leg { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; line-height: 16px; color: var(--ink-muted); }
+.qn-hb-leg li { display: inline-flex; align-items: center; gap: 6px; }
+.qn-hb-sw { flex: none; display: inline-block; width: 12px; height: 12px; border-radius: 3px; background: var(--hb-acc); -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.qn-hb-sw.is-mute { background: var(--hb-mute); opacity: var(--hb-mute-o); }
+.qn-hb-sw.is-sem { width: 18px; background: var(--ink); opacity: var(--hb-sem-o); }
+.qn-hb-sw.is-rng { width: 16px; height: 10px; box-sizing: border-box; border-radius: 0; border-left: 1.5px solid var(--ink); border-right: 1.5px solid var(--ink); background: linear-gradient(var(--ink), var(--ink)) center / 100% 1.5px no-repeat; }
+.qn-hb-plot { --hb-lab: 210px; --hb-gap: 16px; --hb-pad: 40px; display: flex; flex-direction: column; }
+.qn-hb-grp { position: relative; display: flex; flex-direction: column; gap: 6px; padding: 4px 0; }
+.qn-hb-grid { position: absolute; top: 0; left: calc(var(--hb-lab) + var(--hb-gap)); width: calc(100% - var(--hb-lab) - var(--hb-gap) - var(--hb-pad)); height: 100%; overflow: visible; pointer-events: none; }
+.qn-hb-grid line { stroke: var(--line); stroke-width: 1; shape-rendering: crispEdges; }
+.qn-hb-grid line.is-base { stroke: var(--border); }
+.qn-hb-row { position: relative; display: grid; grid-template-columns: var(--hb-lab) minmax(0, 1fr); column-gap: var(--hb-gap); align-items: center; padding-right: var(--hb-pad); }
+.qn-hb-name { min-width: 0; font-size: 14px; line-height: 18px; color: var(--ink); overflow-wrap: anywhere; }
+.qn-hb-svg { display: block; width: 100%; height: 24px; overflow: visible; }
+.qn-hb svg text { font-family: var(--font-sans); }
+.qn-hb-under rect { fill: var(--hb-bg); }
+.qn-hb-fill rect { fill: var(--hb-acc); }
+.qn-hb-row.is-mute .qn-hb-fill { opacity: var(--hb-mute-o); }
+.qn-hb-row.is-mute .qn-hb-fill rect { fill: var(--hb-mute); }
+.qn-hb-row:hover .qn-hb-bar { filter: brightness(1.12) saturate(1.1); }
+.qn-hb-sem { fill: var(--ink); fill-opacity: var(--hb-sem-o); }
+.qn-hb-rng line { stroke: var(--ink); stroke-width: 1.5; stroke-linecap: round; }
+.qn-hb-rng line.is-in { stroke: var(--hb-bg); }
+.qn-hb-row.is-lead .qn-hb-name { font-weight: 500; }
+.qn-hb-v { fill: var(--ink); font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.qn-hb-na { fill: var(--ink-muted); font-size: 12px; }
+.qn-hb-sep { margin-top: 10px; padding-top: 8px; border-top: var(--hairline) solid var(--line); font-size: 12px; line-height: 16px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-muted); }
+.qn-hb-axrow { display: grid; grid-template-columns: var(--hb-lab) minmax(0, 1fr); column-gap: var(--hb-gap); padding-right: var(--hb-pad); }
+.qn-hb-ax { display: block; width: 100%; height: 16px; overflow: visible; }
+.qn-hb-ax text { fill: var(--ink-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+@keyframes qn-hb-grow { from { transform: scaleX(0); } }
+@keyframes qn-hb-in { from { opacity: 0; } }
+.qn-hb-bar { transform-box: fill-box; transform-origin: 0 50%; animation: qn-hb-grow .75s var(--ease-out) backwards; }
+.qn-hb-sem, .qn-hb-rng, .qn-hb-v { animation: qn-hb-in .4s var(--ease) backwards; }
+@container (max-width: 640px) { .qn-hb-plot { --hb-lab: 170px; --hb-gap: 12px; } }
+@container (max-width: 440px) {
+  .qn-hb-plot { --hb-lab: 0px; --hb-gap: 0px; --hb-pad: 34px; }
+  .qn-hb-grp { gap: 10px; }
+  .qn-hb-row, .qn-hb-axrow { grid-template-columns: minmax(0, 1fr); row-gap: 1px; }
+  .qn-hb-axrow > span { display: none; }
+  .qn-hb-name { font-size: 13px; line-height: 17px; }
+}
+/* под графиком профиля — шкалы списком: метка цвета, шкала, вывод границы, «Javoblar (3)» */
+.qn-sl { container-type: inline-size; list-style: none; margin: 0; padding: 0; border-top: var(--hairline) solid var(--line); }
+.qn-sl-row { display: flex; flex-direction: column; gap: 6px; padding: 8px 0; border-bottom: var(--hairline) solid var(--line); }
+.qn-sl-top { display: grid; grid-template-columns: 10px 192px minmax(0, 1fr) auto; column-gap: 12px; align-items: baseline; font-size: 14px; line-height: 20px; color: var(--ink); }
+.qn-sl-top .qn-hb-sw { width: 10px; height: 10px; border-radius: 2px; align-self: center; }
+.qn-sl-band { min-width: 0; font-size: 13px; color: var(--ink-muted); }
+.qn-why-tg { margin-left: auto; display: inline-flex; align-items: center; gap: 2px; height: 24px; padding: 0 6px 0 10px; border: 0; border-radius: var(--radius-pill); background: transparent; color: var(--blue-text); font: inherit; font-size: 12px; line-height: 16px; cursor: pointer; white-space: nowrap; align-self: center; }
+.qn-why-tg:hover { background: var(--blue-soft); }
+.qn-why-tg svg { flex: none; transition: transform var(--t-sm) var(--ease); }
+.qn-sl-row.is-open .qn-why-tg svg { transform: rotate(180deg); }
+@container (max-width: 640px) { .qn-sl-top { grid-template-columns: 10px 148px minmax(0, 1fr) auto; } }
+@container (max-width: 440px) {
+  .qn-sl-top { grid-template-columns: 10px minmax(0, 1fr) auto; row-gap: 2px; }
+  .qn-sl-band { grid-column: 2 / -1; grid-row: 2; }
+  .qn-why-tg { grid-column: 3; grid-row: 1; margin-right: -6px; }
+}
+/* «Natijalar» → по коллективу: два графика рядом (на узком — друг под другом) */
+.qn-tc { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: var(--space-6) var(--space-8); margin-top: 4px; padding-top: var(--space-4); border-top: var(--hairline) solid var(--line); }
+.qn-tc-min { margin: 4px 0 0; padding: 8px 12px; border-radius: var(--radius-md); background: var(--surface-sunken); color: var(--ink-muted); }
+@media print {
+  .qn-hb, .qn-sl { --hb-acc: var(--blue); --hb-mute: var(--gray); --hb-mute-o: 1; --hb-bg: var(--white); }
+  .qn-hb-bar, .qn-hb-sem, .qn-hb-rng, .qn-hb-v { animation: none !important; }
+  .qn-hb-grid line { stroke: var(--gray); } .qn-hb-grid line.is-base { stroke: var(--navy); }
+  .qn-hb-v, .qn-hb-na, .qn-hb-ax text { fill: var(--navy); } .qn-hb-sem { fill: var(--navy); fill-opacity: .12; } .qn-hb-rng line { stroke: var(--navy); } .qn-hb-rng line.is-in { stroke: var(--white); }
+  .qn-hb-name, .qn-hb-leg, .qn-hb-sep, .qn-sl-top, .qn-sl-band { color: var(--navy); }
+}
 .qn-foot { margin: 0; padding: 10px 12px; border-left: 2px solid var(--red); background: var(--surface-sunken); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; font-size: 13px; line-height: 19px; color: var(--ink); }
 @media (max-width: 640px) {
   .qn-why li { grid-template-columns: 14px minmax(0, 1fr); } .qn-why li small { grid-column: 2; text-align: left; }
   .qn-temper { padding: 12px; }
-  /* телефон: «шкала — балл» первой строкой, «вывод — Javoblar (3)» второй */
-  .qn-bar-top { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; }
-  .qn-bar-name { grid-column: 1; grid-row: 1; }
-  .qn-bar-n { grid-column: 2; grid-row: 1; text-align: right; }
-  .qn-bar-band { grid-column: 1; grid-row: 2; }
-  .qn-why-tg { grid-column: 2; grid-row: 2; justify-self: end; margin-right: -6px; }
 }
 .qn-ai { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border: var(--hairline) solid var(--line); border-radius: var(--radius-md); background: var(--surface); }
 .qn-ai-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
@@ -3626,9 +3666,6 @@ button.qn-fold-tg:hover { background: var(--surface-sunken); color: var(--blue-t
 .qn-tm-row { display: flex; flex-direction: column; gap: 10px; }
 .qn-tm-axis { display: flex; flex-direction: column; gap: 4px; }
 .qn-scale-sel { min-width: 170px; }
-@media (max-width: 760px) {
-  .qn-tm-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
 
 /* ---------- «Xodimlar» → «Lavozim va bo‘limlar» (CEO) ---------- */
 .org-modal { max-width: 780px; max-height: calc(100vh - 32px); overflow: auto; }
@@ -3779,7 +3816,7 @@ input.org-name:hover, input.org-name:focus { border-color: var(--line); backgrou
   body.qn-printing .qn-cons-c { white-space: normal; padding: 0; background: none; font-size: 12px; }
   body.qn-printing .qn-cons-k { display: none; }
   body.qn-printing .qn-cons-full { position: static; width: auto; height: auto; margin: 0; overflow: visible; clip: auto; white-space: normal; }
-  body.qn-printing .qn-bar, body.qn-printing .qn-temper, body.qn-printing .qn-q { break-inside: avoid; }
+  body.qn-printing .qn-hb, body.qn-printing .qn-sl-row, body.qn-printing .qn-temper, body.qn-printing .qn-q { break-inside: avoid; }
 }
 
 /* ---------- «Savolnoma» интерактивно: плитки вариантов, уровни, согласие, шаги по разделам, «Rahmat!» ---------- */

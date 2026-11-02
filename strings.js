@@ -3315,3 +3315,37 @@ Object.assign(APP_T.en, { qn_oth_ph: 'Type your answer…', qn_oth_err: 'Please 
 Object.assign(APP_T.zh, { qn_oth_ph: '请填写…', qn_oth_err: '请填写“其他”的内容', qn_oth_tag: '可自填',
   qn_oth_tag_t: '选择此选项后，下方会出现“请填写…”输入框：员工填写自己的答案（最多 200 字）。结果中显示为“Boshqa: 答案”。',
   qn_paste_hint: '每行一个问题。“- …”或“a) …”为上一问题的选项（表格中为行）；“- Boshqa (yozing)”附带自填答案的输入框。“# …”为分节。行末标记：[qisqa] [batafsil] [sana] [tanlov] [bir nechta] [baho] [jadval: A | B] [rozilik]、[ixtiyoriy]、[asosiy]、[maxfiy]、[profil:email]。测试：[shkala: 名称]、[teskari]、[diqqat: 2]、[tekshiruv]、[samimiylik]、[juft: 12]。“@sarlavha: …”、“@kirish: …”、“@birinchi”为设置。' });
+/* «Savolnoma» → графики: «Profil» человека (полосы 1–5, тень — погрешность, ведущая склонность синим) и по коллективу
+   (средние шкал с разбросом, склонности — от 5 человек); скрытые таблицы для экранного диктора */
+Object.assign(APP_T.uz, { qn_pc_t: 'Profil', qn_pc_sem: 'taxminiy xatolik ±{d}', qn_few_s: 'kam javob ({n} / {m})',
+  qn_pc_hint: 'Shkala 1–5, o‘z-o‘zini baholash bo‘yicha: ustun — javoblar o‘rtachasi, uchidagi soya — taxminiy xatolik.',
+  qn_tbl_sc: 'Shkala', qn_tbl_avg: 'O‘rtacha (1–5)', qn_tbl_band: 'Xulosa',
+  qn_tc_avg_t: 'Shkalalar bo‘yicha o‘rtacha', qn_tc_by: '{n} kishi bo‘yicha', qn_tc_avg: 'jamoa o‘rtachasi', qn_tc_rng: 'eng past — eng yuqori ball',
+  qn_tc_item: '{s}: o‘rtacha {v}, eng past {a}, eng yuqori {b} ({n} kishi)', qn_tc_few: 'kam ({n} kishi)',
+  qn_tc_lo: 'Eng past', qn_tc_hi: 'Eng yuqori', qn_tc_n: 'Kishi', qn_tc_dist_t: 'Moyilliklar taqsimoti', qn_tc_style: 'Moyillik', qn_tc_ppl: '{n} kishi',
+  qn_tc_nolead: 'Bitta yetakchi moyillik yo‘q',
+  qn_tc_min: 'Jamoa grafiklari kamida {n} kishi testni topshirganda chiqadi, hozir — {m}: kam odamda o‘rtacha kam narsa aytadi, odamni esa tanib olish oson.' });
+Object.assign(APP_T.ru, { qn_pc_t: 'Профиль', qn_pc_sem: 'ориентировочная погрешность ±{d}', qn_few_s: 'мало ответов ({n} / {m})',
+  qn_pc_hint: 'Шкала 1–5, по самоотчёту: полоса — среднее ответов, тень на её конце — ориентировочная погрешность.',
+  qn_tbl_sc: 'Шкала', qn_tbl_avg: 'Среднее (1–5)', qn_tbl_band: 'Вывод',
+  qn_tc_avg_t: 'Средние по шкалам', qn_tc_by: 'по {n} чел.', qn_tc_avg: 'среднее по коллективу', qn_tc_rng: 'от наименьшего до наибольшего балла',
+  qn_tc_item: '{s}: в среднем {v}, наименьший {a}, наибольший {b} ({n} чел.)', qn_tc_few: 'мало ({n} чел.)',
+  qn_tc_lo: 'Наименьший', qn_tc_hi: 'Наибольший', qn_tc_n: 'Человек', qn_tc_dist_t: 'Распределение тенденций', qn_tc_style: 'Тенденция', qn_tc_ppl: '{n} чел.',
+  qn_tc_nolead: 'Нет одной ведущей тенденции',
+  qn_tc_min: 'Графики по коллективу появятся, когда тест пройдут хотя бы {n} человек, сейчас — {m}: при меньшем числе среднее мало что говорит, а человека легко узнать.' });
+Object.assign(APP_T.en, { qn_pc_t: 'Profile', qn_pc_sem: 'approximate error ±{d}', qn_few_s: 'too few answers ({n} / {m})',
+  qn_pc_hint: 'Scale 1–5, self-report: the bar is the average answer, the shade at its end is the approximate error.',
+  qn_tbl_sc: 'Scale', qn_tbl_avg: 'Average (1–5)', qn_tbl_band: 'Reading',
+  qn_tc_avg_t: 'Average by scale', qn_tc_by: 'based on {n} people', qn_tc_avg: 'team average', qn_tc_rng: 'lowest to highest score',
+  qn_tc_item: '{s}: average {v}, lowest {a}, highest {b} ({n} people)', qn_tc_few: 'too few ({n} people)',
+  qn_tc_lo: 'Lowest', qn_tc_hi: 'Highest', qn_tc_n: 'People', qn_tc_dist_t: 'Distribution of tendencies', qn_tc_style: 'Tendency', qn_tc_ppl: '{n} people',
+  qn_tc_nolead: 'No single leading tendency',
+  qn_tc_min: 'Team charts appear once at least {n} people have taken the test, now {m}: with fewer people an average says little and a person is easy to recognise.' });
+Object.assign(APP_T.zh, { qn_pc_t: '概况', qn_pc_sem: '大致误差 ±{d}', qn_few_s: '回答太少（{n} / {m}）',
+  qn_pc_hint: '1–5 分量表，基于自评：条形为回答平均值，末端阴影为大致误差。',
+  qn_tbl_sc: '量表', qn_tbl_avg: '平均（1–5）', qn_tbl_band: '解读',
+  qn_tc_avg_t: '各量表平均分', qn_tc_by: '基于 {n} 人', qn_tc_avg: '团队平均', qn_tc_rng: '最低分至最高分',
+  qn_tc_item: '{s}：平均 {v}，最低 {a}，最高 {b}（{n} 人）', qn_tc_few: '人数不足（{n} 人）',
+  qn_tc_lo: '最低', qn_tc_hi: '最高', qn_tc_n: '人数', qn_tc_dist_t: '倾向分布', qn_tc_style: '倾向', qn_tc_ppl: '{n} 人',
+  qn_tc_nolead: '无单一主导倾向',
+  qn_tc_min: '至少 {n} 人完成测试后才显示团队图表，目前 {m} 人：人数太少时平均值说明不了什么，也容易认出具体的人。' });

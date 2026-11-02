@@ -877,7 +877,9 @@ try {
   await nav(A, 'cms'); await A.locator('.lor-tab').filter({ hasText: 'Savolnoma' }).click(); await A.waitForTimeout(300);
   // «Natijalar»: Masofadan → экстраверсия 0, оценка 4 → нейротизм 4: оба далеко ниже средней точки (12) — склонность
   // «флегматический стиль» (словами склонности, не «он — флегматик»)
-  assert.equal(await A.locator('.qn-tm-cell.is-phlegmatic b').innerText(), '1', 'в коллективе — у одного ведущая склонность «flegmatik»');
+  // графики по коллективу — от 5 человек с посчитанным тестом: пока один — подсказка вместо графиков
+  assert.match(await A.locator('.qn-team .qn-tc-min').innerText(), /kamida 5 kishi testni topshirganda chiqadi, hozir — 1/, 'меньше 5 — графиков по коллективу нет');
+  assert.equal(await A.locator('.qn-team .qn-hb').count(), 0);
   assert.match(await A.locator('.qn-person').first().innerText(), /Yetakchi moyillik[\s\S]*ko‘proq flegmatik uslubi/);
   assert.equal(await A.locator('.qn-tm-chip').count(), 0, 'цветных ярлыков темперамента нет');
   await shot(A, 'savolnoma-natijalar');
@@ -930,6 +932,19 @@ try {
     assert.deepEqual(srv.g.post({ token: sopTk(), action: 'patch', ops }).rejected, []); }
   await A.reload({ waitUntil: 'networkidle' }); await watchSync(A);
   await nav(A, 'cms'); await A.locator('.lor-tab').filter({ hasText: 'Savolnoma' }).click(); await A.waitForTimeout(300);
+  // теперь ответили семеро — графики по коллективу: средние шкал (1–5) с «усами» min–max и склонности; у графика —
+  // подпись для экранного диктора и скрытая таблица с теми же числами
+  assert.equal(await A.locator('.qn-team .qn-tc-min').count(), 0, 'семеро — графики вместо подсказки');
+  { const avg = A.locator('.qn-team .qn-tc-avg'), dist = A.locator('.qn-team .qn-tc-dist');
+    assert.equal(await avg.locator('.qn-hb-row').count(), 2, 'средние — по двум шкалам с вопросами (экстраверсия, нейротизм)');
+    assert.equal(await avg.locator('.qn-hb-rng').count(), 2, 'у каждой средней — разброс');
+    assert.match(await avg.locator('[role="img"]').getAttribute('aria-label'), /o‘rtacha \d,\d, eng past \d,\d, eng yuqori \d,\d \(7 kishi\)/, 'подпись графика — числами');
+    assert.equal(await avg.locator('.qn-hb-tbl tbody tr').count(), 2, 'скрытая таблица — строка на шкалу');
+    assert.equal(await dist.locator('.qn-hb-row').count(), 5, '«en»: четыре стиля и «turlar oralig‘ida»');
+    assert.equal(await dist.locator('.qn-hb-row', { hasText: 'flegmatik' }).locator('.qn-hb-v').textContent(), '7', 'все семеро — ко флегматическому стилю');
+    assert.equal(await dist.locator('.qn-hb-row.is-mute').count(), 1, 'без одной ведущей — приглушённым');
+    assert.ok(await A.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'страница вбок не прокручивается'); }
+  await A.locator('.qn-team').scrollIntoViewIfNeeded(); await A.waitForTimeout(1200); await shot(A, 'savolnoma-jamoa-grafik');
   // люди — номерами (имён в запросе нет), на экране номера → имена; хранится в карточке SOP-менеджера
   await A.locator('.qn-team-ai .qn-team-go').click();
   await A.locator('.qn-team-body').waitFor({ timeout: 8000 });
@@ -1158,11 +1173,30 @@ try {
   await A.locator('.qn-tbl tbody tr').first().click();
   { const tx = await A.locator('.qn-temper').innerText();
     assert.ok(/Aralash profil/.test(tx) && /sangvinik va xolerik uslublari/.test(tx) && !/Xolerik|Sangvinik/.test(tx), 'равные шкалы — смешанный профиль, без ярлыка «основной / дополнительный»'); }
-  assert.equal(await A.locator('.qn-ans .qn-prof-grp').count(), 2, 'шкалы темперамента и остальные — двумя группами');
-  assert.match(await A.locator('.qn-ans .qn-prof-grp').first().innerText(), /Muloqot[\s\S]*5,0 \/ 5[\s\S]*Liderlik/, 'шкалы темперамента — средним 1–5');
-  assert.match(await A.locator('.qn-ans .qn-prof-grp.is-apart').innerText(), /Ishonchlilik[\s\S]*3,0 \/ 5/, 'надёжность — отдельно от шкал темперамента');
-  assert.equal(await A.locator('.qn-ans .qn-ax').count(), 1, 'ось 1–5 — одна над списком шкал');
-  { const grp = A.locator('.qn-ans .qn-prof-grp').first(), tg = grp.locator('.qn-why-tg').first();
+  // «Profil» — график: полоса на шкалу на общей оси 1–5, значение у конца, тень погрешности; ведущие (aralash profil — обе)
+  // синим, «Ishonchlilik» — приглушённо под чертой; подпись для диктора и скрытая таблица
+  { const pc = A.locator('.qn-ans .qn-pc'), grp = pc.locator('.qn-hb-grp');
+    assert.equal(await grp.count(), 2, 'шкалы темперамента и остальные — двумя группами');
+    assert.match(await grp.first().innerText(), /Muloqot[\s\S]*Liderlik/, 'сначала шкалы темперамента');
+    assert.deepEqual(await grp.first().locator('.qn-hb-v').allTextContents(), ['5,0', '5,0'], 'значения — у конца полос');
+    assert.match(await pc.locator('.qn-hb-sep').innerText(), /ALOHIDA SHKALALAR/i);
+    assert.match(await grp.nth(1).innerText(), /Ishonchlilik[\s\S]*3,0/, 'надёжность — отдельно, под чертой');
+    // под чертой — и экстраверсия с нейротизмом из прежнего теста (в «max» они не темперамент), и «Ishonchlilik»
+    { const nm = await pc.locator('.qn-hb-name').allTextContents(), tone = await pc.locator('.qn-hb-row').evaluateAll(r => r.map(x => x.classList.contains('is-acc') ? 'acc' : 'mute'));
+      assert.deepEqual([nm.length, nm[0], nm[1], nm[nm.length - 1]], [5, 'Muloqot', 'Liderlik', 'Ishonchlilik']);
+      assert.deepEqual(tone, ['acc', 'acc', 'mute', 'mute', 'mute'], 'aralash profil — обе ведущие синим, остальные приглушены'); }
+    assert.equal(await pc.locator('.qn-hb-ax').count(), 1, 'ось 1–5 — одна под графиком');
+    assert.equal(await pc.locator('.qn-hb-sem').count(), 5, 'у полос — тень погрешности');
+    assert.match(await pc.locator('.qn-hb-leg').innerText(), /Aralash profil[\s\S]*taxminiy xatolik ±0,3/, 'легенда: что значит синий и тень');
+    assert.match(await pc.locator('[role="img"]').getAttribute('aria-label'), /^Profil \(1–5\): Muloqot 5,0; Liderlik 5,0; .+; Ishonchlilik 3,0\. Aralash profil/, 'подпись для экранного диктора');
+    { const tr = await pc.locator('.qn-hb-tbl tbody tr').evaluateAll(r => r.map(x => [...x.children].map(c => c.textContent)));
+      assert.deepEqual([tr.length].concat([tr[0], tr[1], tr[4]].map(x => x.slice(0, 2).join(': '))), [5, 'Muloqot: 5,0 ±0,3', 'Liderlik: 5,0 ±0,3', 'Ishonchlilik: 3,0 ±0,3'], 'скрытая таблица с теми же числами'); }
+    // полосы вырастают при открытии; при prefers-reduced-motion — без движения
+    assert.notEqual(await pc.locator('.qn-hb-bar').first().evaluate(e => getComputedStyle(e).animationName), 'none', 'полоса вырастает');
+    await A.emulateMedia({ reducedMotion: 'reduce' });
+    assert.equal(await pc.locator('.qn-hb-bar').first().evaluate(e => getComputedStyle(e).animationName), 'none', 'reduced motion — сразу целиком');
+    await A.emulateMedia({ reducedMotion: 'no-preference' }); }
+  { const grp = A.locator('.qn-ans .qn-sl'), tg = grp.locator('.qn-why-tg').first();
     assert.ok(await grp.locator('.qn-why').first().isHidden(), 'ответы под шкалой свёрнуты');
     assert.match(await tg.innerText(), /Javoblar \(1\)/, 'кнопка — «Javoblar (n)»');
     await tg.click();
@@ -1172,9 +1206,9 @@ try {
     // «Chop etish / PDF» — в печати всё раскрыто: ответы под шкалами, согласия полным текстом
     await A.evaluate(() => document.body.classList.add('qn-printing')); await A.emulateMedia({ media: 'print' });
     assert.ok(await grp.locator('.qn-why').first().isVisible(), 'в печати ответы под шкалой раскрыты');
+    assert.ok(await A.locator('.qn-ans .qn-pc .qn-hb-bar').first().evaluate(e => e.getBoundingClientRect().width > 100), 'в печати график — с полосами');
     assert.ok(await A.locator('.qn-ans .qn-cons-full').first().evaluate(e => e.getBoundingClientRect().width > 50), 'в печати согласия — полным текстом');
     await A.emulateMedia({ media: 'screen' }); await A.evaluate(() => document.body.classList.remove('qn-printing')); }
-  assert.ok(await A.locator('.qn-ans .qn-meter-sem').count() >= 3, 'у полос — затенённая погрешность');
   await A.waitForTimeout(400); await shot(A, 'savolnoma-profil');
   await A.locator('.qn-ans .lor-modal-x').click();
   await A.locator('.lor-tab').filter({ hasText: 'Darslar' }).click();
