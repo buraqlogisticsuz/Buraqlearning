@@ -1,7 +1,7 @@
 // «Savolnoma» → ИИ: запросы и разбор ответа в app.js (qnAiPrompt, qnAiClean, qnTeamPrompt, qnTeamClean, qnAiRun) —
 // ИИ пересказывает измеренное («test o‘lchanmagan» без догадок о характере), у пунктов — evidence (без неё — прочь),
 // вместо «fit» — «verify», в ИИ не уходят контакты, паспорт, имя, точная дата рождения (возрастная группа), прежние выводы
-// ИИ в анализ коллектива не идут, без согласия на ИИ (u.qa.consent.ai) запрос не отправляется.
+// ИИ в анализ коллектива не идут, без согласия на ИИ (u.qa.consent.ai) запрос не отправляется — и у анкет без поля согласий.
 // Функции берём из app.js как есть (куски без React). Запуск: node --test tests/
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -37,15 +37,17 @@ const Q = { questions: [
 ], scales: [{ id: 'M', name: 'Muloqot', bands: [] }] };
 const ANS = { nm: 'Dilnoza Karimova', ph: '+998 90 123 45 67', bd: '1999-04-12', ps: 'AA 1234567', why: 'Rivojlanish uchun. Aloqa: dilnoza@mail.uz, @dilnoza_k, t.me/dilnoza, 90 555 66 77; 2015 - 2020 omborda ishladim, maosh 12 000 000',
   fam: 'Yolg‘iz', ok: true, m1: 4, m2: 5 };
-const emp = (ans = ANS, extra = {}) => ({ id: 7, name: 'Dilnoza Karimova', role: 'employee', status: 'probation', position: 'Omborchi', department: 'Ombor', qa: { at: 100, answers: ans }, ...extra });
+const CONS = { v: 1, at: 90, base: true, ai: true, special: true };   // шаг согласий: всё разрешено
+const emp = (ans = ANS, extra = {}) => ({ id: 7, name: 'Dilnoza Karimova', role: 'employee', status: 'probation', position: 'Omborchi', department: 'Ombor', qa: { at: 100, answers: ans, consent: CONS }, ...extra });
 const promptOf = (q, u, o) => { const res = qnScore(q, u); return qnAiPrompt(q, u, res, qnTemperAll(q, res), 'uz', Object.assign({ now: NOW }, o)); };
 
-test('согласие на ИИ: поля согласий нет — можно (как раньше); есть — только consent.ai === true', () => {
+test('согласие на ИИ: только consent.ai === true; анкета без поля согласий («rozilik so‘ralmagan») — нельзя', () => {
   assert.equal(qnAiAllowed(emp()), true);
   assert.equal(qnAiAllowed({ qa: { at: 1, answers: {}, consent: { ai: true } } }), true);
   assert.equal(qnAiAllowed({ qa: { at: 1, answers: {}, consent: { ai: false } } }), false);
   assert.equal(qnAiAllowed({ qa: { at: 1, answers: {}, consent: { general: true } } }), false, 'согласия дали, а на ИИ — нет');
-  assert.equal(qnAiAllowed({}), true);
+  assert.equal(qnAiAllowed({ qa: { at: 1, answers: {} } }), false, 'анкета до шага согласий');
+  assert.equal(qnAiAllowed({}), false);
 });
 
 test('дата рождения → возрастная группа; контакты из текста убираются, годы, даты и суммы — нет', () => {
@@ -123,7 +125,8 @@ test('вывод ИИ: хранится с версией запроса, кто
   let called = false;
   const no = emp(ANS, { qa: { at: 100, answers: ANS, consent: { ai: false } } });
   await assert.rejects(qnAiRun({ sampler: { json: () => { called = true; return Promise.resolve({}); } }, q: Q, u: no, lang: 'uz', by: 3, update: () => {} }), e => e.code === 'no_consent');
-  assert.equal(called, false, 'без согласия — в ИИ ничего');
+  await assert.rejects(qnAiRun({ sampler: { json: () => { called = true; return Promise.resolve({}); } }, q: Q, u: emp(ANS, { qa: { at: 100, answers: ANS } }), lang: 'uz', by: 3, update: () => {} }), e => e.code === 'no_consent');
+  assert.equal(called, false, 'без согласия (и без поля согласий) — в ИИ ничего');
 });
 
 test('устарел: ответы новее, прежняя версия запроса; отклонённый — заново только после новых ответов', () => {

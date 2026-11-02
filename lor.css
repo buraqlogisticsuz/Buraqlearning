@@ -4118,3 +4118,22 @@ select.lor-input.slim:not([multiple]) { background-position: right 10px center; 
 .qn-ai-sec li + li { margin-top: 4px; }
 .qn-ai-nocons, .qn-team-min { padding: 8px 12px; border-radius: var(--radius-md); background: var(--surface-sunken); color: var(--ink-muted); }
 .qn-ai-off { color: var(--red-text); }
+/* «Savolnoma» → согласие: шаг перед анкетой (три карточки-галочки), плашки у CEO / SOP-менеджера, «Rozilik» в профиле */
+.qn-cons-form { display: flex; flex-direction: column; gap: var(--space-3); }
+.qn-cons-p p { margin: 0 0 8px; }
+.qn-cons-p p:last-child { margin-bottom: 0; }
+.qn-cons-opt .qn-consent-t { display: flex; flex-direction: column; gap: 2px; }
+.qn-cons-h { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-weight: 500; font-size: 15px; line-height: 20px; }
+.qn-cons-tag { padding: 1px 8px; border-radius: var(--radius-pill); background: var(--surface-sunken); color: var(--ink-muted); font-size: 11px; line-height: 16px; font-weight: 400; }
+.qn-cons-tag.is-req { background: var(--red-soft); color: var(--red-text); }
+.qn-cons-d { font-size: 13px; line-height: 19px; color: var(--ink-muted); }
+.qn-cons-opt .lor-field-error { padding: 0 16px 12px; }
+.qn-page-main.qn-cons-step .qn-step-head .lor-h { font-size: 30px; line-height: 36px; }
+.qn-cons-chips { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
+.qn-cons-chip { padding: 1px 7px; border-radius: var(--radius-pill); background: var(--blue-soft); color: var(--blue-text); font-size: 11px; line-height: 16px; font-weight: 400; white-space: nowrap; }
+.qn-cons-chip.is-no { background: var(--surface-sunken); color: var(--ink-muted); }
+.qn-cons-who { padding-bottom: 2px; }
+.qn-cons-box .hint-sw { margin: 0; }
+.qn-cons-box .hint-sw-t small { font-size: 12px; line-height: 17px; }
+.qn-cons-base { color: var(--blue-text); }
+@media (max-width: 640px) { .qn-page-main.qn-cons-step .qn-step-head .lor-h { font-size: 22px; line-height: 28px; } }

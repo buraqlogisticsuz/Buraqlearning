@@ -798,6 +798,22 @@ try {
   await E.reload({ waitUntil: 'networkidle' }); await watchSync(E); await E.waitForTimeout(1500);
   if (!(await E.locator('.qn-modal').count())) { await E.locator('.user-btn').first().click(); await E.locator('.user-pop-links button.qn').click(); }
   await E.locator('.qn-modal').waitFor({ timeout: 5000 });
+  // сначала — согласия: ничего не отмечено заранее; скрытых ([maxfiy]) вопросов нет — две галочки; без первой дальше не пустит
+  assert.equal(await E.locator('.qn-modal.qn-cons-step').count(), 1, 'перед анкетой — шаг согласий');
+  assert.equal(await E.locator('.qn-cons-opt').count(), 2, 'обработка и ИИ-анализ; особых данных в анкете нет — без третьей');
+  assert.equal(await E.locator('.qn-cons-opt input:checked').count(), 0, 'ничего не отмечено заранее');
+  assert.match(await E.locator('.qn-cons-opt[data-c="ai"]').innerText(), /Anthropic \(AQSH\)/, 'в согласии на ИИ — кому и куда уходят ответы');
+  await E.locator('.qn-cons-go').click();
+  assert.equal(await E.locator('.qn-cons-opt.is-err').count(), 1, 'без обязательной галочки дальше не пустит');
+  assert.equal(await E.locator('.qn-field.is-long').count(), 0, '…и вопросов не видно');
+  await E.locator('.qn-cons-opt[data-c="base"] .qn-consent-l').click();
+  await E.locator('.qn-cons-opt[data-c="ai"] .qn-consent-l').click();
+  await shot(E, 'savolnoma-rozilik');
+  await E.locator('.qn-cons-go').click(); await E.waitForTimeout(300);
+  assert.equal(await E.locator('.qn-cons-step').count(), 0, 'дальше — сама анкета');
+  await settle(E);
+  { const c = srv.g.state().users.find(u => u.id === emp.id).qa.consent;
+    assert.ok(c && c.v === 1 && c.base === true && c.ai === true && c.special === false && c.at > 0, 'согласие — на сервере, с версией и временем'); }
   await E.locator('.qn-modal .lor-modal-actions .lor-btn-primary').click();
   assert.equal(await E.locator('.qn-field.is-err').count(), 3, 'без ответов не отправить — три вопроса подсвечены');
   await E.locator('.qn-field').nth(0).locator('textarea').fill('Kompaniya rivojlanmoqda. Tel: +998 90 123 45 67');
@@ -807,6 +823,7 @@ try {
   await E.locator('.qn-modal .lor-modal-actions .lor-btn-primary').click(); await settle(E);
   { const qa = srv.g.state().users.find(u => u.id === emp.id).qa, qs = srv.g.state().settings.questionnaire.questions;
     assert.ok(qa && qa.at, 'анкета отправлена — на сервере');
+    assert.equal(qa.consent && qa.consent.ai, true, 'согласие при отправке не потерялось');
     assert.deepEqual([qa.answers[qs[0].id], qa.answers[qs[1].id], qa.answers[qs[3].id]], ['Kompaniya rivojlanmoqda. Tel: +998 90 123 45 67', 'Masofadan', 4]); }
   assert.equal(await E.locator('.qn-modal').count(), 0, 'окно закрылось');
   assert.equal(await E.locator('.qn-banner').count(), 0, 'напоминания больше нет');
@@ -858,11 +875,12 @@ try {
   // анализ коллектива ИИ — от 5 ответивших с согласием на ИИ: пока ответил один — подсказка, кнопка выключена
   assert.match(await A.locator('.qn-team-ai').innerText(), /kamida 5 kishi/, 'меньше 5 — подсказка');
   assert.ok(await A.locator('.qn-team-ai .qn-team-go').isDisabled(), '…и анализ не запустить');
-  // ещё пятеро ответили (сервером, от SOP-менеджера); у последнего нет согласия на ИИ — в анализ он не идёт
-  const extra = [1, 2, 3, 4, 5].map(i => emp.id + 500 + i), sopTk = () => srv.g.post({ action: 'login', login: srv.admin.login, password: srv.admin.password }).token;
+  // ещё шестеро ответили (сервером, от SOP-менеджера): у пятого нет согласия на ИИ, шестой — до шага согласий
+  // («rozilik so‘ralmagan»); оба в анализ не идут
+  const extra = [1, 2, 3, 4, 5, 6].map(i => emp.id + 500 + i), sopTk = () => srv.g.post({ action: 'login', login: srv.admin.login, password: srv.admin.password }).token;
   { const qs = srv.g.state().settings.questionnaire.questions, at0 = srv.g.state().users.find(u => u.id === emp.id).qa.at;
     const ops = extra.map((id, i) => ({ op: 'set', path: ['users', { id }], value: { id, role: 'employee', login: 'qn.x' + i, password: 'xodim-12345', name: 'Xodim ' + (i + 1), position: 'Omborchi', status: 'probation',
-      qa: Object.assign({ at: at0 - 1000 * (i + 1), answers: { [qs[0].id]: 'Tajriba uchun', [qs[1].id]: i % 2 ? 'Ofisda' : 'Masofadan', [qs[3].id]: 2 + (i % 3) } }, i === 4 ? { consent: { ai: false } } : {}) } }));
+      qa: Object.assign({ at: at0 - 1000 * (i + 1), answers: { [qs[0].id]: 'Tajriba uchun', [qs[1].id]: i % 2 ? 'Ofisda' : 'Masofadan', [qs[3].id]: 2 + (i % 3) } }, i < 5 ? { consent: { v: 1, at: at0, base: true, ai: i !== 4, special: false } } : {}) } }));
     assert.deepEqual(srv.g.post({ token: sopTk(), action: 'patch', ops }).rejected, []); }
   await A.reload({ waitUntil: 'networkidle' }); await watchSync(A);
   await nav(A, 'cms'); await A.locator('.lor-tab').filter({ hasText: 'Savolnoma' }).click(); await A.waitForTimeout(300);
@@ -877,12 +895,25 @@ try {
   await settle(A);
   { const last = lastPrompt(/HR-tahlilchi/);
     assert.ok(last && !/Dilnoza|Xodim \d/.test(last), 'имён в запросе к ИИ нет');
-    assert.ok(/XODIMLAR \(5\)/.test(last), 'без согласия на ИИ — не в анализе (5 из 6)');
+    assert.ok(/XODIMLAR \(5\)/.test(last), 'без согласия на ИИ — не в анализе (5 из 7)');
     assert.ok(!/Puxta, barqaror|AI xulosasi/.test(last) && !/123 45 67/.test(last), 'прежние выводы ИИ и контакты не идут');
     const sop = srv.g.state().users.find(u => u.login === srv.admin.login);
     assert.ok(sop.qaTeam && sop.qaTeam.ids[0] === emp.id && sop.qaTeam.v === 2 && !('hiring' in sop.qaTeam.data), 'анализ — в карточке SOP-менеджера'); }
   assert.equal(await E.evaluate(() => LmsClient.sync().then(() => LmsClient.initial().users.some(u => u.qaTeam))), false, 'сотрудник анализа коллектива не видит');
   await shot(A, 'savolnoma-jamoa-ai');
+  // у кого нет согласия на ИИ — ИИ не предлагается и сам не готовится; плашки согласия в списке и карточке
+  assert.match(await A.locator('.qn-person', { hasText: 'Xodim 5' }).innerText(), /✕ AI/, 'в списке — «✕ AI»');
+  assert.match(await A.locator('.qn-person', { hasText: 'Xodim 6' }).innerText(), /rozilik so‘ralmagan/, 'анкета до шага согласий — «rozilik so‘ralmagan»');
+  assert.match(await A.locator('.qn-person', { hasText: 'Xodim 1' }).innerText(), /✓ AI/);
+  for (const [nm, re] of [['Xodim 5', /AI tahliliga rozilik bermagan/], ['Xodim 6', /rozilik so‘ralmagan/]]) {
+    const n0 = aiCalls.length;
+    await A.locator('.qn-person', { hasText: nm }).click(); await A.locator('.qn-ans .qn-ai').waitFor({ timeout: 5000 }); await A.waitForTimeout(1000);
+    assert.equal(await A.locator('.qn-ans .qn-ai-go').count(), 0, nm + ': кнопки ИИ нет');
+    assert.match(await A.locator('.qn-ans .qn-ai-nocons').innerText(), re, nm + ': почему ИИ нет');
+    assert.equal(aiCalls.length, n0, nm + ': в ИИ ничего не ушло');
+    if (nm === 'Xodim 5') { assert.match(await A.locator('.qn-ans .qn-cons-who').innerText(), /✓ Ma’lumotlarni qayta ishlashga rozilik[\s\S]*— AI tahliliga rozilik/, 'в карточке — согласия по пунктам'); await shot(A, 'savolnoma-rozilik-yoq'); }
+    await A.locator('.qn-ans .lor-modal-x').click();
+  }
   // временные сотрудники больше не нужны
   assert.deepEqual(srv.g.post({ token: sopTk(), action: 'patch', ops: extra.map(id => ({ op: 'del', path: ['users', { id }] })) }).rejected, []);
   await A.reload({ waitUntil: 'networkidle' }); await watchSync(A);
@@ -910,9 +941,21 @@ try {
     assert.equal(q.first, true);
     assert.deepEqual([by('Qaysi tillarni').type, by('Qaysi tillarni').cols, by('Qaysi tillarni').options, by('Qaysi tillarni').key], ['grid', ['Bilmayman', 'O‘rta', 'Yuqori'], ['Rus tili', 'Xitoy tili'], true]);
     assert.deepEqual([by('Tug‘ilgan').type, by('Tug‘ilgan').prof, by('Pasport').secret, by('Pasport').prof, by('Ma’lumotlarim').type], ['date', 'birth', true, 'passport', 'consent']); }
+  // как анкета до шага согласий: поля согласий нет. Анкета снова «к заполнению» (новые обязательные) — сначала шаг согласий
+  assert.deepEqual(srv.g.post({ token: sopTk(), action: 'patch', ops: [{ op: 'del', path: ['users', { id: emp.id }, 'qa', 'consent'] }] }).rejected, []);
   await E.reload({ waitUntil: 'networkidle' }); await watchSync(E);
-  await E.locator('.qn-page .qn-wiz').waitFor({ timeout: 8000 });
+  await E.locator('.qn-page .qn-cons-step').waitFor({ timeout: 8000 });
   assert.equal(await E.locator('.app-body').count(), 0, 'пока анкета не отправлена — платформы нет');
+  assert.equal(await E.locator('.qn-cons-opt').count(), 3, 'в анкете есть [maxfiy] — третья галочка (особые данные)');
+  assert.equal(await E.locator('.qn-cons-opt input:checked').count(), 0, 'ничего не отмечено заранее');
+  await E.locator('.qn-cons-go').click();
+  assert.equal(await E.locator('.qn-cons-opt.is-err').count(), 1, 'без обязательной галочки — дальше нельзя');
+  assert.equal(await E.locator('.qn-page .qn-wiz').count(), 0, '…только выйти');
+  assert.equal(await E.locator('.qn-page-foot button', { hasText: 'Chiqish' }).count(), 1, 'кнопка «Chiqish»');
+  for (const k of ['base', 'ai', 'special']) await E.locator('.qn-cons-opt[data-c="' + k + '"] .qn-consent-l').click();
+  await shot(E, 'anketa-0-rozilik');
+  await E.locator('.qn-cons-go').click();
+  await E.locator('.qn-page .qn-wiz').waitFor({ timeout: 5000 });
   assert.equal(await E.locator('.qn-stp').count(), 4, 'шаги по разделам');
   await shot(E, 'anketa-1-qadam');
   // прежние ответы уже есть — сразу к новым разделам
@@ -933,7 +976,9 @@ try {
   await settle(E);
   { const qa = srv.g.state().users.find(u => u.id === emp.id).qa, q = srv.g.state().settings.questionnaire, by = t => q.questions.find(x => x.text.startsWith(t));
     assert.deepEqual(qa.answers[by('Qaysi tillarni').id], { 'Rus tili': 'Yuqori', 'Xitoy tili': 'O‘rta' });
-    assert.equal(qa.answers[by('Tug‘ilgan').id], '1999-04-12'); assert.equal(qa.answers[by('Ma’lumotlarim').id], true); }
+    assert.equal(qa.answers[by('Tug‘ilgan').id], '1999-04-12'); assert.equal(qa.answers[by('Ma’lumotlarim').id], true);
+    assert.deepEqual([qa.consent.v, qa.consent.base, qa.consent.ai, qa.consent.special], [1, true, true, true], 'согласие на всё — с версией');
+    assert.equal(qa.answers[by('Pasport').id], 'AA 1234567', 'с согласием на особые данные — паспорт сохранён'); }
   await shot(E, 'anketa-4-rahmat');
   await E.locator('.qn-done .lor-btn-primary').click();
   await E.locator('.app-body').waitFor({ timeout: 5000 });
@@ -1008,6 +1053,42 @@ try {
   await E.locator('.qn-modal .lor-modal-x').click();
   step('тест после анкеты: пояснение, оценки 1–5 с подписями; среднее по шкалам, равные шкалы — «aralash profil», надёжность отдельно, ответы под шкалой, оговорка; сотрудник видит свой профиль');
 
+  // ---------- отзыв согласия: «Mening profilim» → «Rozilik» — ИИ-анализ и особые данные выключаются ----------
+  await settle(A);
+  assert.ok((srv.g.state().users.find(u => u.id === emp.id).qaReport || {}).data, 'вывод ИИ по сотруднику есть');
+  await E.locator('.user-btn').first().click(); await E.locator('.user-pop-links .profile').click(); await E.waitForTimeout(300);
+  const cbox = E.locator('.pf-modal .qn-cons-box');
+  assert.match(await cbox.innerText(), /Ma’lumotlarni qayta ishlashga rozilik berilgan/, 'обработка — отметкой с датой');
+  assert.deepEqual([await cbox.locator('.qn-cons-sw[data-c="ai"]').getAttribute('aria-checked'), await cbox.locator('.qn-cons-sw[data-c="special"]').getAttribute('aria-checked')], ['true', 'true']);
+  await cbox.locator('.qn-cons-sw[data-c="ai"]').click(); await E.waitForTimeout(200);
+  E.once('dialog', d => d.accept());
+  await cbox.locator('.qn-cons-sw[data-c="special"]').click(); await E.waitForTimeout(200);
+  assert.equal(await cbox.locator('.qn-cons-sw[aria-checked="true"]').count(), 0, 'оба выключены');
+  await shot(E, 'savolnoma-rozilik-profil');
+  await E.keyboard.press('Escape'); await settle(E);
+  { const me = srv.g.state().users.find(u => u.id === emp.id), q = srv.g.state().settings.questionnaire, ps = q.questions.find(x => x.text.startsWith('Pasport'));
+    assert.deepEqual([me.qa.consent.base, me.qa.consent.ai, me.qa.consent.special], [true, false, false], 'согласие — на сервере');
+    assert.ok(!(ps.id in me.qa.answers), 'без особых данных ответ на [maxfiy] стёрт');
+    assert.ok(me.qa.at && srv.g.state().audit.some(x => x.key === 'qn-consent' && x.userId === emp.id && x.ai === false), 'изменение — в журнале'); }
+  await E.waitForTimeout(300);
+  assert.equal(await E.locator('.qn-page, .qn-banner').count(), 0, 'паспорт теперь не обязателен — анкета не вернулась');
+  // SOP-менеджер: прежний вывод ИИ удалён сам, ИИ не предлагается, анализ коллектива — «qayta tayyorlang», строки о нём нет
+  await A.reload({ waitUntil: 'networkidle' }); await watchSync(A);
+  await nav(A, 'cms'); await A.locator('.lor-tab').filter({ hasText: 'Savolnoma' }).click(); await A.waitForTimeout(300);
+  await settle(A);
+  assert.equal(srv.g.state().users.find(u => u.id === emp.id).qaReport, undefined, 'страница SOP-менеджера удалила вывод ИИ');
+  { const tx = await A.locator('.qn-team-ai').innerText();
+    assert.ok(/AI roziligini qaytarib oldi/.test(tx) && !/Dilnoza Karimova-Aliyeva — Hujjatlar/.test(tx), 'в анализе коллектива его строки нет: ' + tx); }
+  assert.match(await A.locator('.qn-tbl tbody tr').first().innerText(), /✕ AI[\s\S]*✕ Maxfiy/, 'в таблице — плашки согласия');
+  { const n0 = aiCalls.length;
+    await A.locator('.qn-tbl tbody tr').first().click(); await A.locator('.qn-ans .qn-ai').waitFor({ timeout: 5000 }); await A.waitForTimeout(1000);
+    assert.equal(aiCalls.length, n0, 'сам не готовится');
+    assert.equal(await A.locator('.qn-ans .qn-ai-go, .qn-ans .qn-ai-body').count(), 0, 'ни кнопки, ни прежнего вывода');
+    assert.ok(!(await A.locator('.qn-ans').innerText()).includes('AA 1234567'), 'паспорта нет'); }
+  await A.locator('.qn-ans .lor-modal-x').click();
+  await A.locator('.lor-tab').filter({ hasText: 'Darslar' }).click();
+  step('отзыв согласия в «Mening profilim» → «Rozilik»: ИИ и особые данные выключены, ответ [maxfiy] стёрт, вывод ИИ удалён, ИИ не предлагается');
+
   // ---------- «Lavozim va bo‘limlar»: CEO добавляет должность и отдел; SOP-менеджер выбирает их у нового сотрудника, сам список не меняет ----------
   await C.reload({ waitUntil: 'networkidle' }); await watchSync(C);
   await nav(C, 'staff'); await C.locator('.org-btn').click();
@@ -1037,14 +1118,21 @@ try {
     assert.deepEqual(srv.g.post({ token: tk, action: 'patch', ops: [{ op: 'set', path: ['users', { id: jid }], value: { id: jid, role: 'employee', login: 'new.xodim', password: 'xodim-12345', name: 'Sanjar Qodirov', position: 'Omborchi', status: 'probation' } }] }).rejected, []); }
   const J = await device('новый сотрудник');
   await signIn(J, 'new.xodim', 'xodim-12345');
-  await J.locator('.qn-page .qn-wiz').waitFor({ timeout: 8000 });
-  assert.equal(await J.locator('.welcome, .ir, .app-body').count(), 0, 'первым делом — анкета: ни приветствия, ни знакомства');
+  await J.locator('.qn-page .qn-cons-step').waitFor({ timeout: 8000 });
+  assert.equal(await J.locator('.welcome, .ir, .app-body').count(), 0, 'первым делом — анкета (шаг согласий): ни приветствия, ни знакомства');
+  await J.locator('.qn-cons-opt[data-c="base"] .qn-consent-l').click(); await J.locator('.qn-cons-go').click();
+  await J.locator('.qn-page .qn-wiz').waitFor({ timeout: 5000 });
+  await J.locator('.qn-stp', { hasText: /Tillar/i }).click(); await J.waitForTimeout(200);
+  assert.ok(await J.locator('.qn-field.is-date').count() && !(await J.locator('.qn-field .qn-q', { hasText: 'Pasport' }).count()), 'без согласия на особые данные [maxfiy] (паспорт) не спрашивается');
+  await settle(J);
   { const st = await J.locator('.qn-stp').allInnerTexts(), at = re => st.findIndex(x => re.test(x));
     assert.ok(at(/Tillar/i) >= 0 && at(/Temperament/i) > at(/Tillar/i), 'в анкете сначала вопросы, потом тест темперамента: ' + st.join(' | ')); }
   // анкету и тест по шагам уже проверили выше — здесь ответы те же, что у первого сотрудника
   const jt = srv.g.post({ action: 'login', login: 'new.xodim', password: 'xodim-12345' }).token;
   const jpatch = ops => assert.deepEqual(srv.g.post({ token: jt, action: 'patch', ops }).rejected, []);
-  jpatch([{ op: 'set', path: ['users', { id: jid }, 'qa'], value: { answers: srv.g.state().users.find(u => u.id === emp.id).qa.answers, at: Date.now() } }]);
+  { const c = srv.g.state().users.find(u => u.id === jid).qa.consent;
+    assert.deepEqual([c.base, c.ai, c.special], [true, false, false], 'новый сотрудник: только обязательное согласие');
+    jpatch([{ op: 'set', path: ['users', { id: jid }, 'qa'], value: { answers: srv.g.state().users.find(u => u.id === emp.id).qa.answers, at: Date.now(), consent: c } }]); }
   await J.reload({ waitUntil: 'networkidle' }); await watchSync(J);
   await J.locator('.welcome').waitFor({ timeout: 8000 });
   assert.equal(await J.locator('.welcome-steps li').count(), 4, 'в приветствии знакомства нет: приветствие, как устроено, помощь, условия');
