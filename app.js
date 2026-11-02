@@ -3560,7 +3560,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
             h(Btn, { variant: 'outline', onClick: function () { save('draft'); } }, t('cs_save_draft')),
             h(Btn, { variant: 'primary', arrow: true, onClick: function () { save('published'); } }, t('cs_publish'))))));
 
-    return h('div', null,
+    return h('div', { className: 'cs-admin' },
       h('div', { className: 'cs-admin-h' },
         h('div', null, h('h2', { className: 'lor-h' }, t('cs_admin_t')), h('p', { className: 'lor-sm lor-muted', style: { margin: '4px 0 0' } }, t('cs_admin_s'))),
         h(Btn, { variant: 'primary', arrow: true, onClick: startNew }, t('cs_new'))),
@@ -3944,7 +3944,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
             h(Btn, { variant: 'outline', onClick: function () { save('draft'); } }, t('cs_save_draft')),
             h(Btn, { variant: 'primary', arrow: true, onClick: function () { save('published'); } }, t('cs_publish'))))));
 
-    return h('div', null,
+    return h('div', { className: 'cs-admin' },
       h('div', { className: 'cs-admin-h' },
         h('div', null, h('h2', { className: 'lor-h' }, t('jr_admin_t')), h('p', { className: 'lor-sm lor-muted', style: { margin: '4px 0 0' } }, t('jr_admin_s'))),
         h(Btn, { variant: 'primary', arrow: true, onClick: function () { start(null); } }, t('jr_new'))),
@@ -4051,7 +4051,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
             h(Btn, { variant: 'outline', onClick: function () { save('draft'); } }, t('cs_save_draft')),
             h(Btn, { variant: 'primary', arrow: true, onClick: function () { save('published'); } }, t('cs_publish'))))));
 
-    return h('div', null,
+    return h('div', { className: 'cs-admin' },
       h('div', { className: 'cs-admin-h' },
         h('div', null, h('h2', { className: 'lor-h' }, t('tm_admin_t')), h('p', { className: 'lor-sm lor-muted', style: { margin: '4px 0 0' } }, t('tm_admin_s'))),
         h(Btn, { variant: 'primary', arrow: true, onClick: function () { start(null); } }, t('tm_new'))),
@@ -4680,7 +4680,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
             : h('button', { type: 'button', className: 'app-link danger', onClick: function () { del[1](true); } }, t('trk_delete'))) : h('span'),
           h(Btn, { variant: 'primary', arrow: true, onClick: save }, t('save')))));
 
-    return h('div', null,
+    return h('div', { className: 'cs-admin' },
       h('div', { className: 'cs-admin-h' },
         h('div', null, h('h2', { className: 'lor-h' }, t('trk_admin_t')), h('p', { className: 'lor-sm lor-muted', style: { margin: '4px 0 0' } }, t('trk_admin_s'))),
         h(Btn, { variant: 'primary', arrow: true, onClick: function () { ed[1](blankTrack()); er[1](''); del[1](false); } }, t('trk_new'))),
@@ -4707,7 +4707,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       p.update(function (d) { var o = { id: 'pl' + nextId(d), day: +v.day, track: v.track || null, text: {} }; o.text[p.lang] = v.text.trim(); d.planTpl = (d.planTpl || []).concat([o]); });
       add[1]({ day: v.day, track: v.track, text: '' }); p.say(t('pl_added'));
     }
-    return h('div', null,
+    return h('div', { className: 'cs-admin' },
       h('div', { className: 'cs-admin-h' },
         h('div', null, h('h2', { className: 'lor-h' }, t('pl_admin_t')), h('p', { className: 'lor-sm lor-muted', style: { margin: '4px 0 0' } }, t('pl_admin_s')))),
       h('div', { className: 'plan-cols' }, PLAN_DAYS.map(function (day) {
@@ -4793,7 +4793,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   function SopRiskAdmin(p) {
     var t = p.t, db = p.db, list = sopRisk(db, 90), open = useState(null);
     var max = list.length ? list[0].score : 1;
-    return h('div', null,
+    return h('div', { className: 'cs-admin' },
       h('div', { className: 'cs-admin-h' },
         h('div', null, h('h2', { className: 'lor-h' }, t('sr_title')), h('p', { className: 'lor-sm lor-muted', style: { margin: '4px 0 0' } }, t('sr_sub')))),
       list.length ? h('ul', { className: 'sr-list' }, list.map(function (r) {

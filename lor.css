@@ -3960,3 +3960,23 @@ input.org-name:hover, input.org-name:focus { border-color: var(--line); backgrou
 .ud-list li::before { position: absolute; left: 0; top: 0; width: 16px; text-align: center; }
 .ud-list li.is-gone::before { content: '×'; color: var(--red-text); }
 .ud-list li.is-kept::before { content: '✓'; color: var(--blue-text); }
+/* выпадающие окна в шапке не длиннее экрана: на низком экране (ноутбук, телефон) прокручиваются сами,
+   колесо мыши не уводит страницу под ними */
+.user-pop, .notif-pop { max-height: calc(100vh - 72px); max-height: calc(100dvh - 72px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.notif-pop { display: flex; flex-direction: column; }
+.notif-pop .notif-list { flex: 0 1 auto; min-height: 0; }
+/* вкладки: на компьютере — в несколько строк, чтобы были видны все (колесом их не прокрутить);
+   на телефоне — одной строкой с прокруткой пальцем и затуханием справа */
+@media (hover: hover) and (pointer: fine) {
+  .lor-tabs { flex-wrap: wrap; overflow-x: visible; row-gap: 0; }
+}
+@media not all and (hover: hover) and (pointer: fine) {
+  .lor-tabs { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 26px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 26px), transparent); }
+  .lor-tabs.is-end { -webkit-mask-image: none; mask-image: none; }
+}
+/* «Keyslar» в «Kontent»: заголовок, плитки и список — с одинаковым отступом, блоки не слипаются */
+.cs-admin { display: grid; gap: var(--space-4); }
+.cs-admin > .cs-admin-h { margin-bottom: 0; }
+/* тёмная тема: неактивные вкладки — белым, а не приглушённым (на светлом пятне фона приглушённые почти не видны) */
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .lor-tab { color: var(--ink); } }
+:root[data-theme="dark"] .lor-tab { color: var(--ink); }
