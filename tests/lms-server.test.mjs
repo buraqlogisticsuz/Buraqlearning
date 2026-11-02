@@ -763,3 +763,18 @@ test('фото при отметке прихода — просто снимо�
   assert.equal(r2.ok, true);                                  // кривое «фото» не ломает отметку
   assert.equal(A({ action: 'load' }).state.attend['10427'][r.day].outPhoto, undefined, 'не картинка не сохраняется');
 });
+
+test('«Tanishuv»: документы (PDF, Word) — файлом на сервере, в данных ссылка; сотрудник их получает, правит только SOP/CEO', () => {
+  const { A, D } = platform();
+  const pdf = 'data:application/pdf;base64,' + Buffer.from('%PDF-1.4 ' + 'x'.repeat(3000)).toString('base64');
+  const r = A({ action: 'patch', ops: [{ op: 'set', path: ['settings', 'welcome'], value: { introText: 'Matn', at: 1, docs: [{ id: 'd1', name: 'Qoidalar.pdf', size: 3009, type: 'application/pdf', data: pdf, at: 1 }] } }] });
+  assert.deepEqual(rejected(r), []);
+  const doc = A({ action: 'load' }).state.settings.welcome.docs[0];
+  assert.match(doc.data, /^lmsfile:/, 'в данных ссылка, не сам файл');
+  const own = D({ action: 'file', id: doc.data.slice('lmsfile:'.length) });
+  assert.equal(own.ok, true, JSON.stringify(own));            // сотрудник открывает документ знакомства
+  assert.equal(own.name, 'Qoidalar.pdf');
+  assert.match(Buffer.from(own.data, 'base64').toString(), /^%PDF/);
+  const bad = D({ action: 'patch', ops: [{ op: 'set', path: ['settings', 'welcome', 'docs'], value: [] }] });
+  assert.equal(bad.rejected.length, 1, 'сотрудник документы не меняет');
+});

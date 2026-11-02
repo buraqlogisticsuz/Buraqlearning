@@ -718,20 +718,47 @@ try {
   await A.fill('#f-in-g-title', 'Xush kelibsiz!');
   await A.fill('#f-in-i-text', 'Kompaniya haqida matn.\n\nIkkinchi xatboshi.');
   await A.fill('#f-in-v-src', 'https://youtu.be/dQw4w9WgXcQ');
-  await A.locator('.in-admin .in-actions .lor-btn-primary').click(); await settle(A);
+  // документы: PDF и Word (тот же .docx, что выше) — выбором файла; чужой формат — отказ с подсказкой
+  const inPdf = Buffer.from('%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 300 144]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n'.padEnd(3000, ' '));
+  await A.setInputFiles('#in-doc-input', { name: 'rasm.png', mimeType: 'image/png', buffer: Buffer.from('x') });
+  await A.locator('.in-docs-edit .lor-field-error').waitFor({ timeout: 3000 });
+  await A.setInputFiles('#in-doc-input', [{ name: 'Kompaniya qoidalari.pdf', mimeType: 'application/pdf', buffer: inPdf }, { name: 'Ichki tartib.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', buffer: docx }]);
+  await A.waitForFunction(() => document.querySelectorAll('.in-dl-item').length === 2, null, { timeout: 5000 });
+  assert.equal(await A.locator('.in-dl-st.is-new').count(), 2, 'до сохранения — «Saqlanmagan»');
+  await A.locator('.in-dl-item').nth(1).locator('.in-dl-mv').first().click();   // Word — первым
+  await A.locator('.in-admin .in-actions .lor-btn-primary').click(); await settle(A); await A.waitForTimeout(800);
   { const w = srv.g.state().settings.welcome;
     assert.equal(w.title, 'Xush kelibsiz!');
-    assert.ok(w.at && w.video && /youtu/.test(w.video.src) && /Ikkinchi/.test(w.introText), 'приветствие, знакомство и видео — на сервере'); }
+    assert.ok(w.at && w.video && /youtu/.test(w.video.src) && /Ikkinchi/.test(w.introText), 'приветствие, знакомство и видео — на сервере');
+    assert.deepEqual(w.docs.map(d => d.name), ['Ichki tartib.docx', 'Kompaniya qoidalari.pdf'], 'документы — на сервере, в выбранном порядке');
+    assert.ok(w.docs.every(d => /^lmsfile:/.test(d.data)), 'сами файлы — на Диске, в данных только ссылки'); }
+  await A.waitForFunction(() => document.querySelectorAll('.in-dl-st.is-ok').length === 2, null, { timeout: 8000 });
+  await A.locator('.in-drop').scrollIntoViewIfNeeded(); await shot(A, 'tanishuv-hujjatlar');
   await A.locator('.lor-tab').filter({ hasText: 'Darslar' }).click();
   await E.reload({ waitUntil: 'networkidle' }); await watchSync(E); await E.waitForTimeout(1500);
   // окно открывается само при входе; если страница ещё взяла данные из копии на устройстве — из меню пользователя
   if (!(await E.locator('.intro-modal').count())) { await E.locator('.user-btn').first().click(); await E.locator('.user-pop-links button.intro').click(); }
   await E.locator('.intro-modal').waitFor({ timeout: 5000 });
   assert.ok(await E.locator('.intro-modal button:has-text("Tasdiqlash")').isDisabled(), 'без галочки подтвердить нельзя');
+  assert.ok(await E.locator('#in-seen').isDisabled(), 'пока документы не открыты — галочку не поставить');
+  assert.equal(await E.locator('.intro-modal .in-doc').count(), 2, 'оба документа — в окне');
+  await E.locator('.intro-modal .in-doc').first().click();
+  await E.locator('.doc-viewer .dv-doc').waitFor({ timeout: 8000 });
+  assert.match(await E.locator('.doc-viewer .dv-doc').innerText(), /Birinchi band/, 'Word читается прямо на сайте');
+  await E.waitForTimeout(400); await shot(E, 'tanishuv-word');
+  await E.keyboard.press('Escape');
+  assert.equal(await E.locator('.doc-viewer').count(), 0, 'Esc закрыл просмотр');
+  assert.equal(await E.locator('.intro-modal').count(), 1, '…а окно знакомства осталось');
+  assert.ok(await E.locator('#in-seen').isDisabled(), 'открыт один документ из двух');
+  await E.locator('.intro-modal .in-doc').nth(1).click();
+  await E.locator('.doc-viewer iframe.dv-pdf[src^="blob:"]').waitFor({ timeout: 8000 });
+  await E.locator('.doc-viewer .lor-modal-x').click();
+  assert.equal(await E.locator('.intro-modal .in-doc.is-seen').count(), 2, 'оба документа отмечены открытыми');
+  await shot(E, 'tanishuv-oyna');
   await E.check('#in-seen'); await E.locator('.intro-modal button:has-text("Tasdiqlash")').click(); await settle(E);
   assert.ok(srv.g.state().users.find(u => u.id === emp.id).introSeenAt, 'знакомство подтверждено — на сервере');
   assert.equal(await E.locator('.intro-modal').count(), 0, 'окно закрылось');
-  step('«Tanishuv»: SOP-менеджер задал приветствие и обязательное знакомство (текст + видео), сотрудник подтвердил');
+  step('«Tanishuv»: SOP-менеджер задал приветствие и обязательное знакомство (текст, PDF и Word, видео), сотрудник открыл документы и подтвердил');
 
   // ---------- демо больше нет: ?demo=1 — тот же вход на сервер; без адреса сервера — «Server ulanmagan» ----------
   const D = await device('бывшее демо', '?demo=1');

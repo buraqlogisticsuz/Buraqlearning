@@ -178,7 +178,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
      обязан прочитать/посмотреть и подтвердить (users[].introSeenAt); at — версия знакомства: изменили текст или видео —
      все подтверждают заново */
   function welcomeOf(db) { return (db.settings && db.settings.welcome) || {}; }
-  function introOf(db) { var w = welcomeOf(db); return String(w.introText || '').trim() || (w.video && w.video.src) ? w : null; }
+  function introOf(db) { var w = welcomeOf(db); return String(w.introText || '').trim() || (w.video && w.video.src) || (w.docs || []).length ? w : null; }
   function introSeen(w, u) { return !!(w && u && u.introSeenAt && u.introSeenAt >= (w.at || 0)); }
   function introDue(db, u) { var w = introOf(db); return !!(w && u && u.role === 'employee' && !introSeen(w, u)); }
   function paras(s) { return String(s || '').split(/\n\s*\n/).filter(function (x) { return x.trim(); }).map(function (x, i) { return h('p', { key: i }, x.trim()); }); }
@@ -190,15 +190,111 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     if (/^https?:\/\//i.test(src)) return h('a', { className: 'app-link intro-link', href: src, target: '_blank', rel: 'noopener noreferrer' }, '▶ ' + p.t('in_open_video'));
     return null;
   }
+  /* ---------- документы знакомства (settings.welcome.docs): PDF и Word, которые загрузили SOP-менеджер или CEO ----------
+     { id, name, size, type, data: 'lmsfile:<id>' (на сервере) | 'data:…' (ещё не отправлен), at }. Сотрудник читает их
+     прямо на сайте: PDF — встроенный просмотр браузера, .docx — текст из файла (parseDocx), старый .doc — только скачать */
+  var DOC_MAX = 20 * 1048576, DOCS_MAX = 5, DOC_BATCH = 25 * 1048576;   // одна правка уходит одним запросом — до ~25 МБ новых файлов
+  var DOC_CACHE = {}, DOC_OPENED = {};
+  function docKind(d) { var n = String(d.name || '').toLowerCase(); return /\.pdf$/.test(n) || d.type === 'application/pdf' ? 'pdf' : /\.docx$/.test(n) ? 'docx' : 'doc'; }
+  function docMime(d) { var k = docKind(d); return k === 'pdf' ? 'application/pdf' : k === 'docx' ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'application/msword'; }
+  function docTitle(d) { return String(d.name || '').replace(/\.(pdf|docx?)$/i, '') || 'Hujjat'; }
+  function docKey(d) { var r = String(d.data || ''); return r.indexOf('lmsfile:') === 0 ? r : (d.id || '') + ':' + r.length; }
+  /* файл → { blob, url }: с сервера (file_ проверяет, что ссылка видна этому человеку) или из ещё не отправленной data:-строки */
+  function docLoad(d) {
+    var key = docKey(d), ref = String(d.data || '');
+    if (DOC_CACHE[key]) return DOC_CACHE[key];
+    var pr = ref.indexOf('lmsfile:') === 0 && SV ? SV.file(ref.slice(8)).then(function (f) { return f.data; })
+      : ref.indexOf('data:') === 0 ? Promise.resolve(ref.slice(ref.indexOf(',') + 1)) : Promise.reject(new Error('nofile'));
+    pr = pr.then(function (b64) { var bl = b64Blob(b64, docMime(d)); return { blob: bl, url: URL.createObjectURL(bl) }; });
+    DOC_CACHE[key] = pr;
+    pr.catch(function () { delete DOC_CACHE[key]; });
+    return pr;
+  }
+  /* .docx → HTML: заголовки, абзацы, списки, таблицы, картинки — тот же разбор, что при загрузке главы из Word */
+  function docxHtml(r) {
+    if (!r.html) r.html = r.blob.arrayBuffer().then(parseDocx).then(function (doc) {
+      var out = [], items = null;
+      function list(it) { return (it.ul ? '<ul>' : '<ol>') + it.li.join('') + (it.ul ? '</ul>' : '</ol>'); }
+      doc.blocks.forEach(function (b) {
+        if (b.k !== 'li' && items) { out.push(list(items)); items = null; }
+        if (b.k === 'li') { if (items && items.ul !== b.ul) { out.push(list(items)); items = null; } items = items || { ul: b.ul, li: [] }; items.li.push('<li>' + b.html + '</li>'); return; }
+        if (b.k === 'html') out.push(b.html);
+        else if (b.k === 'h') out.push(b.lvl <= 1 ? '<h3>' + esc(b.text) + '</h3>' : '<h4>' + esc(b.text) + '</h4>');
+        else out.push('<p>' + b.html + '</p>');
+      });
+      if (items) out.push(list(items));
+      return sanitize(out.join('\n'));
+    });
+    return r.html;
+  }
+  function docSave(d) {
+    docLoad(d).then(function (r) {
+      var a = document.createElement('a'); a.href = r.url; a.download = d.name || 'hujjat'; document.body.appendChild(a); a.click();
+      setTimeout(function () { a.remove(); }, 1000);
+    }, function (x) { SAY(x && x.code === 'net' ? 'srv_net' : 'srv_file_err'); });
+  }
+  /* просмотр документа поверх всего: шапка с названием, «Yuklab olish», «Yangi oynada» (PDF), «×» / Esc */
+  function DocViewer(p) {
+    var t = p.t, d = p.doc, k = docKind(d), s = useState({ st: 'wait' }), x = s[0];
+    useEffect(function () {
+      var live = true;
+      docLoad(d).then(function (r) {
+        if (k !== 'docx') { if (live) s[1]({ st: 'ok', url: r.url }); return; }
+        return docxHtml(r).then(function (html) { if (live) s[1]({ st: 'ok', url: r.url, html: html }); });
+      }).catch(function () { if (live) s[1]({ st: 'err' }); });
+      function key(e) { if (e.key === 'Escape') { e.stopPropagation(); p.onClose(); } }
+      window.addEventListener('keydown', key, true);
+      return function () { live = false; window.removeEventListener('keydown', key, true); };
+    }, []);
+    var body = x.st === 'wait' ? h('div', { className: 'dv-msg' }, h('span', { className: 'dv-spin', 'aria-hidden': true }), t('in_doc_loading'))
+      : x.st === 'err' ? h('div', { className: 'dv-msg' }, h('p', null, t('in_doc_err')), h(Btn, { variant: 'primary', onClick: function () { docSave(d); } }, t('in_doc_dl')))
+      : k === 'pdf' ? h('iframe', { className: 'dv-pdf', src: x.url, title: d.name })
+      : k === 'docx' ? (x.html ? h('div', { className: 'dv-doc sop-body', dangerouslySetInnerHTML: { __html: x.html } }) : h('div', { className: 'dv-msg' }, h('p', null, t('in_doc_empty')), h(Btn, { variant: 'primary', onClick: function () { docSave(d); } }, t('in_doc_dl'))))
+      : h('div', { className: 'dv-msg' }, h('p', null, t('in_doc_nopreview')), h(Btn, { variant: 'primary', onClick: function () { docSave(d); } }, t('in_doc_dl')));
+    /* в body, а не внутри окна знакомства: у окна свои рамки и прокрутка, просмотр должен быть поверх всего */
+    return ReactDOM.createPortal(h('div', { className: 'doc-viewer', role: 'dialog', 'aria-modal': true, 'aria-label': d.name, onMouseDown: function (e) { if (e.target === e.currentTarget) p.onClose(); } },
+      h('div', { className: 'dv-box' },
+        h('div', { className: 'dv-head' },
+          h('span', { className: 'jf-ext' }, fileExt(d.name)),
+          h('span', { className: 'dv-name' }, h('b', null, docTitle(d)), d.size ? h('small', null, fileSize(d.size)) : null),
+          h('span', { className: 'dv-acts' },
+            k === 'pdf' && x.url ? h('a', { className: 'app-link', href: x.url, target: '_blank', rel: 'noopener' }, t('in_doc_tab')) : null,
+            h('button', { type: 'button', className: 'app-link', onClick: function () { docSave(d); } }, t('in_doc_dl'))),
+          h('button', { type: 'button', className: 'lor-modal-x', 'aria-label': t('close'), onClick: p.onClose }, '×')),
+        h('div', { className: cx('dv-body', 'is-' + k) }, body))), document.body);
+  }
+  /* список документов в знакомстве: карточка → просмотр. opened — какие уже открыты (до подтверждения нужно открыть все) */
+  function IntroDocs(p) {
+    var t = p.t, cur = useState(null), tick = useState(0);
+    function open(d) { DOC_OPENED[docKey(d)] = 1; cur[1](d); tick[1](tick[0] + 1); if (p.onOpen) p.onOpen(); }
+    return h('div', { className: 'in-docs' },
+      p.docs.map(function (d) {
+        var seen = !p.noMarks && DOC_OPENED[docKey(d)];
+        return h('button', { type: 'button', key: d.id || d.name, className: cx('in-doc', seen && 'is-seen'), onClick: function () { open(d); } },
+          h('span', { className: 'jf-ext' }, fileExt(d.name)),
+          h('span', { className: 'in-doc-t' }, h('b', null, docTitle(d)), h('small', null, [docKind(d) === 'doc' ? 'Word' : docKind(d) === 'pdf' ? 'PDF' : 'Word', d.size ? fileSize(d.size) : ''].filter(Boolean).join(' · '))),
+          h('span', { className: 'in-doc-go' }, seen ? '✓ ' + t('in_doc_opened') : t('in_doc_read')));
+      }),
+      cur[0] ? h(DocViewer, { t: t, doc: cur[0], onClose: function () { cur[1](null); } }) : null);
+  }
+  function docsOpened(w) { return (w && w.docs || []).filter(function (d) { return DOC_OPENED[docKey(d)]; }).length; }
   function IntroBody(p) {
-    var w = p.w || {}, v = w.video || {};
+    var w = p.w || {}, v = w.video || {}, docs = w.docs || [];
     return h('div', { className: 'intro-body' },
       String(w.introText || '').trim() ? h('div', { className: 'intro-text' }, paras(w.introText)) : null,
+      docs.length ? h(IntroDocs, { t: p.t, docs: docs, onOpen: p.onOpen, noMarks: p.noMarks }) : null,
       v.src ? h(IntroVideo, { t: p.t, video: { title: v.title || w.introTitle || p.t('in_title'), duration: '', src: v.src } }) : null);
+  }
+  /* галочка «ознакомился»: пока открыты не все документы — неактивна и с подсказкой */
+  function IntroCheck(p) {
+    var t = p.t, n = (p.w.docs || []).length, k = docsOpened(p.w), need = k < n;
+    return h(F, null,
+      h('label', { className: cx('check big', need && 'is-off') }, h('input', { type: 'checkbox', id: 'in-seen', disabled: need, checked: p.checked && !need, onChange: function (e) { p.onChange(e.target.checked); } }), t('in_seen')),
+      need ? h('p', { className: 'lor-sm lor-muted in-need' }, tpl(t('in_docs_need'), { n: k, m: n })) : null);
   }
   /* знакомство поверх программы: обязательное (ещё не подтверждено) — с галочкой и «Tasdiqlash»; уже подтверждено — просто посмотреть */
   function IntroModal(p) {
-    var t = p.t, u = p.user, w = introOf(p.db) || {}, due = introDue(p.db, u), ok = useState(false);
+    var t = p.t, u = p.user, w = introOf(p.db) || {}, due = introDue(p.db, u), ok = useState(false), tick = useState(0);
     useEffect(function () { function k(e) { if (e.key === 'Escape') p.onClose(); } window.addEventListener('keydown', k); return function () { window.removeEventListener('keydown', k); }; }, []);
     function confirm() {
       var at = Date.now();
@@ -210,12 +306,12 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         h('button', { type: 'button', className: 'lor-modal-x', 'aria-label': t('close'), onClick: function () { p.onClose(); } }, '×'),
         h('span', { className: 'lor-eyebrow' }, due ? t('in_banner_t') : t('in_tab')),
         h('h2', { className: 'lor-h', id: 'in-h' }, w.introTitle || t('in_title')),
-        h(IntroBody, { t: t, w: w }),
-        due ? h('label', { className: 'check big' }, h('input', { type: 'checkbox', id: 'in-seen', checked: ok[0], onChange: function (e) { ok[1](e.target.checked); } }), t('in_seen'))
+        h(IntroBody, { t: t, w: w, onOpen: function () { tick[1](function (n) { return n + 1; }); } }),
+        due ? h(IntroCheck, { t: t, w: w, checked: ok[0], onChange: ok[1] })
           : u.introSeenAt ? h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, '✓ ' + tpl(t('in_seen_on'), { d: fmt(u.introSeenAt, t) })) : null,
         h('div', { className: 'lor-modal-actions' },
           due ? h(Btn, { variant: 'ghost', onClick: function () { p.onClose(); } }, t('clk_later')) : null,
-          due ? h(Btn, { variant: 'primary', arrow: true, disabled: !ok[0], onClick: confirm }, t('in_confirm'))
+          due ? h(Btn, { variant: 'primary', arrow: true, disabled: !ok[0] || docsOpened(w) < (w.docs || []).length, onClick: confirm }, t('in_confirm'))
             : h(Btn, { variant: 'primary', onClick: function () { p.onClose(); } }, t('close')))));
   }
   /* напоминание на главной, пока знакомство не подтверждено */
@@ -228,12 +324,12 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       h(Btn, { variant: 'primary', arrow: true, onClick: p.openIntro }, t('in_open')));
   }
   function Welcome(p) {
-    var t = p.t, u = p.user, s = useState(0), step = s[0], a1 = useState(false), a2 = useState(false), seen = useState(false);
-    var w = welcomeOf(p.db), iw = introOf(p.db);
+    var t = p.t, u = p.user, s = useState(0), step = s[0], a1 = useState(false), a2 = useState(false), seen = useState(false), tick = useState(0);
+    var w = welcomeOf(p.db), iw = introOf(p.db), iwOk = iw && seen[0] && docsOpened(iw) >= (iw.docs || []).length;
     var slides = [
       { t: String(w.title || '').trim() || t('w1_t'), body: String(w.text || '').trim() ? h('div', { className: 'welcome-greet lor-sop' }, paras(w.text)) : h('p', { className: 'lor-sop', style: { margin: 0 } }, t('w1_p')) },
-      iw ? { t: String(iw.introTitle || '').trim() || t('in_title'), need: !seen[0], body: h(F, null, h(IntroBody, { t: t, w: iw }),
-        h('label', { className: 'check big' }, h('input', { type: 'checkbox', id: 'in-seen', checked: seen[0], onChange: function (e) { seen[1](e.target.checked); } }), t('in_seen'))) } : null,
+      iw ? { t: String(iw.introTitle || '').trim() || t('in_title'), need: !iwOk, body: h(F, null, h(IntroBody, { t: t, w: iw, onOpen: function () { tick[1](function (n) { return n + 1; }); } }),
+        h(IntroCheck, { t: t, w: iw, checked: seen[0], onChange: seen[1] })) } : null,
       { t: t('w2_t'), body: h('ol', { className: 'welcome-list' }, t('w2_list').split('|').map(function (x, i) { return h('li', { key: i }, x); })) },
       { t: t('w3_t'), body: h('ul', { className: 'welcome-list is-ul' }, t('w3_list').split('|').map(function (x, i) { var parts = x.split(' — '); return h('li', { key: i }, h('b', null, parts[0]), parts[1] ? ' — ' + parts[1] : ''); })) },
       { t: t('w4_t'), body: h(F, null, h('p', { className: 'lor-muted', style: { margin: 0 } }, t('terms_intro')), h('div', { className: 'terms-scroll' }, h(TermsList, { lang: p.lang })),
@@ -243,7 +339,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     function accept() {
       var at = Date.now();
       p.update(function (d) {
-        d.users.forEach(function (x) { if (x.id === u.id) { x.termsAcceptedAt = at; x.termsVersion = '1.0'; if (iw && seen[0]) x.introSeenAt = at; } });
+        d.users.forEach(function (x) { if (x.id === u.id) { x.termsAcceptedAt = at; x.termsVersion = '1.0'; if (iwOk) x.introSeenAt = at; } });
         d.audit.unshift({ id: nextId(d), userId: u.id, key: 'terms-accepted', at: at });
       });
     }
@@ -6489,23 +6585,92 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var seen = w ? emps.filter(function (u) { return introSeen(w, u); }) : [];
     return { w: w, emps: emps, seen: seen, wait: w ? emps.filter(function (u) { return seen.indexOf(u) < 0; }) : [] };
   }
+  /* загрузка документов знакомства: перетащить или выбрать; список с состоянием (не сохранён / загружается / сохранён),
+     просмотр, порядок, удаление. Новые файлы уходят на сервер при «Saqlash» (data: → файл на Диске, в данных — lmsfile) */
+  function readDoc(file) {
+    return new Promise(function (ok, no) {
+      var rd = new FileReader();
+      rd.onload = function () { ok({ id: 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: file.name, size: file.size, type: file.type || '', data: rd.result, at: Date.now() }); };
+      rd.onerror = no;
+      rd.readAsDataURL(file);
+    });
+  }
+  function DocDrop(p) {
+    var t = p.t, docs = p.docs, er = useState(''), drag = useState(false), view = useState(null), ro = p.ro;
+    var saved = {}; (p.saved || []).forEach(function (d) { saved[d.id] = d; });
+    function add(files) {
+      var list = Array.prototype.slice.call(files || []);
+      if (!list.length || ro) return;
+      var bad = list.filter(function (f) { return !/\.(pdf|docx?)$/i.test(f.name); });
+      if (bad.length) { er[1](tpl(t('in_doc_type'), { name: bad[0].name })); return; }
+      if (docs.length + list.length > DOCS_MAX) { er[1](tpl(t('in_doc_max'), { n: DOCS_MAX })); return; }
+      var big = list.filter(function (f) { return f.size > DOC_MAX; });
+      if (big.length) { er[1](tpl(t('jf_too_big'), { name: big[0].name, n: fileSize(DOC_MAX) })); return; }
+      var pend = docs.filter(function (d) { return String(d.data || '').indexOf('data:') === 0; }).concat(list).reduce(function (n, d) { return n + (d.size || 0); }, 0);
+      if (pend > DOC_BATCH) { er[1](tpl(t('in_doc_batch'), { n: fileSize(DOC_BATCH) })); return; }
+      er[1]('');
+      Promise.all(list.map(readDoc)).then(function (arr) { p.onChange(function (cur) { return cur.concat(arr); }); }, function () { er[1](t('jf_read_err')); });
+    }
+    function move(i, dir) { p.onChange(function (cur) { var a = cur.slice(), j = i + dir; if (j < 0 || j >= a.length) return cur; var x = a[i]; a[i] = a[j]; a[j] = x; return a; }); }
+    function del(id) { p.onChange(function (cur) { return cur.filter(function (d) { return d.id !== id; }); }); }
+    function state(d) {
+      var sv = saved[d.id];
+      if (!sv) return 'new';
+      return SV && String(sv.data || '').indexOf('lmsfile:') !== 0 ? 'up' : 'ok';
+    }
+    var hasOld = docs.some(function (d) { return docKind(d) === 'doc'; });
+    return h('div', { className: 'lor-field lor-span in-docs-edit' },
+      h('span', { className: 'lor-field-label' }, t('in_docs')),
+      docs.length ? h('ul', { className: 'in-dl' }, docs.map(function (d, i) {
+        var st = state(d);
+        return h('li', { key: d.id, className: 'in-dl-item' },
+          h('span', { className: 'jf-ext' }, fileExt(d.name)),
+          h('span', { className: 'in-dl-t' }, h('b', null, d.name), h('small', null, fileSize(d.size || 0),
+            h('span', { className: cx('in-dl-st', 'is-' + st) }, st === 'new' ? t('in_doc_new') : st === 'up' ? t('in_doc_up') : '✓ ' + t('in_doc_ok')))),
+          h('span', { className: 'in-dl-acts' },
+            h('button', { type: 'button', className: 'app-link', onClick: function () { view[1](d); } }, t('in_doc_view')),
+            !ro && docs.length > 1 ? h('button', { type: 'button', className: 'in-dl-mv', disabled: i === 0, 'aria-label': t('up'), title: t('up'), onClick: function () { move(i, -1); } }, '↑') : null,
+            !ro && docs.length > 1 ? h('button', { type: 'button', className: 'in-dl-mv', disabled: i === docs.length - 1, 'aria-label': t('down'), title: t('down'), onClick: function () { move(i, 1); } }, '↓') : null,
+            !ro ? h('button', { type: 'button', className: 'app-link danger', onClick: function () { del(d.id); } }, t('remove')) : null));
+      })) : null,
+      !ro && docs.length < DOCS_MAX ? h('label', { htmlFor: 'in-doc-input', className: cx('in-drop', drag[0] && 'is-drag'),
+        onDragEnter: function (e) { e.preventDefault(); drag[1](true); },
+        onDragOver: function (e) { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; if (!drag[0]) drag[1](true); },
+        onDragLeave: function (e) { if (!e.currentTarget.contains(e.relatedTarget)) drag[1](false); },
+        onDrop: function (e) { e.preventDefault(); drag[1](false); add(e.dataTransfer && e.dataTransfer.files); } },
+        h('svg', { className: 'in-drop-ico', width: 28, height: 28, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.4, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true },
+          h('path', { d: 'M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z' }), h('path', { d: 'M14 3v5h5' }), h('path', { d: 'M12 17v-6m-2.5 2.5L12 11l2.5 2.5' })),
+        h('span', { className: 'in-drop-t' }, t('in_drop'), ' ', h('u', null, t('in_drop_pick'))),
+        h('small', null, tpl(t('in_drop_hint'), { n: fileSize(DOC_MAX), m: DOCS_MAX }))) : null,
+      h('input', { id: 'in-doc-input', type: 'file', multiple: true, className: 'jf-input', accept: '.pdf,.docx,.doc,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword', onChange: function (e) { var fl = e.target.files; add(fl); e.target.value = ''; } }),
+      er[0] ? h('span', { className: 'lor-field-error' }, er[0]) : hasOld ? h('span', { className: 'lor-field-hint' }, t('in_doc_old')) : null,
+      view[0] ? h(DocViewer, { t: t, doc: view[0], onClose: function () { view[1](null); } }) : null);
+  }
+  function docIds(list, sorted) { var a = (list || []).map(function (d) { return d.id; }); return (sorted ? a.sort() : a).join(','); }
   function WelcomeAdmin(p) {
     var t = p.t, db = p.db, w0 = welcomeOf(db), ro = lvlOf(p.user) === 'boss';
-    var f = useState(function () { return { title: w0.title || '', text: w0.text || '', introTitle: w0.introTitle || '', introText: w0.introText || '', vsrc: (w0.video && w0.video.src) || '', vtitle: (w0.video && w0.video.title) || '' }; }), v = f[0];
+    var f = useState(function () { return { title: w0.title || '', text: w0.text || '', introTitle: w0.introTitle || '', introText: w0.introText || '', vsrc: (w0.video && w0.video.src) || '', vtitle: (w0.video && w0.video.title) || '', docs: (w0.docs || []).slice() }; }), v = f[0];
     function set(k, x) { var o = Object.assign({}, v); o[k] = x; f[1](o); }
+    function setDocs(fn) { f[1](function (o) { return Object.assign({}, o, { docs: fn(o.docs) }); }); }
     var src = v.vsrc.trim(), bad = !!src && !/^https?:\/\/\S+$/i.test(src), st = introStat(db);
+    /* уже отправленный файл — ссылкой с сервера, а не той же data:-строкой ещё раз */
+    var savedDocs = w0.docs || [], savedById = {}; savedDocs.forEach(function (d) { savedById[d.id] = d; });
+    var docs = v.docs.map(function (d) { var s = savedById[d.id]; return s && String(s.data || '').indexOf('lmsfile:') === 0 ? Object.assign({}, d, { data: s.data }) : d; });
+    var dirty = v.title !== (w0.title || '') || v.text !== (w0.text || '') || v.introTitle !== (w0.introTitle || '') || v.introText !== (w0.introText || '') || src !== String((w0.video && w0.video.src) || '').trim() || v.vtitle !== ((w0.video && w0.video.title) || '') || docIds(docs) !== docIds(savedDocs);
     function save() {
       if (bad || ro) return;
-      var changed = v.introText.trim() !== String(w0.introText || '').trim() || src !== String((w0.video && w0.video.src) || '').trim(), now = Date.now();
+      var changed = v.introText.trim() !== String(w0.introText || '').trim() || src !== String((w0.video && w0.video.src) || '').trim() || docIds(docs, true) !== docIds(savedDocs, true), now = Date.now();   // порядок не в счёт
       p.update(function (d) {
         d.settings = d.settings || {};
         var x = { title: v.title.trim().slice(0, 120), text: v.text.trim().slice(0, 4000), introTitle: v.introTitle.trim().slice(0, 120), introText: v.introText.trim().slice(0, 12000), by: p.user.id, editedAt: now, at: changed ? now : (w0.at || now) };
         if (src) x.video = { src: src.slice(0, 500), title: v.vtitle.trim().slice(0, 120) };
+        if (docs.length) x.docs = docs.map(function (z) { return { id: z.id, name: String(z.name).slice(0, 160), size: z.size || 0, type: z.type || '', data: z.data, at: z.at || now }; });
         d.settings.welcome = x;
       });
-      p.say(t(changed && (v.introText.trim() || src) ? 'in_saved_re' : 'saved'));
+      var up = docs.some(function (z) { return String(z.data || '').indexOf('data:') === 0; });
+      p.say(t(up && SV ? 'in_saved_up' : changed && (v.introText.trim() || src || docs.length) ? 'in_saved_re' : 'saved'));
     }
-    var preview = { introTitle: v.introTitle, introText: v.introText, video: src && !bad ? { src: src, title: v.vtitle } : null };
+    var preview = { introTitle: v.introTitle, introText: v.introText, video: src && !bad ? { src: src, title: v.vtitle } : null, docs: docs };
     return h('div', { className: 'in-admin' },
       h('div', { className: 'in-cols' },
         h('div', { className: 'in-forms' },
@@ -6521,10 +6686,11 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
             h('div', { className: 'wz-form' },
               h(Field, { name: 'in-i-title', label: t('in_f_title'), value: v.introTitle, placeholder: t('in_title'), onChange: function (x) { set('introTitle', x); } }),
               h(Field, { name: 'in-i-text', label: t('in_text'), multiline: true, rows: 8, value: v.introText, onChange: function (x) { set('introText', x); } }),
+              h(DocDrop, { t: t, docs: docs, saved: savedDocs, ro: ro, onChange: setDocs }),
               h(Field, { name: 'in-v-src', label: t('in_video'), value: v.vsrc, placeholder: 'https://youtu.be/…', error: bad ? t('in_video_bad') : null, onChange: function (x) { set('vsrc', x); } }),
               h(Field, { name: 'in-v-title', label: t('in_video_title'), value: v.vtitle, onChange: function (x) { set('vtitle', x); } }))),
           h('div', { className: 'in-actions' },
-            ro ? h('span', { className: 'lor-sm lor-muted' }, t('in_ro')) : h('span'),
+            ro ? h('span', { className: 'lor-sm lor-muted' }, t('in_ro')) : dirty ? h('span', { className: 'lor-sm in-dirty' }, t('in_unsaved')) : h('span'),
             h(Btn, { variant: 'primary', arrow: true, disabled: ro || bad, onClick: save }, t('save')))),
         h('div', { className: 'in-side' },
           h('section', { className: 'box in-stat' },
@@ -6532,10 +6698,10 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
             st.w ? h('b', { className: 'in-stat-n' }, st.seen.length + ' / ' + st.emps.length) : null,
             st.w ? h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, tpl(t('in_stat'), { n: st.seen.length, m: st.emps.length })) : h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('in_none')),
             st.w && st.wait.length ? h('div', { className: 'in-wait' }, h('span', { className: 'lor-sm lor-muted' }, t('in_wait')), st.wait.map(function (u) { return h('span', { key: u.id, className: 'in-chip' }, u.name); })) : null),
-          preview.introText.trim() || preview.video ? h('section', { className: 'box in-preview' },
+          preview.introText.trim() || preview.video || docs.length ? h('section', { className: 'box in-preview' },
             h('span', { className: 'lor-eyebrow' }, t('in_preview')),
             h('h3', { className: 'lor-h' }, preview.introTitle.trim() || t('in_title')),
-            h(IntroBody, { t: t, w: preview })) : null)));
+            h(IntroBody, { t: t, w: preview, noMarks: true })) : null)));
   }
   function Login(p) {
     var t = p.t, a = useState(''), b = useState(''), e = useState(''), th = useThemePref(), busy = useState(false), from = useState(introFrom)[0];
