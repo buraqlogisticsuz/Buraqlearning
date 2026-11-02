@@ -305,6 +305,39 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   function qnDone(q, u) { var a = (u.qa && u.qa.answers) || {}; return !!(u.qa && u.qa.at) && qnAsk(q).every(function (x) { return !x.req || qnHas(a[x.id]); }); }
   function qnDue(db, u) { var q = qnOf(db); return !!(q && u && u.role === 'employee' && !qnDone(q, u)); }
   function qnText(x, v) { return !qnHas(v) ? '' : x.type === 'scale' ? v + ' / 5' : Array.isArray(v) ? v.join(', ') : String(v); }
+  /* результат по шкалам: вопрос с x.scale даёт баллы — вариант → x.pts[i], оценка 1–5 → она же (rev — 6 − оценка);
+     шкала = сумма, band — последняя граница scales[].bands[{ from, label }], которую балл перешёл.
+     temper: { e, n, eMid, nMid } — две шкалы (экстраверсия, нейротизм) → один из четырёх темпераментов (выше средней — «высоко») */
+  var QN_TEMPERS = ['sanguine', 'choleric', 'phlegmatic', 'melancholic'];
+  function qnScored(x) { return !!x.scale && (x.type === 'one' || x.type === 'many' || x.type === 'scale'); }
+  function qnPts(x, v) {
+    if (!qnHas(v)) return null;
+    if (x.type === 'scale') return x.rev ? 6 - v : v;
+    var pts = x.pts || [];
+    if (x.type === 'one') { var i = (x.options || []).indexOf(v); return i < 0 ? 0 : +pts[i] || 0; }
+    return (x.options || []).reduce(function (s, o, i) { return s + (v.indexOf(o) >= 0 ? +pts[i] || 0 : 0); }, 0);
+  }
+  function qnMax(x) {
+    if (x.type === 'scale') return 5;
+    var ps = (x.options || []).map(function (_, i) { return +(x.pts || [])[i] || 0; });
+    return x.type === 'one' ? Math.max.apply(null, ps.concat([0])) : ps.reduce(function (s, n) { return s + Math.max(0, n); }, 0);
+  }
+  function qnScore(q, u) {
+    var a = (u && u.qa && u.qa.answers) || {};
+    return ((q && q.scales) || []).map(function (sc) {
+      var qs = qnAsk(q).filter(function (x) { return qnScored(x) && x.scale === sc.id; }), score = 0, max = 0, n = 0;
+      qs.forEach(function (x) { max += qnMax(x); var pt = qnPts(x, a[x.id]); if (pt != null) { score += pt; n++; } });
+      var band = (sc.bands || []).filter(function (b) { return String(b.label || '').trim() && score >= +b.from; }).sort(function (a, b) { return a.from - b.from; }).pop();
+      return { s: sc, score: score, max: max, n: n, total: qs.length, band: band ? band.label : '' };
+    });
+  }
+  function qnTemper(q, res) {
+    var tp = q && q.temper; if (!tp || !tp.e || !tp.n) return null;
+    var e = res.filter(function (r) { return r.s.id === tp.e; })[0], nn = res.filter(function (r) { return r.s.id === tp.n; })[0];
+    if (!e || !nn || !e.n || !nn.n) return null;
+    var hiE = e.score > +tp.eMid, hiN = nn.score > +tp.nMid;
+    return hiE ? (hiN ? 'choleric' : 'sanguine') : (hiN ? 'melancholic' : 'phlegmatic');
+  }
   /* один вопрос анкеты: короткий / развёрнутый ответ, один или несколько вариантов, оценка 1–5; section — подзаголовок */
   function QnField(p) {
     var t = p.t, x = p.q, v = p.value, id = 'qn-' + x.id, ch = p.onChange, ro = !ch;
@@ -362,6 +395,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         h('span', { className: 'lor-eyebrow' }, due ? t('qn_banner_t') : t('qn_tab')),
         h('h2', { className: 'lor-h', id: 'qn-h' }, String(q.title || '').trim() || t('qn_title')),
         String(q.intro || '').trim() ? h('div', { className: 'intro-text qn-intro' }, paras(q.intro)) : null,
+        h('p', { className: 'lor-sm lor-muted qn-note' }, t('qn_note_emp')),
         h('div', { className: 'qn-prog' }, h('span', { className: 'lor-sm lor-muted' }, tpl(t('qn_progress'), { n: got, m: ask.length })), h('span', { className: 'lor-progress' }, h('span', { className: 'lor-progress-fill', style: { width: Math.round(got / Math.max(1, ask.length) * 100) + '%' } }))),
         h('div', { className: 'qn-list' }, qnFields(q, a[0], set, errs[0], t)),
         !due && u.qa && u.qa.at ? h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, '✓ ' + tpl(t('qn_sent_on'), { d: fmt(u.qa.at, t) })) : null,
@@ -6823,17 +6857,81 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     return { q: q, emps: emps, done: done, wait: q ? emps.filter(function (u) { return done.indexOf(u) < 0; }) : [] };
   }
   function qnCsv(db, q) {
-    var ask = qnAsk(q), cell = function (x) { x = String(x == null ? '' : x); return /[;"\n]/.test(x) ? '"' + x.replace(/"/g, '""') + '"' : x; };
-    var rows = [['ID', 'Xodim', 'Lavozim', 'Bo‘lim', 'Yuborilgan'].concat(ask.map(function (x) { return x.text; }))];
+    var ask = qnAsk(q), cell = function (x) { x = String(x == null ? '' : x); return /[;"\n]/.test(x) ? '"' + x.replace(/"/g, '""') + '"' : x; }, T0 = T('uz');
+    var scs = (q.scales || []), tm = !!(q.temper && q.temper.e && q.temper.n);
+    var rows = [['ID', 'Xodim', 'Lavozim', 'Bo‘lim', 'Yuborilgan'].concat(tm ? ['Temperament'] : [], scs.map(function (s) { return s.name + ' (ball)'; }), scs.map(function (s) { return s.name; }), ask.map(function (x) { return x.text; }))];
     db.users.filter(function (u) { return u.role === 'employee' && u.qa; }).forEach(function (u) {
-      var a = u.qa.answers || {};
-      rows.push([u.id, u.name, u.position || '', u.department || '', u.qa.at ? fmtDate(u.qa.at) : '—'].concat(ask.map(function (x) { return qnText(x, a[x.id]); })));
+      var a = u.qa.answers || {}, res = qnScore(q, u), tp = qnTemper(q, res);
+      rows.push([u.id, u.name, u.position || '', u.department || '', u.qa.at ? fmtDate(u.qa.at) : '—'].concat(tm ? [tp ? T0('qn_tm_' + tp) : ''] : [], res.map(function (r) { return r.n ? r.score + ' / ' + r.max : ''; }), res.map(function (r) { return r.n ? r.band : ''; }), ask.map(function (x) { return qnText(x, a[x.id]); })));
     });
     return '﻿' + rows.map(function (r) { return r.map(cell).join(';'); }).join('\r\n');
   }
-  /* ответы одного сотрудника — для CEO, SOP-менеджера и руководителя */
-  function QnAnswers(p) {
-    var t = p.t, u = p.u, q = p.q, a = (u.qa && u.qa.answers) || {}, n = 0;
+  /* шкалы одного человека: полоска балла и вывод границы */
+  function QnBars(p) {
+    var t = p.t;
+    return h('div', { className: 'qn-bars' }, p.res.map(function (r) {
+      var pct = r.max > 0 ? Math.max(0, Math.min(100, Math.round(r.score / r.max * 100))) : 0;
+      return h('div', { key: r.s.id, className: 'qn-bar' },
+        h('div', { className: 'qn-bar-top' }, h('span', { className: 'qn-bar-name' }, r.s.name), h('span', { className: 'qn-bar-n' }, r.n ? r.score + ' / ' + r.max : '—')),
+        h('span', { className: 'lor-progress' }, h('span', { className: 'lor-progress-fill', style: { width: (r.n ? pct : 0) + '%' } })),
+        r.n ? h('span', { className: 'qn-bar-band' }, r.band || '', r.n < r.total ? h('small', null, (r.band ? ' · ' : '') + tpl(t('qn_answered'), { n: r.n, m: r.total })) : null) : h('span', { className: 'qn-bar-band lor-muted' }, t('qn_res_noans')));
+    }));
+  }
+  function TemperCard(p) {
+    var t = p.t, k = p.k;
+    if (!k) return null;
+    return h('div', { className: 'qn-temper is-' + k },
+      h('span', { className: 'lor-eyebrow' }, t('qn_temper')),
+      h('b', null, t('qn_tm_' + k)),
+      p.short ? null : h('p', null, t('qn_tm_' + k + '_d')));
+  }
+  /* AI-вывод по ответам: только для CEO, SOP-менеджера и руководителя (сервер не отдаёт users[].qaReport сотруднику) */
+  function qnAiPrompt(q, u, res, tp, lang) {
+    var a = (u.qa && u.qa.answers) || {}, n = 0;
+    var qa = (q.questions || []).map(function (x) { if (x.type === 'section') return '\n## ' + x.text; n++; return n + '. ' + x.text + '\n   Javob: ' + (qnText(x, a[x.id]) || '—'); }).join('\n');
+    var sc = res.filter(function (r) { return r.n; }).map(function (r) { return '- ' + r.s.name + ': ' + r.score + ' / ' + r.max + (r.band ? ' (' + r.band + ')' : ''); }).join('\n');
+    return 'Siz BURAQ Logistics kompaniyasida HR-psixolog yordamchisisiz. Xodim kompaniyaning tanishuv savolnomasini to‘ldirdi. Rahbariyat (CEO va SOP menejeri) uchun uning ish uslubi profilini tuzing: temperament, kuchli tomonlari, motivatsiya, muloqot uslubi va rahbarga maslahatlar.\n' +
+      'Qoidalar: faqat quyidagi javoblar va ballarga tayaning; dalil kam bo‘lsa, «ehtimol» deb yozing. Tibbiy yoki psixiatrik tashxis qo‘ymang. Din, millat, sog‘liq, siyosiy qarashlar, oilaviy holat haqida xulosa chiqarmang. Ohang — hurmatli va xolis; bu ishga olish yoki bo‘shatish uchun asos emas, xodimni yaxshiroq tushunish uchun. Javob tili: ' + (LANG_NAME[lang] || LANG_NAME.uz) + '.\n' +
+      'XODIM: ' + [u.position, u.department].filter(Boolean).join(', ') + '\n' +
+      'TEST BO‘YICHA TEMPERAMENT: ' + (tp ? T('uz')('qn_tm_' + tp) : 'hisoblanmagan — javoblardan ehtiyotkorlik bilan taxmin qiling') + '\n' +
+      (sc ? 'SHKALALAR:\n' + sc + '\n' : '') +
+      'SAVOLLAR VA JAVOBLAR:\n' + qa.slice(0, 24000) + '\n\n' +
+      'Faqat JSON qaytaring, izohsiz: {"temperament": "1 jumla: temperament va nima uchun", "summary": "2–3 jumla", "strengths": ["3–5 ta"], "growth": ["2–3 ta rivojlantirish nuqtasi"], "motivation": "1–2 jumla", "communication": "1–2 jumla", "management": ["rahbarga 2–4 amaliy maslahat"], "roles": "qaysi vazifalarda o‘zini yaxshi ko‘rsatadi, 1–2 jumla"}';
+  }
+  function qnAiClean(r) {
+    if (!r || typeof r !== 'object' || typeof r.summary !== 'string') return null;
+    var str = function (x, n) { return typeof x === 'string' ? x.trim().slice(0, n) : ''; }, arr = function (x) { return Array.isArray(x) ? x.filter(function (y) { return typeof y === 'string' && y.trim(); }).slice(0, 6).map(function (y) { return y.trim().slice(0, 300); }) : []; };
+    return { temperament: str(r.temperament, 400), summary: str(r.summary, 1200), strengths: arr(r.strengths), growth: arr(r.growth), motivation: str(r.motivation, 600), communication: str(r.communication, 600), management: arr(r.management), roles: str(r.roles, 600) };
+  }
+  function QnAi(p) {
+    var t = p.t, u = p.u, rep = u.qaReport, d = rep && rep.data, busy = useState(false), er = useState(''), ctl = useRef(null), sampler = p.sampler;
+    useEffect(function () { return function () { if (ctl.current) ctl.current.abort(); }; }, []);
+    function make() {
+      if (!sampler || busy[0]) return;
+      var res = qnScore(p.q, u), c = new AbortController(); ctl.current = c; busy[1](true); er[1]('');
+      sampler.json(qnAiPrompt(p.q, u, res, qnTemper(p.q, res), p.lang), { signal: c.signal }).then(function (r) {
+        var x = qnAiClean(r); if (!x) { er[1](t('ai_bad_json')); return; }
+        var at = Date.now();
+        p.update(function (db) { patchUser(db, u.id, function (z) { z.qaReport = { at: at, by: p.user.id, lang: p.lang, data: x }; }); });
+      }).catch(function (e) { if (e && e.code === 'cancelled') return; er[1](e && e.code === 'invalid_json' ? t('ai_bad_json') : aiErr(e, t)); }).then(function () { busy[1](false); });
+    }
+    var list = function (k, items) { return items && items.length ? h('div', { className: 'qn-ai-sec' }, h('b', null, t(k)), h('ul', null, items.map(function (x, i) { return h('li', { key: i }, x); }))) : null; };
+    var one = function (k, x) { return x ? h('div', { className: 'qn-ai-sec' }, h('b', null, t(k)), h('p', null, x)) : null; };
+    return h('section', { className: 'qn-ai' },
+      h('div', { className: 'qn-ai-head' },
+        h('span', { className: 'lor-eyebrow' }, t('qn_ai_t')),
+        p.ro ? null : h(Btn, { variant: d ? 'ghost' : 'primary', size: 'sm', arrow: !d, disabled: !sampler || busy[0], onClick: make }, busy[0] ? t('qn_ai_busy') : d ? t('qn_ai_again') : t('qn_ai_make'))),
+      sampler === null && !p.ro ? h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('srv_ai_unavail')) : null,
+      er[0] ? h('p', { className: 'lor-field-error', style: { margin: 0 } }, er[0]) : null,
+      d ? h('div', { className: 'qn-ai-body' },
+        one('qn_ai_temper', d.temperament), one('qn_ai_summary', d.summary), list('qn_ai_strengths', d.strengths), list('qn_ai_growth', d.growth),
+        one('qn_ai_motivation', d.motivation), one('qn_ai_comm', d.communication), list('qn_ai_mgmt', d.management), one('qn_ai_roles', d.roles),
+        h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, tpl(t('qn_ai_made'), { d: fmt(rep.at, t) }) + ' · ' + t('qn_ai_hidden'))) :
+        !busy[0] ? h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('qn_ai_none')) : null);
+  }
+  /* карточка результата одного сотрудника: темперамент, шкалы, AI-вывод и все ответы — CEO, SOP-менеджер, руководитель */
+  function QnPerson(p) {
+    var t = p.t, u = p.u, q = p.q, a = (u.qa && u.qa.answers) || {}, n = 0, res = qnScore(q, u), tp = qnTemper(q, res);
     useEffect(function () { function k(e) { if (e.key === 'Escape') p.onClose(); } window.addEventListener('keydown', k); return function () { window.removeEventListener('keydown', k); }; }, []);
     return h('div', { className: 'lor-scrim', onMouseDown: function (e) { if (e.target === e.currentTarget) p.onClose(); } },
       h('div', { className: 'lor-modal qn-modal qn-ans', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'qa-h' },
@@ -6841,6 +6939,10 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         h('span', { className: 'lor-eyebrow' }, String(q.title || '').trim() || t('qn_title')),
         h('h2', { className: 'lor-h', id: 'qa-h' }, u.name),
         h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, [u.position, u.department].filter(Boolean).join(' · ') + ' · ' + (u.qa && u.qa.at ? tpl(t('qn_sent_on'), { d: fmt(u.qa.at, t) }) : t('qn_draft'))),
+        tp || res.length ? h('div', { className: 'qn-res-top' }, h(TemperCard, { t: t, k: tp }), res.length ? h(QnBars, { t: t, res: res }) : null) : null,
+        h(QnAi, Object.assign({}, p, { q: q, u: u })),
+        h('p', { className: 'lor-sm lor-muted qn-disc' }, t('qn_res_hint')),
+        h('h3', { className: 'qn-sec' }, t('qn_answers_t')),
         h('dl', { className: 'qn-dl' }, (q.questions || []).map(function (x) {
           if (x.type === 'section') return h('h3', { key: x.id, className: 'qn-sec' }, x.text);
           n++; var v = qnText(x, a[x.id]);
@@ -6848,13 +6950,49 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         })),
         h('div', { className: 'lor-modal-actions' }, h(Btn, { variant: 'primary', onClick: p.onClose }, t('close')))));
   }
+  /* «Natijalar»: весь коллектив — темпераменты, средние по шкалам, у каждого — шкалы и вывод; клик — подробно */
+  function QnResults(p) {
+    var t = p.t, db = p.db, q = p.q, emps = db.users.filter(function (u) { return u.role === 'employee'; });
+    var sent = emps.filter(function (u) { return u.qa && u.qa.at; }).sort(function (a, b) { return b.qa.at - a.qa.at; }), wait = emps.filter(function (u) { return !(u.qa && u.qa.at); });
+    var rows = sent.map(function (u) { var res = qnScore(q, u); return { u: u, res: res, tp: qnTemper(q, res) }; });
+    var tm = {}; rows.forEach(function (r) { if (r.tp) tm[r.tp] = (tm[r.tp] || 0) + 1; });
+    var scs = (q.scales || []).map(function (sc, i) { var xs = rows.map(function (r) { return r.res[i]; }).filter(function (r) { return r && r.n; }); return { s: sc, avg: xs.length ? Math.round(xs.reduce(function (s, r) { return s + r.score; }, 0) / xs.length * 10) / 10 : null, max: xs.length ? xs[0].max : 0 }; });
+    if (!sent.length) return h('section', { className: 'box' }, h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('qn_res_none')), wait.length ? h('div', { className: 'in-wait' }, h('span', { className: 'lor-sm lor-muted' }, t('qn_wait')), wait.map(function (u) { return h('span', { key: u.id, className: 'in-chip' }, u.name); })) : null);
+    return h('div', { className: 'qn-res' },
+      h('section', { className: 'box qn-team' },
+        h('span', { className: 'lor-eyebrow' }, t('qn_res_team')),
+        h('b', { className: 'in-stat-n' }, sent.length + ' / ' + emps.length),
+        h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, tpl(t('qn_stat'), { n: sent.length, m: emps.length })),
+        q.temper && q.temper.e ? h('div', { className: 'qn-tm-grid' }, QN_TEMPERS.map(function (k) { return h('div', { key: k, className: cx('qn-tm-cell', 'is-' + k) }, h('b', null, tm[k] || 0), h('span', null, t('qn_tm_' + k))); })) : null,
+        scs.some(function (x) { return x.avg != null; }) ? h('div', { className: 'qn-avg' }, scs.map(function (x) { return x.avg == null ? null : h('span', { key: x.s.id, className: 'in-chip' }, x.s.name + ': ' + tpl(t('qn_res_avg'), { n: x.avg }) + ' / ' + x.max); })) : null,
+        h('p', { className: 'lor-sm lor-muted qn-disc' }, t('qn_res_hint'))),
+      h('div', { className: 'qn-people' }, rows.map(function (r) {
+        return h('button', { key: r.u.id, type: 'button', className: 'qn-person', onClick: function () { p.onOpen(r.u.id); } },
+          h('span', { className: 'qn-person-top' },
+            h(Av, { name: r.u.name, src: r.u.avatar, size: 36 }),
+            h('span', { className: 'qn-person-t' }, h('b', null, r.u.name), h('small', null, [r.u.position, fmtDate(r.u.qa.at)].filter(Boolean).join(' · '))),
+            r.tp ? h('span', { className: cx('qn-tm-chip', 'is-' + r.tp) }, t('qn_tm_' + r.tp)) : null),
+          r.res.length ? h('span', { className: 'qn-person-sc' }, r.res.filter(function (x) { return x.n; }).map(function (x) { return h('span', { key: x.s.id }, h('i', null, x.s.name), ' ', x.score + '/' + x.max, x.band ? ' · ' + x.band : ''); })) : null,
+          h('span', { className: 'qn-person-go' }, r.u.qaReport ? h('span', { className: 'qn-ai-chip' }, 'AI ✓') : null, t('qn_res_open')));
+      })),
+      wait.length ? h('section', { className: 'box' }, h('div', { className: 'in-wait', style: { marginTop: 0 } }, h('span', { className: 'lor-sm lor-muted' }, t('qn_wait')), wait.map(function (u) { return h(u.qa ? 'button' : 'span', { key: u.id, type: u.qa ? 'button' : undefined, className: cx('in-chip', u.qa && 'qn-who'), onClick: u.qa ? function () { p.onOpen(u.id); } : undefined }, u.name + (u.qa ? ' · ' + t('qn_draft') : '')); }))) : null);
+  }
+  /* шаблон для теста темперамента (опросник типа Айзенка: да/нет, 3 шкалы) — шкалы и границы; сами вопросы вводит компания */
+  function qnTemperTpl(t) {
+    var mk = function (name, froms, labels) { var L = labels.split('|'); return { id: 's' + Math.random().toString(36).slice(2, 8), name: name, bands: froms.map(function (f, i) { return { from: f, label: L[i] || '' }; }) }; };
+    var e = mk(t('qn_tpl_e'), [0, 5, 9, 12, 13, 16, 20], t('qn_tpl_e_b')), n = mk(t('qn_tpl_n'), [0, 7, 14, 19], t('qn_tpl_n_b')), l = mk(t('qn_tpl_l'), [0, 5], t('qn_tpl_l_b'));
+    return { scales: [e, n, l], temper: { e: e.id, n: n.id, eMid: 12, nMid: 12 } };
+  }
   function QnAdmin(p) {
     var t = p.t, db = p.db, q0 = (db.settings && db.settings.questionnaire) || {}, ro = lvlOf(p.user) === 'boss';
-    var f = useState(function () { return { title: q0.title || '', intro: q0.intro || '', on: q0.on !== false, questions: clone(q0.questions || []) }; }), v = f[0];
-    var paste = useState(null), err = useState(''), who = useState(null), st = qnStat(db), fileRef = useRef(null), busy = useState(false);
-    function set(k, x) { f[1](function (o) { var n = Object.assign({}, o); n[k] = x; return n; }); }
+    function init() { return { title: q0.title || '', intro: q0.intro || '', on: q0.on !== false, questions: clone(q0.questions || []), scales: clone(q0.scales || []), temper: q0.temper ? clone(q0.temper) : null }; }
+    var f = useState(init), v = f[0], view = useState(qnStat(db).done.length ? 'res' : 'edit');
+    var paste = useState(null), err = useState(''), who = useState(null), st = qnStat(db), busy = useState(false);
+    function set(k, x) { f[1](function (o) { var n = Object.assign({}, o); n[k] = x; return n; }); err[1](''); }
     function setQs(fn) { f[1](function (o) { return Object.assign({}, o, { questions: fn(o.questions.slice()) }); }); err[1](''); }
-    function setQ(i, k, x) { setQs(function (a) { a[i] = Object.assign({}, a[i]); a[i][k] = x; if (k === 'type' && (x === 'one' || x === 'many') && (a[i].options || []).length < 2) a[i].options = (a[i].options || []).concat(['', '']).slice(0, Math.max(2, (a[i].options || []).length)); if (k === 'type' && x === 'section') a[i].req = false; return a; }); }
+    function setScs(fn) { f[1](function (o) { return Object.assign({}, o, { scales: fn(o.scales.slice()) }); }); err[1](''); }
+    function setQ(i, k, x) { setQs(function (a) { a[i] = Object.assign({}, a[i]); a[i][k] = x; if (k === 'type' && (x === 'one' || x === 'many') && (a[i].options || []).length < 2) a[i].options = (a[i].options || []).concat(['', '']).slice(0, Math.max(2, (a[i].options || []).length)); if (k === 'type' && x === 'section') { a[i].req = false; a[i].scale = ''; } return a; }); }
+    function setOpt(i, k, fn) { setQs(function (a) { var x = Object.assign({}, a[i]); x.options = (x.options || []).slice(); x.pts = (x.options || []).map(function (_, z) { return (x.pts || [])[z] || 0; }); fn(x, k); a[i] = x; return a; }); }
     function move(i, d) { setQs(function (a) { var j = i + d; if (j < 0 || j >= a.length) return a; var x = a[i]; a[i] = a[j]; a[j] = x; return a; }); }
     function add(list) { setQs(function (a) { return a.concat(list); }); }
     function fromWord(e) {
@@ -6867,20 +7005,43 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         add(list); p.say(tpl(t('qn_imp_ok'), { n: list.filter(function (x) { return x.type !== 'section'; }).length }));
       }).catch(function () { busy[1](false); err[1](t('qn_imp_err')); });
     }
-    var json = JSON.stringify({ title: v.title, intro: v.intro, on: v.on, questions: v.questions }), saved = JSON.stringify({ title: q0.title || '', intro: q0.intro || '', on: q0.on !== false, questions: q0.questions || [] });
+    function addTpl() {
+      var x = qnTemperTpl(t);
+      f[1](function (o) { return Object.assign({}, o, { scales: o.scales.concat(x.scales), temper: o.temper && o.temper.e ? o.temper : x.temper }); });
+      p.say(t('qn_tpl_ok'));
+    }
+    var pick = function (o) { return { title: o.title || '', intro: o.intro || '', on: o.on !== false, questions: o.questions || [], scales: o.scales || [], temper: o.temper || null }; };
+    var json = JSON.stringify(pick(v)), saved = JSON.stringify(pick(q0));
     function save() {
       if (ro) return;
-      var qs = v.questions.map(function (x) { return Object.assign({}, x, { text: String(x.text || '').trim().slice(0, 500), options: (x.type === 'one' || x.type === 'many') ? (x.options || []).map(function (o) { return String(o).trim().slice(0, 200); }).filter(Boolean) : [] }); }).filter(function (x) { return x.text; });
+      var ids = {}; v.scales.forEach(function (s) { ids[s.id] = 1; });
+      var qs = v.questions.map(function (x) {
+        var y = Object.assign({}, x, { text: String(x.text || '').trim().slice(0, 500) }), choice = x.type === 'one' || x.type === 'many';
+        var pairs = choice ? (x.options || []).map(function (o, i) { return [String(o).trim().slice(0, 200), +(x.pts || [])[i] || 0]; }).filter(function (z) { return z[0]; }) : [];
+        y.options = pairs.map(function (z) { return z[0]; });
+        y.scale = ids[x.scale] && (choice || x.type === 'scale') ? x.scale : '';
+        if (y.scale && choice) y.pts = pairs.map(function (z) { return Math.max(-99, Math.min(99, z[1])); }); else delete y.pts;
+        if (!(y.scale && x.type === 'scale' && x.rev)) delete y.rev;
+        if (!y.scale) delete y.scale;
+        return y;
+      }).filter(function (x) { return x.text; });
       var bad = qs.filter(function (x) { return (x.type === 'one' || x.type === 'many') && x.options.length < 2; })[0];
-      if (bad) { err[1](tpl(t('qn_err_opts'), { q: bad.text.slice(0, 60) })); return; }
-      err[1]('');
-      set('questions', qs);
-      p.update(function (d) { d.settings = d.settings || {}; d.settings.questionnaire = { title: v.title.trim().slice(0, 120), intro: v.intro.trim().slice(0, 4000), on: v.on, questions: qs, by: p.user.id, editedAt: Date.now() }; });
+      if (bad) { err[1](tpl(t('qn_err_opts'), { q: bad.text.slice(0, 60) })); view[1]('edit'); return; }
+      var scs = v.scales.map(function (s) { return { id: s.id, name: String(s.name || '').trim().slice(0, 80) || t('qn_sc_l'), bands: (s.bands || []).map(function (b) { return { from: +b.from || 0, label: String(b.label || '').trim().slice(0, 160) }; }).filter(function (b) { return b.label; }).sort(function (a, b) { return a.from - b.from; }) }; });
+      var tp = v.temper && ids[v.temper.e] && ids[v.temper.n] ? { e: v.temper.e, n: v.temper.n, eMid: +v.temper.eMid || 0, nMid: +v.temper.nMid || 0 } : null;
+      f[1](function (o) { return Object.assign({}, o, { questions: qs, scales: scs, temper: tp }); });
+      p.update(function (d) {
+        d.settings = d.settings || {};
+        var x = { title: v.title.trim().slice(0, 120), intro: v.intro.trim().slice(0, 4000), on: v.on, questions: qs, scales: scs, by: p.user.id, editedAt: Date.now() };
+        if (tp) x.temper = tp;
+        d.settings.questionnaire = x;
+      });
       p.say(t('saved'));
     }
-    var n = 0, TYPES = QN_TYPES.map(function (k) { return [k, t('qn_t_' + k)]; });
-    return h('div', { className: 'in-admin qn-admin' },
-      h('div', { className: 'in-cols' },
+    var n = 0, TYPES = QN_TYPES.map(function (k) { return [k, t('qn_t_' + k)]; }), SCS = [['', t('qn_scale_none')]].concat(v.scales.map(function (s) { return [s.id, s.name || '…']; }));
+    var qOf = function (sid) { return qnAsk(v).filter(function (x) { return x.scale === sid && (x.type === 'one' || x.type === 'many' || x.type === 'scale'); }); };
+    var qSaved = (db.settings && db.settings.questionnaire) || v;
+    var editor = h('div', { className: 'in-cols' },
         h('div', { className: 'in-forms' },
           h('section', { className: 'box' },
             h('h2', { className: 'lor-h' }, t('qn_title')),
@@ -6894,7 +7055,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
               h('h2', { className: 'lor-h' }, t('qn_qs'), h('span', { className: 'lor-count' }, qnAsk(v).length)),
               ro ? null : h('div', { className: 'qn-imp' },
                 h('label', { className: 'lor-btn lor-btn-outline lor-btn-sm', htmlFor: 'qn-docx' }, busy[0] ? t('clk_wait') : t('qn_imp_word')),
-                h('input', { id: 'qn-docx', ref: fileRef, type: 'file', className: 'jf-input', accept: '.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document', onChange: fromWord }),
+                h('input', { id: 'qn-docx', type: 'file', className: 'jf-input', accept: '.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document', onChange: fromWord }),
                 h(Btn, { variant: 'outline', size: 'sm', onClick: function () { paste[1](paste[0] == null ? '' : null); } }, t('qn_imp_text')))),
             paste[0] != null ? h('div', { className: 'qn-paste' },
               h(Field, { name: 'qn-paste', label: t('qn_paste_l'), multiline: true, rows: 7, value: paste[0], placeholder: t('qn_paste_ph'), hint: t('qn_paste_hint'), onChange: paste[1] }),
@@ -6903,7 +7064,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
                 h(Btn, { variant: 'primary', size: 'sm', disabled: !paste[0].trim(), onClick: function () { var list = qnFromText(paste[0]); add(list); paste[1](null); p.say(tpl(t('qn_imp_ok'), { n: list.filter(function (x) { return x.type !== 'section'; }).length })); } }, t('qn_paste_add')))) : null,
             v.questions.length ? null : h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('qn_empty')),
             h('ol', { className: 'qn-items' }, v.questions.map(function (x, i) {
-              var sec = x.type === 'section'; if (!sec) n++;
+              var sec = x.type === 'section', choice = x.type === 'one' || x.type === 'many', scored = !!x.scale && (choice || x.type === 'scale'); if (!sec) n++;
               return h('li', { key: x.id, className: cx('qn-item', sec && 'is-sec') },
                 h('div', { className: 'qn-item-top' },
                   h('span', { className: 'qn-item-n' }, sec ? '§' : n),
@@ -6914,19 +7075,61 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
                     h('button', { type: 'button', className: 'in-dl-mv qn-del', 'aria-label': t('remove'), title: t('remove'), onClick: function () { setQs(function (a) { a.splice(i, 1); return a; }); } }, '×'))),
                 h('div', { className: 'qn-item-meta' },
                   h('select', { className: 'lor-input qn-type', value: x.type, disabled: ro, 'aria-label': t('qn_type'), onChange: function (e) { setQ(i, 'type', e.target.value); } }, TYPES.map(function (o) { return h('option', { key: o[0], value: o[0] }, o[1]); })),
-                  sec ? null : h('label', { className: 'check' }, h('input', { type: 'checkbox', checked: !!x.req, disabled: ro, onChange: function (e) { setQ(i, 'req', e.target.checked); } }), t('qn_req'))),
-                x.type === 'one' || x.type === 'many' ? h('div', { className: 'qn-item-opts' },
+                  sec ? null : h('label', { className: 'check' }, h('input', { type: 'checkbox', checked: !!x.req, disabled: ro, onChange: function (e) { setQ(i, 'req', e.target.checked); } }), t('qn_req')),
+                  v.scales.length && (choice || x.type === 'scale') ? h('select', { className: 'lor-input qn-type qn-scale-sel', value: x.scale || '', disabled: ro, 'aria-label': t('qn_scale_l'), onChange: function (e) { setQ(i, 'scale', e.target.value); } }, SCS.map(function (o) { return h('option', { key: o[0], value: o[0] }, o[0] ? t('qn_scale_l') + ': ' + o[1] : o[1]); })) : null,
+                  scored && x.type === 'scale' ? h('label', { className: 'check' }, h('input', { type: 'checkbox', checked: !!x.rev, disabled: ro, onChange: function (e) { setQ(i, 'rev', e.target.checked); } }), t('qn_rev')) : null),
+                choice ? h('div', { className: 'qn-item-opts' },
                   (x.options || []).map(function (o, k) {
                     return h('div', { key: k, className: 'qn-item-opt' },
                       h('span', { className: cx('qn-mark', x.type === 'many' && 'is-sq'), 'aria-hidden': true }),
-                      h('input', { className: 'lor-input', value: o, readOnly: ro, placeholder: tpl(t('qn_opt_ph'), { n: k + 1 }), 'aria-label': tpl(t('qn_opt_ph'), { n: k + 1 }), onChange: function (e) { var val = e.target.value; setQs(function (a) { a[i] = Object.assign({}, a[i], { options: a[i].options.slice() }); a[i].options[k] = val; return a; }); } }),
-                      ro ? null : h('button', { type: 'button', className: 'in-dl-mv qn-del', 'aria-label': t('remove'), onClick: function () { setQs(function (a) { a[i] = Object.assign({}, a[i], { options: a[i].options.filter(function (_, z) { return z !== k; }) }); return a; }); } }, '×'));
+                      h('input', { className: 'lor-input', value: o, readOnly: ro, placeholder: tpl(t('qn_opt_ph'), { n: k + 1 }), 'aria-label': tpl(t('qn_opt_ph'), { n: k + 1 }), onChange: function (e) { var val = e.target.value; setOpt(i, k, function (y) { y.options[k] = val; }); } }),
+                      scored ? h('input', { className: 'lor-input qn-pts', type: 'number', step: 1, value: (x.pts || [])[k] || 0, readOnly: ro, title: t('qn_pts'), 'aria-label': t('qn_pts') + ' — ' + (o || k + 1), onChange: function (e) { var val = +e.target.value || 0; setOpt(i, k, function (y) { y.pts[k] = val; }); } }) : null,
+                      ro ? null : h('button', { type: 'button', className: 'in-dl-mv qn-del', 'aria-label': t('remove'), onClick: function () { setOpt(i, k, function (y) { y.options.splice(k, 1); y.pts.splice(k, 1); }); } }, '×'));
                   }),
-                  ro ? null : h('button', { type: 'button', className: 'app-link qn-add-opt', onClick: function () { setQs(function (a) { a[i] = Object.assign({}, a[i], { options: (a[i].options || []).concat(['']) }); return a; }); } }, '+ ' + t('qn_add_opt'))) : null);
+                  scored ? h('span', { className: 'lor-sm lor-muted' }, t('qn_pts_hint')) : null,
+                  ro ? null : h('button', { type: 'button', className: 'app-link qn-add-opt', onClick: function () { setOpt(i, 0, function (y) { y.options.push(''); y.pts.push(0); }); } }, '+ ' + t('qn_add_opt'))) : null);
             })),
             ro ? null : h('div', { className: 'qn-add' },
               h(Btn, { variant: 'outline', size: 'sm', onClick: function () { add([qnNew('long')]); } }, '+ ' + t('qn_add_q')),
               h(Btn, { variant: 'ghost', size: 'sm', onClick: function () { add([qnNew('section')]); } }, '+ ' + t('qn_add_sec')))),
+          /* шкалы результата и темперамент */
+          h('section', { className: 'box qn-edit qn-scales' },
+            h('div', { className: 'qn-edit-head' },
+              h('h2', { className: 'lor-h' }, t('qn_sc_t'), h('span', { className: 'lor-count' }, v.scales.length)),
+              ro ? null : h('div', { className: 'qn-imp' },
+                v.temper && v.temper.e ? null : h(Btn, { variant: 'outline', size: 'sm', onClick: addTpl }, t('qn_tpl_temper')),
+                h(Btn, { variant: 'outline', size: 'sm', onClick: function () { setScs(function (a) { return a.concat([{ id: 's' + Math.random().toString(36).slice(2, 8), name: '', bands: [{ from: 0, label: '' }] }]); }); } }, '+ ' + t('qn_sc_add')))),
+            h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('qn_sc_hint')),
+            v.scales.map(function (sc, si) {
+              var qs = qOf(sc.id), mx = qs.reduce(function (s, x) { return s + qnMax(x); }, 0);
+              return h('div', { key: sc.id, className: 'qn-sc-card' },
+                h('div', { className: 'qn-item-top' },
+                  h('input', { className: 'lor-input qn-sc-name', value: sc.name, readOnly: ro, placeholder: t('qn_sc_name_ph'), 'aria-label': t('qn_sc_l'), onChange: function (e) { var val = e.target.value; setScs(function (a) { a[si] = Object.assign({}, a[si], { name: val }); return a; }); } }),
+                  ro ? null : h('button', { type: 'button', className: 'in-dl-mv qn-del', 'aria-label': t('remove'), title: t('remove'), onClick: function () { setScs(function (a) { a.splice(si, 1); return a; }); } }, '×')),
+                h('span', { className: 'lor-sm lor-muted' }, tpl(t('qn_sc_info'), { n: qs.length, m: mx })),
+                h('div', { className: 'qn-bands' },
+                  (sc.bands || []).map(function (b, bi) {
+                    var upd = function (k, val) { setScs(function (a) { var y = Object.assign({}, a[si]); y.bands = y.bands.slice(); y.bands[bi] = Object.assign({}, y.bands[bi]); y.bands[bi][k] = val; a[si] = y; return a; }); };
+                    return h('div', { key: bi, className: 'qn-band' },
+                      h('span', { className: 'lor-sm lor-muted' }, t('qn_band_from')),
+                      h('input', { className: 'lor-input qn-pts', type: 'number', value: b.from, readOnly: ro, 'aria-label': t('qn_band_from'), onChange: function (e) { upd('from', +e.target.value || 0); } }),
+                      h('input', { className: 'lor-input', value: b.label, readOnly: ro, placeholder: t('qn_band_ph'), 'aria-label': t('qn_band_ph'), onChange: function (e) { upd('label', e.target.value); } }),
+                      ro ? null : h('button', { type: 'button', className: 'in-dl-mv qn-del', 'aria-label': t('remove'), onClick: function () { setScs(function (a) { var y = Object.assign({}, a[si]); y.bands = y.bands.filter(function (_, z) { return z !== bi; }); a[si] = y; return a; }); } }, '×'));
+                  }),
+                  ro ? null : h('button', { type: 'button', className: 'app-link qn-add-opt', onClick: function () { setScs(function (a) { var y = Object.assign({}, a[si]); y.bands = (y.bands || []).concat([{ from: mx, label: '' }]); a[si] = y; return a; }); } }, '+ ' + t('qn_band_add'))));
+            }),
+            v.scales.length >= 2 ? h('div', { className: 'qn-tm-cfg' },
+              h('label', { className: 'check big' }, h('input', { type: 'checkbox', id: 'qn-tm-on', checked: !!(v.temper && v.temper.e), disabled: ro, onChange: function (e) { set('temper', e.target.checked ? { e: v.scales[0].id, n: v.scales[1].id, eMid: 12, nMid: 12 } : null); } }), t('qn_tm_on')),
+              v.temper && v.temper.e ? h('div', { className: 'qn-tm-row' },
+                [['e', 'eMid', t('qn_tm_e')], ['n', 'nMid', t('qn_tm_n')]].map(function (z) {
+                  return h('div', { key: z[0], className: 'qn-tm-axis' },
+                    h('span', { className: 'lor-field-label' }, z[2]),
+                    h('div', { className: 'qn-band' },
+                      h('select', { className: 'lor-input', value: v.temper[z[0]], disabled: ro, 'aria-label': z[2], onChange: function (e) { var o = Object.assign({}, v.temper); o[z[0]] = e.target.value; set('temper', o); } }, v.scales.map(function (s) { return h('option', { key: s.id, value: s.id }, s.name || '…'); })),
+                      h('span', { className: 'lor-sm lor-muted' }, t('qn_tm_mid')),
+                      h('input', { className: 'lor-input qn-pts', type: 'number', value: v.temper[z[1]], readOnly: ro, 'aria-label': z[2] + ' — ' + t('qn_tm_mid'), onChange: function (e) { var o = Object.assign({}, v.temper); o[z[1]] = +e.target.value || 0; set('temper', o); } })));
+                }),
+                h('span', { className: 'lor-sm lor-muted' }, t('qn_tm_hint'))) : null) : null),
           h('div', { className: 'in-actions' },
             ro ? h('span', { className: 'lor-sm lor-muted' }, t('in_ro')) : err[0] ? h('span', { className: 'lor-field-error' }, err[0]) : json !== saved ? h('span', { className: 'lor-sm in-dirty' }, t('in_unsaved')) : h('span'),
             h(Btn, { variant: 'primary', arrow: true, disabled: ro, onClick: save }, t('save')))),
@@ -6935,15 +7138,18 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
             h('span', { className: 'lor-eyebrow' }, t('qn_stat_t')),
             st.q ? h('b', { className: 'in-stat-n' }, st.done.length + ' / ' + st.emps.length) : null,
             st.q ? h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, tpl(t('qn_stat'), { n: st.done.length, m: st.emps.length })) : h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('qn_none')),
-            st.q && st.done.length ? h('div', { className: 'in-wait' }, h('span', { className: 'lor-sm lor-muted' }, t('qn_answers')), st.done.map(function (u) { return h('button', { key: u.id, type: 'button', className: 'in-chip qn-who', onClick: function () { who[1](u.id); } }, u.name); })) : null,
-            st.q && st.wait.length ? h('div', { className: 'in-wait' }, h('span', { className: 'lor-sm lor-muted' }, t('qn_wait')), st.wait.map(function (u) { return h(u.qa ? 'button' : 'span', { key: u.id, type: u.qa ? 'button' : undefined, className: cx('in-chip', u.qa && 'qn-who'), onClick: u.qa ? function () { who[1](u.id); } : undefined }, u.name + (u.qa ? ' · ' + t('qn_draft') : '')); })) : null,
-            st.q && db.users.some(function (u) { return u.role === 'employee' && u.qa; }) ? h(Btn, { variant: 'outline', size: 'sm', onClick: function () { downloadText('savolnoma-' + dayKey(Date.now()) + '.csv', qnCsv(db, st.q)); } }, t('qn_csv')) : null),
+            st.q && st.done.length ? h(Btn, { variant: 'outline', size: 'sm', onClick: function () { view[1]('res'); } }, t('qn_tab_res') + ' →') : null),
           qnAsk(v).length ? h('section', { className: 'box in-preview' },
             h('span', { className: 'lor-eyebrow' }, t('in_preview')),
             h('h3', { className: 'lor-h' }, v.title.trim() || t('qn_title')),
             v.intro.trim() ? h('div', { className: 'intro-text' }, paras(v.intro)) : null,
-            h('div', { className: 'qn-list' }, qnFields(v, {}, null, null, t))) : null)),
-      who[0] && userOf(db, who[0]) ? h(QnAnswers, { t: t, u: userOf(db, who[0]), q: (db.settings && db.settings.questionnaire) || v, onClose: function () { who[1](null); } }) : null);
+            h('div', { className: 'qn-list' }, qnFields(v, {}, null, null, t))) : null));
+    return h('div', { className: 'in-admin qn-admin' },
+      h('div', { className: 'qn-views' },
+        h('div', { className: 'seg', role: 'tablist' }, [['res', t('qn_tab_res')], ['edit', t('qn_tab_edit')]].map(function (x) { return h('button', { key: x[0], type: 'button', role: 'tab', 'aria-selected': view[0] === x[0], className: view[0] === x[0] ? 'is-on' : '', onClick: function () { view[1](x[0]); } }, x[1]); })),
+        st.q && db.users.some(function (u) { return u.role === 'employee' && u.qa; }) ? h(Btn, { variant: 'outline', size: 'sm', onClick: function () { downloadText('savolnoma-' + dayKey(Date.now()) + '.csv', qnCsv(db, qSaved)); } }, t('qn_csv')) : null),
+      view[0] === 'res' ? h(QnResults, Object.assign({}, p, { q: qSaved, onOpen: function (id) { who[1](id); } })) : editor,
+      who[0] ? h(QnPerson, Object.assign({}, p, { u: userOf(db, who[0]), q: qSaved, ro: ro, onClose: function () { who[1](null); } })) : null);
   }
   function Login(p) {
     var t = p.t, a = useState(''), b = useState(''), e = useState(''), th = useThemePref(), busy = useState(false), from = useState(introFrom)[0];

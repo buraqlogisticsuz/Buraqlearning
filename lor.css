@@ -3542,3 +3542,66 @@ button.mc-cell.at-cell:hover { outline: 2px solid var(--blue-text); outline-offs
   .qn-item-n { width: 18px; }
   .qn-sc { width: 40px; }
 }
+
+/* ---------- «Savolnoma» → результаты: шкалы, темперамент, вывод ИИ (CEO, SOP-менеджер, руководитель) ---------- */
+.qn-views { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; margin-bottom: var(--space-4); }
+.qn-note { margin: 0; }
+.qn-disc { margin: 0; }
+.qn-res { display: flex; flex-direction: column; gap: var(--space-4); }
+.qn-team { display: flex; flex-direction: column; gap: 8px; }
+.qn-tm-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 4px; }
+.qn-tm-cell { display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; border-radius: var(--radius-md); }
+.qn-tm-cell b { font-size: 28px; line-height: 32px; font-weight: 400; font-variant-numeric: tabular-nums; }
+.qn-tm-cell span { font-size: 13px; }
+.is-sanguine.qn-tm-cell, .qn-tm-chip.is-sanguine, .qn-temper.is-sanguine { background: var(--blue-soft); color: var(--blue-text); }
+.is-choleric.qn-tm-cell, .qn-tm-chip.is-choleric, .qn-temper.is-choleric { background: var(--red-soft); color: var(--red-text); }
+.is-phlegmatic.qn-tm-cell, .qn-tm-chip.is-phlegmatic, .qn-temper.is-phlegmatic { background: var(--surface-sunken); color: var(--ink); }
+.is-melancholic.qn-tm-cell, .qn-tm-chip.is-melancholic, .qn-temper.is-melancholic { background: var(--navy); color: var(--on-navy); }
+.qn-avg { display: flex; flex-wrap: wrap; gap: 6px; }
+.qn-people { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--space-3); }
+.qn-person { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border: var(--hairline) solid var(--line); border-radius: var(--radius-lg); background: var(--surface-raised); color: var(--ink); font: inherit; text-align: left; cursor: pointer; transition: border-color var(--t-sm) var(--ease); }
+.qn-person:hover { border-color: var(--blue-text); }
+.qn-person:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.qn-person-top { display: flex; align-items: center; gap: 10px; }
+.qn-person-t { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.qn-person-t b { font-weight: 500; font-size: 15px; line-height: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qn-person-t small { font-size: 12px; color: var(--ink-muted); }
+.qn-tm-chip { flex: none; padding: 3px 10px; border-radius: var(--radius-pill); font-size: 12px; line-height: 16px; }
+.qn-person-sc { display: flex; flex-direction: column; gap: 2px; font-size: 13px; line-height: 18px; color: var(--ink); }
+.qn-person-sc i { font-style: normal; color: var(--ink-muted); }
+.qn-person-go { display: flex; align-items: center; justify-content: flex-end; gap: 8px; font-size: 13px; color: var(--red-text); }
+.qn-person-go::after { content: '→'; }
+.qn-ai-chip { padding: 2px 8px; border-radius: var(--radius-pill); background: var(--blue-soft); color: var(--blue-text); font-size: 11px; }
+.qn-res-top { display: grid; grid-template-columns: minmax(0, 220px) minmax(0, 1fr); gap: var(--space-4); align-items: start; }
+.qn-temper { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border-radius: var(--radius-md); }
+.qn-temper .lor-eyebrow { color: inherit; opacity: .8; }
+.qn-temper b { font-size: 24px; line-height: 30px; font-weight: 400; }
+.qn-temper p { margin: 0; font-size: 13px; line-height: 19px; }
+.qn-bars { display: flex; flex-direction: column; gap: 12px; }
+.qn-bar { display: flex; flex-direction: column; gap: 4px; }
+.qn-bar-top { display: flex; justify-content: space-between; gap: 8px; font-size: 14px; line-height: 20px; }
+.qn-bar-n { font-variant-numeric: tabular-nums; color: var(--ink-muted); }
+.qn-bar-band { font-size: 13px; line-height: 18px; color: var(--ink); }
+.qn-bar-band small { color: var(--ink-muted); font-size: 12px; }
+.qn-ai { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border: var(--hairline) solid var(--line); border-radius: var(--radius-md); background: var(--surface); }
+.qn-ai-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.qn-ai-body { display: flex; flex-direction: column; gap: 10px; }
+.qn-ai-sec b { display: block; font-weight: 500; font-size: 13px; line-height: 18px; color: var(--ink-muted); margin-bottom: 2px; }
+.qn-ai-sec p { margin: 0; font-size: 14px; line-height: 21px; }
+.qn-ai-sec ul { margin: 0; padding-left: 18px; font-size: 14px; line-height: 21px; }
+.qn-scales { gap: var(--space-3); }
+.qn-sc-card { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: var(--hairline) solid var(--line); border-radius: var(--radius-md); background: var(--surface-sunken); }
+.qn-sc-name { flex: 1; min-width: 0; height: 38px; }
+.qn-bands { display: flex; flex-direction: column; gap: 6px; }
+.qn-band { display: flex; align-items: center; gap: 8px; }
+.qn-band .lor-input { height: 36px; }
+.qn-band .lor-input:not(.qn-pts) { flex: 1; min-width: 0; }
+.qn-pts { flex: none; width: 72px; text-align: center; font-variant-numeric: tabular-nums; }
+.qn-tm-cfg { display: flex; flex-direction: column; gap: 10px; padding-top: var(--space-3); border-top: var(--hairline) solid var(--line); }
+.qn-tm-row { display: flex; flex-direction: column; gap: 10px; }
+.qn-tm-axis { display: flex; flex-direction: column; gap: 4px; }
+.qn-scale-sel { min-width: 170px; }
+@media (max-width: 760px) {
+  .qn-res-top { grid-template-columns: 1fr; }
+  .qn-tm-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

@@ -414,7 +414,7 @@ const pickN = n => ({ userId: n.userId, kind: n.kind, route: n.route, err: n.err
 test('since: та же версия — без данных; после правки — новое состояние', () => {
   const { D, A } = platform();
   const v = D({ action: 'load' });
-  assert.deepEqual(D({ action: 'since', rev: v.rev }), { ok: true, v: 13, ai: false, rev: v.rev, same: true });
+  assert.deepEqual(D({ action: 'since', rev: v.rev }), { ok: true, v: 14, ai: false, rev: v.rev, same: true });
   A({ action: 'patch', ops: [{ op: 'set', path: ['notifications', { id: 9 }], value: { id: 9, userId: 10427, text: 'yangi' }, after: null }] });
   const n = D({ action: 'since', rev: v.rev });
   assert.equal(n.rev, v.rev + 1); assert.equal(n.state.notifications[0].text, 'yangi');
@@ -790,4 +790,14 @@ test('«Savolnoma»: ответы — в своей карточке; колле
   assert.equal(Z({ action: 'load' }).state.users.find(u => u.id === 10427).qa, undefined, 'коллега ответов не видит');
   assert.equal(Z({ action: 'patch', ops: [{ op: 'set', path: ['users', { id: 10427 }, 'qa'], value: { answers: {}, at: 2 } }] }).rejected.length, 1, 'чужие ответы не записать');
   assert.equal(D({ action: 'patch', ops: [{ op: 'set', path: ['settings', 'questionnaire'], value: { on: false } }] }).rejected.length, 1, 'сотрудник вопросы не меняет');
+});
+
+test('вывод по анкете (users[].qaReport, v14): пишут и видят CEO и SOP-менеджер; сотрудник — ни в своей карточке, ни записать', () => {
+  const { A, D, Z } = platform();
+  const rep = { at: 1, by: 'sop', data: { temperament: 'Sangvinik', summary: 'ochiq' } };
+  assert.deepEqual(rejected(A({ action: 'patch', ops: [{ op: 'set', path: ['users', { id: 10427 }, 'qaReport'], value: rep }] })), []);
+  assert.equal(A({ action: 'load' }).state.users.find(u => u.id === 10427).qaReport.data.temperament, 'Sangvinik');
+  assert.equal(D({ action: 'load' }).state.users.find(u => u.id === 10427).qaReport, undefined, 'сотрудник свой вывод не видит');
+  assert.equal(Z({ action: 'load' }).state.users.find(u => u.id === 10427).qaReport, undefined, 'коллега — тоже');
+  assert.equal(D({ action: 'patch', ops: [{ op: 'set', path: ['users', { id: 10427 }, 'qaReport'], value: { data: {} } }] }).rejected.length, 1, 'и не пишет его');
 });

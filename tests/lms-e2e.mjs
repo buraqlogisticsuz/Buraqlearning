@@ -22,7 +22,9 @@ const step = (s) => console.log('· ' + s);
 // Claude API на заглушке: ИИ-наставник отвечает по последнему вопросу
 const aiCalls = [];
 const srv = await startDevServer({ fetch: (url, body) => { aiCalls.push(body); const q = body.messages[body.messages.length - 1].content;
-  return { body: { model: body.model, stop_reason: 'end_turn', usage: { input_tokens: 10, output_tokens: 5 }, content: [{ type: 'text', text: 'Javob: ' + q }] } }; } });
+  // вывод по анкете (HR-psixolog) — JSON, как просит страница
+  const text = /HR-psixolog/.test(q) ? JSON.stringify({ temperament: 'Flegmatik — xotirjam va puxta', summary: 'Puxta, barqaror xodim', strengths: ['Barqarorlik'], growth: ['Tezlik'], motivation: 'Aniq maqsad', communication: 'Xotirjam', management: ['Vaqt bering'], roles: 'Hujjatlar bilan ishlash' }) : 'Javob: ' + q;
+  return { body: { model: body.model, stop_reason: 'end_turn', usage: { input_tokens: 10, output_tokens: 5 }, content: [{ type: 'text', text }] } }; } });
 const browser = await pw.chromium.launch();
 const errors = [];
 let offline = false;   // ошибки сети, пока /exec выключен нарочно, — ожидаемые
@@ -762,15 +764,23 @@ try {
 
   // ---------- «Savolnoma»: SOP-менеджер добавляет вопросы списком (варианты, раздел, оценка); сотрудник заполняет; ответы видит SOP ----------
   await nav(A, 'cms'); await A.locator('.lor-tab').filter({ hasText: 'Savolnoma' }).click(); await A.waitForTimeout(300);
-  await A.locator('.qn-imp button').click();
+  await A.locator('.qn-edit:not(.qn-scales) .qn-imp button').click();
   await A.fill('#f-qn-paste', '1. Nega aynan BURAQ Logistics’ni tanladingiz?\n2. Qaysi ish formati sizga qulay?\n- Ofisda\n- Masofadan\n# Tajriba\n3. Logistikadagi tajribangizni baholang');
   await A.locator('.qn-paste-act .lor-btn-primary').click();
   assert.equal(await A.locator('.qn-item').count(), 4, 'три вопроса и раздел');
   await A.locator('.qn-item').nth(3).locator('select.qn-type').selectOption('scale');
+  // шкалы: шаблон темперамента (экстраверсия, нейротизм, искренность); вопрос 2 → экстраверсия (Ofisda = 1), оценка → нейротизм
+  await A.locator('.qn-scales .qn-imp button').first().click();
+  assert.equal(await A.locator('.qn-sc-card').count(), 3, 'шаблон — три шкалы');
+  await A.locator('.qn-item').nth(1).locator('select.qn-scale-sel').selectOption({ label: 'Shkala: Ekstraversiya' });
+  await A.locator('.qn-item').nth(1).locator('input.qn-pts').first().fill('1');
+  await A.locator('.qn-item').nth(3).locator('select.qn-scale-sel').selectOption({ label: 'Shkala: Neyrotizm (emotsional beqarorlik)' });
   await A.locator('.qn-admin .in-actions .lor-btn-primary').click(); await settle(A);
   { const q = srv.g.state().settings.questionnaire;
     assert.deepEqual(q.questions.map(x => x.type), ['long', 'one', 'section', 'scale']);
-    assert.deepEqual(q.questions[1].options, ['Ofisda', 'Masofadan'], 'строки «- …» — варианты'); }
+    assert.deepEqual(q.questions[1].options, ['Ofisda', 'Masofadan'], 'строки «- …» — варианты');
+    assert.equal(q.scales.length, 3); assert.ok(q.temper && q.temper.e === q.scales[0].id && q.temper.n === q.scales[1].id, 'темперамент — по экстраверсии и нейротизму');
+    assert.deepEqual([q.questions[1].scale, q.questions[1].pts, q.questions[3].scale], [q.scales[0].id, [1, 0], q.scales[1].id], 'баллы вариантов — в вопросе'); }
   await A.locator('.qn-item').first().scrollIntoViewIfNeeded(); await shot(A, 'savolnoma-kontent');
   await A.locator('.lor-tab').filter({ hasText: 'Darslar' }).click();
   await E.reload({ waitUntil: 'networkidle' }); await watchSync(E); await E.waitForTimeout(1500);
@@ -790,10 +800,22 @@ try {
   assert.equal(await E.locator('.qn-banner').count(), 0, 'напоминания больше нет');
   await A.reload({ waitUntil: 'networkidle' }); await watchSync(A);
   await nav(A, 'cms'); await A.locator('.lor-tab').filter({ hasText: 'Savolnoma' }).click(); await A.waitForTimeout(300);
-  await A.locator('.qn-who').first().click();
-  assert.match(await A.locator('.qn-ans').innerText(), /Masofadan/, 'SOP-менеджер видит ответы');
+  // «Natijalar»: Masofadan → экстраверсия 0, оценка 4 → нейротизм 4: оба ниже средней точки (12) — флегматик
+  assert.equal(await A.locator('.qn-tm-cell.is-phlegmatic b').innerText(), '1', 'в коллективе — один флегматик');
+  assert.match(await A.locator('.qn-person').first().innerText(), /Flegmatik/);
+  await shot(A, 'savolnoma-natijalar');
+  await A.locator('.qn-person').first().click();
+  const qnCard = await A.locator('.qn-ans').innerText();
+  assert.ok(/Masofadan/.test(qnCard) && /Flegmatik/.test(qnCard), 'SOP-менеджер видит ответы и темперамент');
+  await A.locator('.qn-ai button').click();
+  await A.locator('.qn-ai-body').waitFor({ timeout: 8000 });
+  assert.match(await A.locator('.qn-ai-body').innerText(), /Puxta, barqaror xodim/, 'вывод ИИ — в карточке');
+  await settle(A);
+  assert.equal(srv.g.state().users.find(u => u.id === emp.id).qaReport.data.roles, 'Hujjatlar bilan ishlash', 'вывод ИИ — на сервере');
+  assert.equal(await E.evaluate(id => LmsClient.sync().then(() => (LmsClient.initial().users.find(u => u.id === id) || {}).qaReport), emp.id).catch(() => undefined), undefined, 'сотрудник вывода не видит');
   await A.waitForTimeout(450); await shot(A, 'savolnoma-javoblar');
   await A.locator('.qn-ans .lor-modal-x').click();
+  await A.locator('.qn-views .seg button').nth(1).click();
   // вопросы из Word: заголовки — разделы, маркированный список — варианты к вопросу выше (не сохраняем — только проверка)
   const qn0 = await A.locator('.qn-item').count();
   await A.setInputFiles('#qn-docx', { name: 'savollar.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', buffer: docx });
@@ -802,7 +824,7 @@ try {
   assert.ok(await A.locator('.qn-item-opt input[value="Birinchi band"]').count(), 'маркированный список — варианты');
   assert.ok(await A.locator('.in-dirty').count(), 'до «Saqlash» — «не сохранено»');
   await A.locator('.lor-tab').filter({ hasText: 'Darslar' }).click();
-  step('«Savolnoma»: SOP-менеджер добавил вопросы списком (варианты, раздел, оценка 1–5), сотрудник заполнил обязательные, SOP-менеджер видит ответы; вопросы из Word');
+  step('«Savolnoma»: SOP-менеджер добавил вопросы списком (варианты, раздел, оценка 1–5), сотрудник заполнил обязательные; результаты: шкалы, темперамент, вывод ИИ (сотруднику не виден); вопросы из Word');
 
   // ---------- демо больше нет: ?demo=1 — тот же вход на сервер; без адреса сервера — «Server ulanmagan» ----------
   const D = await device('бывшее демо', '?demo=1');

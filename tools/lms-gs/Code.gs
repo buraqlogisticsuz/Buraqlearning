@@ -20,7 +20,7 @@
  *
  * Запрос — POST с JSON { action, token, … }, ответ — JSON { ok, … } или { ok: false, code, error }.
  */
-var LMS_VERSION = 13;          // 2: файлы — отдельно на Диске, действие file; 3: ИИ через Claude API (действие ai);
+var LMS_VERSION = 14;          // 2: файлы — отдельно на Диске, действие file; 3: ИИ через Claude API (действие ai);
                                // 4: адресаты идей — CEO, Project Manager, руководитель компании (свой вход, role 'leader');
                                // 5: у идеи несколько адресатов (to — список), repliedBy — кто ответил;
                                // 6: свой профиль — имя и фото, смена логина и пароля (действие account);
@@ -31,6 +31,7 @@ var LMS_VERSION = 13;          // 2: файлы — отдельно на Дис
                                // 11: раздел курса для выбранных сотрудников (section.users) — остальным не отдаётся
                                // 12: кто проходит главу — section.aud: все, должности, отделы, имена
                                // 13: приход/уход сотрудник отмечает в программе (действие clock), время ставит сервер
+                               // 14: вывод по анкете (users[].qaReport) — только CEO, SOP-менеджеру и руководителю, сотрудник его не видит и не пишет
 var PBKDF2_ITER = 10000;          // пароль хранится только как PBKDF2-SHA256 с солью
 var SESSION_DAYS = 30;            // вход на устройстве живёт 30 дней с последнего запроса
 var FAIL_MAX = 5, FAIL_LOCK_MIN = 15;  // 5 неверных паролей подряд — логин закрыт на 15 минут
@@ -338,6 +339,8 @@ function canSee_(u, a) {
   return true;
 }
 
+/* своя карточка — целиком, кроме вывода руководства по анкете (qaReport): его видят только CEO, SOP-менеджер и руководитель */
+function ownCard_(u) { var c = clone_(u); delete c.qaReport; return c; }
 function viewFor_(st, me) {
   var lv = lvl_(me);
   if (lv === 'pm') return leaderView_(st, me);
@@ -368,7 +371,7 @@ function viewFor_(st, me) {
     });
   });
   v.users = (st.users || []).map(function (u) {
-    if (String(u.id) === uid) return clone_(u);
+    if (String(u.id) === uid) return ownCard_(u);
     var p = pick_(u, PUBLIC_USER);
     if (u.pulse) p.pulse = { n: u.pulse.n || 0 };   // для рейтинга — только число опросов
     return p;
@@ -425,7 +428,7 @@ function leaderView_(st, me) {
   delete v.rev;
   v.v = st.v; v.seq = st.seq;
   v.levels = clone_(st.levels || []); v.settings = clone_(st.settings || {});
-  v.users = (st.users || []).map(function (u) { return String(u.id) === uid ? clone_(u) : pick_(u, PUBLIC_USER); });
+  v.users = (st.users || []).map(function (u) { return String(u.id) === uid ? ownCard_(u) : pick_(u, PUBLIC_USER); });
   v.initiatives = (st.initiatives || []).filter(function (x) { return iniTo_(x).indexOf(me.post) >= 0; }).map(clone_);
   v.notifications = own_(st.notifications, 'userId', uid).map(clone_);
   return v;
@@ -434,7 +437,7 @@ function leaderView_(st, me) {
 /* ---------------- правки ---------------- */
 
 // поля своей карточки, которые сотрудник не меняет сам (их ставит SOP-менеджер)
-var LOCKED_USER = ['id', 'role', 'post', 'login', 'password', 'tg', 'status', 'position', 'department', 'cohort', 'trackId', 'mentor', 'level', 'levelXpBase', 'levelAt', 'levelTasks', 'startedAt'];
+var LOCKED_USER = ['id', 'role', 'post', 'login', 'password', 'tg', 'status', 'position', 'department', 'cohort', 'trackId', 'mentor', 'level', 'levelXpBase', 'levelAt', 'levelTasks', 'startedAt', 'qaReport'];
 // списки «своих» записей: поле владельца
 var OWN = { requests: 'userId', notifications: 'userId', assets: 'uid', surveys: 'uid', initiatives: 'uid', drills: 'uid', audit: 'userId', errors: 'uid', xtasks: 'uid' };
 // поля своих записей, которые ставит SOP-менеджер или наставник
