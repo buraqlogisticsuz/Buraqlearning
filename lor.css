@@ -114,8 +114,9 @@ textarea.lor-input { height: auto; min-height: 104px; padding: 12px 14px; line-h
 /* ---------- App header ---------- */
 .lor-header { background: var(--navy); color: var(--on-navy); border-bottom: var(--hairline) solid var(--red); }
 .lor-header-in { height: 64px; display: flex; align-items: center; gap: var(--space-6); padding: 0 var(--space-6); }
-.lor-header-logo { height: 30px; width: auto; display: block; }
-.lor-header-app { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: #ffffffcc; padding-left: var(--space-4); border-left: var(--hairline) solid #ffffff40; }
+.lor-header-brand { display: flex; flex-direction: column; align-items: flex-start; gap: 7px; flex: none; }
+.lor-header-logo { height: 28px; width: auto; display: block; }
+.lor-header-app { font-size: 10.5px; line-height: 12px; letter-spacing: .14em; text-transform: uppercase; color: #ffffffcc; white-space: nowrap; }
 .lor-header-nav { display: flex; gap: var(--space-4); margin-left: var(--space-4); }
 .lor-header-nav a { color: #ffffffcc; text-decoration: none; font-size: 14px; padding: 6px 0; border-bottom: 2px solid transparent; }
 .lor-header-nav a.is-on { color: var(--white); border-bottom-color: var(--red); }
@@ -342,7 +343,7 @@ code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; 
 .app-body { display: grid; grid-template-columns: 300px minmax(0, 1fr); min-height: calc(100vh - 65px); }
 .app-body.no-side { grid-template-columns: minmax(0, 1fr); }
 .app-side { background: var(--surface-sunken); border-right: var(--hairline) solid var(--line); }
-.app-side .lor-tree { width: auto; position: sticky; top: 65px; max-height: calc(100vh - 65px); overflow: auto; }
+.app-side .lor-tree { width: auto; position: sticky; top: var(--hdr-h, 65px); max-height: calc(100vh - var(--hdr-h, 65px)); overflow: auto; }
 .app-main { min-width: 0; padding-block: var(--space-6) var(--space-8); padding-inline: var(--space-6); display: flex; flex-direction: column; gap: var(--space-6); }
 .app-wrap { width: 100%; max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: var(--space-6); }
 .page-head { display: flex; justify-content: space-between; align-items: flex-end; gap: var(--space-4); flex-wrap: wrap; }
@@ -426,7 +427,7 @@ code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; 
 
 /* cms */
 .cms { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: var(--space-4); align-items: start; }
-.cms-tree { background: var(--surface-sunken); border-radius: var(--radius-lg); padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-4); position: sticky; top: 81px; max-height: calc(100vh - 97px); overflow: auto; }
+.cms-tree { background: var(--surface-sunken); border-radius: var(--radius-lg); padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-4); position: sticky; top: calc(var(--hdr-h, 65px) + 16px); max-height: calc(100vh - var(--hdr-h, 65px) - 32px); overflow: auto; }
 .cms-sec { display: flex; flex-direction: column; gap: var(--space-2); padding-bottom: var(--space-3); border-bottom: var(--hairline) solid var(--line); }
 .cms-sec-title { height: 36px; font-size: 13px; font-weight: 500; letter-spacing: .04em; text-transform: uppercase; }
 .cms-sec ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
@@ -448,7 +449,7 @@ code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; 
 
 @media (max-width: 960px) {
   .app-body { grid-template-columns: minmax(0, 1fr); }
-  .app-side { display: none; position: fixed; left: 0; right: 0; bottom: 0; top: calc(65px + env(safe-area-inset-top, 0px)); z-index: 25; overflow: auto; border-right: 0; }
+  .app-side { display: none; position: fixed; left: 0; right: 0; bottom: 0; top: calc(var(--hdr-h, 65px) + env(safe-area-inset-top, 0px)); z-index: 25; overflow: auto; border-right: 0; }
   .app-side.is-open { display: block; }
   .app-side .lor-tree { position: static; max-height: none; }
   .app-menu-btn { display: inline-flex; }
@@ -459,10 +460,6 @@ code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; 
 }
 @media (max-width: 760px) {
   .app-header .lor-header-in { gap: var(--space-2); padding: 0 var(--space-4); }
-  .app-side { top: calc(106px + env(safe-area-inset-top, 0px)); }
-  .app-subnav { display: flex; gap: var(--space-4); overflow-x: auto; padding: 0 var(--space-4); border-top: var(--hairline) solid #ffffff26; }
-  .app-subnav a { color: #ffffffcc; text-decoration: none; font-size: 14px; padding: 10px 0; border-bottom: 2px solid transparent; white-space: nowrap; }
-  .app-subnav a.is-on { color: var(--white); border-bottom-color: var(--red); }
   .app-user-txt, .lor-user-av { display: none; }
   .app-main { padding-inline: var(--space-4); }
   .box { padding: var(--space-4); }
@@ -475,7 +472,6 @@ code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; 
   .lor-tabs { padding: 0 var(--space-4); gap: var(--space-4); }
 }
 @media (max-width: 480px) {
-  .app-header .lor-header-logo { height: 24px; }
   .app-logout { padding: 0 10px; }
   .app-header .lor-lang button { min-width: 30px; padding: 0 6px; }
   .mini-stats b { font-size: 22px; }
@@ -1212,18 +1208,6 @@ code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; 
 /* user menu links with counters */
 .user-pop-links button { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 
-/* admin header with many sections: move nav to the second row earlier */
-@media (max-width: 1320px) {
-  .app-header.is-wide .lor-header-app { display: none; }
-  .app-header.is-wide .lor-header-nav { gap: 14px; margin-left: 4px; }
-}
-@media (max-width: 1520px) {
-  .app-header.is-wide .lor-header-nav { display: none; }
-  .app-header.is-wide .app-subnav { display: flex; gap: var(--space-4); overflow-x: auto; padding: 0 var(--space-6); border-top: var(--hairline) solid #ffffff26; }
-  .app-header.is-wide .app-subnav a { color: #ffffffcc; text-decoration: none; font-size: 14px; padding: 10px 0; border-bottom: 2px solid transparent; white-space: nowrap; }
-  .app-header.is-wide .app-subnav a.is-on { color: var(--white); border-bottom-color: var(--red); }
-  .app-header.is-wide ~ .app-body .cms-tree { top: 122px; max-height: calc(100vh - 138px); }
-}
 @media (max-width: 1100px) {
   .app-header .today-chip { display: none; }
 }
@@ -1252,7 +1236,6 @@ code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; 
   .pulse-bubble { right: 12px; left: 12px; width: auto; bottom: calc(72px + env(safe-area-inset-bottom, 0px)); }
   .mood-trend { height: 160px; gap: 6px; }
   .as-cards { grid-template-columns: minmax(0, 1fr); }
-  .app-header.is-wide .app-subnav { padding: 0 var(--space-4); }
 }
 @media (prefers-reduced-motion: reduce) { .ini-btn, .pulse-bubble, .ini-done-ico, .sv-dots i { animation: none !important; } }
 
@@ -1286,7 +1269,6 @@ code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; 
 .lor-table .lor-emp { min-width: 170px; }
 /* tablet widths: keep the employee header on one line */
 .lor-header-nav a { white-space: nowrap; }
-@media (max-width: 1100px) { .app-header .lor-header-app { display: none; } }
 @media (max-width: 920px) {
   .app-header .ini-btn:not(.big) { width: 38px; padding: 0; justify-content: center; }
   .app-header .ini-btn:not(.big) span { display: none; }
@@ -1423,7 +1405,6 @@ code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; 
 }
 .lor-header-app, .app-user-txt, .app-user-txt small { white-space: nowrap; }
 .app-user-txt { overflow: hidden; text-overflow: ellipsis; max-width: 190px; }
-@media (max-width: 1250px) { .app-header .lor-header-app { display: none; } }
 /* header: let the name and the nav shrink instead of pushing past the right edge */
 .app-header .lor-header-logo, .app-header .lor-lang, .app-header .bell-wrap, .app-header .app-menu-btn, .app-header .ini-btn, .app-header .today-chip { flex: none; }
 .app-header .lor-header-nav, .app-header .user-wrap, .app-header .user-btn, .app-header .app-user-txt { min-width: 0; }
@@ -1431,11 +1412,8 @@ code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; 
 .app-header .app-user-txt { flex: 0 1 auto; }
 /* the medal badge hangs outside the avatar — keep it inside the viewport on narrow screens */
 @media (max-width: 760px) { .app-header .av-wrap .av-medal { right: -4px; bottom: -4px; } }
-/* header fits at every width in all three languages: drop the decorative label first, then the goal chip */
-@media (max-width: 1400px) { .app-header .lor-header-app { display: none; } }
+/* header fits at every width in all languages: the goal chip goes first (the menu takes its own row by itself) */
 @media (max-width: 1300px) { .app-header .today-chip { display: none; } }
-.app-header .lor-header-nav { overflow-x: auto; scrollbar-width: none; }
-.app-header .lor-header-nav::-webkit-scrollbar { display: none; }
 
 /* =================== career ladder: growth requirements and perks =================== */
 .grow-box { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-radius: var(--radius-md); background: var(--surface-sunken); }
@@ -1681,7 +1659,7 @@ code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; 
 }
 /* very narrow phones: the idea button lives on the home card and in the menu */
 @media (max-width: 400px) { .app-header .ini-btn { display: none; } }
-@media (max-width: 360px) { .app-header .lor-header-logo { height: 20px; } .app-header .app-menu-btn { width: 30px; min-width: 30px; } .app-header .bell-wrap .bell-btn { width: 30px; } }
+@media (max-width: 360px) { .app-header .app-menu-btn { width: 30px; min-width: 30px; } .app-header .bell-wrap .bell-btn { width: 30px; } }
 @media (max-width: 360px) { .app-header .app-header-in, .app-header .lor-header-in { gap: 6px; } .app-header .user-btn .app-user-txt { display: none; } }
 
 /* ---------- the manual: tour, help centre, “?” tips ---------- */
@@ -1955,9 +1933,6 @@ body, .app-side, .box, .lor-input, .lor-tree { transition: background-color var(
 .sr-note-ic { flex: none; color: var(--red); }
 .sr-note .perk-fold { margin-top: 6px; }
 .risk-ai { display: flex; flex-direction: column; gap: 8px; }
-/* the admin menu has nine items: below this it takes its own full-width row instead of being clipped */
-@media (max-width: 1520px) { .app-header.is-wide .lor-header-app { display: none; } }
-@media (max-width: 1600px) { .app-header.is-wide .lor-header-nav { gap: 12px; margin-left: 10px; } }
 /* the expanded employee row keeps its content inside the viewport, not the wide table */
 .sp-detail { position: sticky; left: 0; max-width: min(1120px, calc(100vw - 48px)); }
 
@@ -2198,16 +2173,6 @@ body, .login-page, .lor-lesson, .app-lesson { background: transparent; }
                     radial-gradient(360px 300px at 100% 100%, rgba(222, 4, 65, .22), rgba(222, 4, 65, 0) 70%);
 }
 
-/* the employee menu moves to its own row before it starts to crowd the header */
-@media (max-width: 1500px) { .app-header:not(.is-wide) .lor-header-app { display: none; } }
-@media (max-width: 1280px) {
-  .app-header:not(.is-wide) .lor-header-nav { display: none; }
-  .app-header:not(.is-wide) .app-subnav { display: flex; gap: var(--space-4); overflow-x: auto; padding: 0 var(--space-6); border-top: var(--hairline) solid #ffffff26; }
-  .app-header:not(.is-wide) .app-subnav a { color: #ffffffcc; text-decoration: none; font-size: 14px; padding: 10px 0; border-bottom: 2px solid transparent; white-space: nowrap; }
-  .app-header:not(.is-wide) .app-subnav a.is-on { color: var(--white); border-bottom-color: var(--red); }
-  .app-header:not(.is-wide) ~ .app-body .lor-tree { top: 106px; max-height: calc(100vh - 106px); }
-}
-@media (max-width: 960px) and (min-width: 761px) { .app-side { top: calc(106px + env(safe-area-inset-top, 0px)); } }
 
 /* aliases: a few blocks were written against older token names, and the
    gold tier is gone — everything maps onto the five brand colours now */
@@ -2301,12 +2266,6 @@ body::before {
   /* the contents drawer covers the page, so it has to be readable, not frosted */
   .app-side { background: var(--glass-drawer); overscroll-behavior: contain; }
 
-  /* one row of menu that scrolls: fade the right edge so it is clearly scrollable */
-  .app-subnav { font-size: 13px; scrollbar-width: none; -webkit-overflow-scrolling: touch;
-    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 26px), transparent);
-    mask-image: linear-gradient(90deg, #000 calc(100% - 26px), transparent); }
-  .app-subnav::-webkit-scrollbar { display: none; }
-  .app-subnav a { padding: 11px 0; }
   .lor-tabs, .lor-table-wrap, .sop-body table { -webkit-overflow-scrolling: touch; scrollbar-width: none; }
   .lor-tabs::-webkit-scrollbar, .lor-table-wrap::-webkit-scrollbar { display: none; }
 
@@ -2359,7 +2318,6 @@ body::before {
 /* small phones: the header has six controls and about 300 px to put them in */
 @media (max-width: 420px) {
   .app-header .lor-header-in { gap: 6px; padding: 0 10px; }
-  .app-header .lor-header-logo { height: 22px; }
   .app-header .lor-lang { padding: 2px; }
   .app-header .lor-lang button { min-width: 26px; padding: 0 4px; height: 24px; font-size: 11px; }
   .app-header .lor-bell, .app-header .search-btn, .app-header .app-menu-btn { width: 30px; height: 30px; }
@@ -4161,3 +4119,43 @@ select.lor-input.slim:not([multiple]) { background-position: right 10px center; 
 .qn-pair-near { font-size: 12px; line-height: 16px; color: var(--red-text); }
 @media (max-width: 640px) { .qn-q-head .qn-q-retake { margin-left: 0; } }
 @media print { .qn-q-raw { display: none; } }
+
+/* =================== шапка кабинетов: подпись под логотипом, крупное меню без обрезанных слов ===================
+   Логотип и «O‘quv platformasi» — один блок: подпись мелким капсом под логотипом, по его левому краю, с охранным полем
+   (≈ половина высоты букв BURAQ). Меню — 16 px; в строке шапки оно, только пока все пункты помещаются целиком
+   (решает сама шапка, см. Header в app.js), иначе — своей строкой под шапкой: на компьютере пункты переносятся,
+   на телефоне строка прокручивается, у края с ещё скрытыми пунктами — затухание. Красная черта открытого пункта
+   лежит на красной линии под шапкой. */
+.app-header { --logo-h: 28px; }
+.app-header .lor-header-in { height: 64px; }
+.app-header .lor-header-brand { flex: 0 1 auto; min-width: calc(var(--logo-h) * 2.904); gap: 7px; }
+.app-header .lor-header-logo { height: var(--logo-h); width: auto; }
+.app-header .lor-header-app { display: block; max-width: 100%; overflow: hidden; padding: 0; border: 0; }
+.app-header.no-cap .lor-header-app { visibility: hidden; height: 0; }
+.app-header.no-cap .lor-header-brand { gap: 0; }
+.app-header .lor-header-nav { display: flex; flex: 1 1 0; min-width: 0; align-self: stretch; gap: 26px; margin-left: 20px; overflow: hidden; }
+.app-header.is-stacked .lor-header-nav { visibility: hidden; }
+.app-header .app-subnav { display: none; }
+.app-header.is-stacked .app-subnav { display: flex; flex-wrap: wrap; column-gap: 26px; row-gap: 0; padding: 0 var(--space-6); border-top: var(--hairline) solid #ffffff26; }
+.app-header .lor-header-nav a, .app-header .app-subnav a { display: inline-flex; align-items: center; flex: none; font-size: 16px; line-height: 22px; color: #ffffffcc; text-decoration: none; white-space: nowrap; padding: 0 1px; border: 0; }
+.app-header .app-subnav a { padding: 12px 1px; }
+.app-header .lor-header-nav a.is-on, .app-header .app-subnav a.is-on { color: var(--white); }
+.app-header .lor-header-nav a::after, .app-header .app-subnav a::after { bottom: 0; }
+.app-header .lor-header-nav a:focus-visible, .app-header .app-subnav a:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--white); border-radius: var(--radius-sm); }
+.app-header .app-navcount { margin-left: 7px; }
+@media (max-width: 760px) {
+  .app-header .lor-header-brand { gap: 6px; }
+  .app-header .user-wrap { flex: none; }
+  .app-header .lor-header-app { font-size: 9.5px; line-height: 11px; letter-spacing: .1em; }
+  .app-header .lor-header-nav { margin-left: 0; }
+  .app-header.is-stacked .app-subnav { flex-wrap: nowrap; overflow-x: auto; column-gap: 24px; padding: 0 var(--space-4); scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .app-header .app-subnav::-webkit-scrollbar { display: none; }
+  .app-header .app-subnav a { padding: 11px 1px; }
+  .app-header .app-subnav[data-fade="r"] { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent); }
+  .app-header .app-subnav[data-fade="l"] { -webkit-mask-image: linear-gradient(90deg, transparent, #000 28px); mask-image: linear-gradient(90deg, transparent, #000 28px); }
+  .app-header .app-subnav[data-fade="lr"] { -webkit-mask-image: linear-gradient(90deg, transparent, #000 28px, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(90deg, transparent, #000 28px, #000 calc(100% - 28px), transparent); }
+}
+:root[lang="zh"] .lor-header-app { letter-spacing: .08em; }
+@media (max-width: 480px) { .app-header { --logo-h: 24px; } }
+@media (max-width: 420px) { .app-header { --logo-h: 22px; } .app-header.is-stacked .app-subnav { padding: 0 10px; column-gap: 22px; } }
+@media (max-width: 360px) { .app-header { --logo-h: 20px; } }

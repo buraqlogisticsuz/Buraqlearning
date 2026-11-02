@@ -2,7 +2,7 @@ var LOGO_W = 'buraq-brand/logo/buraq-logo-white.svg';
 var TOUCH_ICON = 'icons/apple-touch-icon.png';
 (function () {
   var R = React, h = R.createElement, F = R.Fragment;
-  var useState = R.useState, useEffect = R.useEffect, useRef = R.useRef;
+  var useState = R.useState, useEffect = R.useEffect, useRef = R.useRef, useLayoutEffect = R.useLayoutEffect;
   var Btn = LOR.Button, Badge = LOR.StatusBadge, Arrow = LOR.Arrow, Icon = LOR.Icon, Progress = LOR.ProgressBar;
   var PASS_MARK = 80;
   /* the server (lms-client.js), its address is in config.js. Without it the page only says so — there is no demo any more */
@@ -4539,7 +4539,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     ]
   };
 
-  function seen(el) { if (!el) return false; var q = el.getBoundingClientRect(); return q.width > 4 && q.height > 4 && el.offsetParent !== null; }
+  function seen(el) { if (!el) return false; var q = el.getBoundingClientRect(); return q.width > 4 && q.height > 4 && el.offsetParent !== null && getComputedStyle(el).visibility !== 'hidden'; }
   function findStep(step) {
     for (var i = 0; i < step.sel.length; i++) { var el = document.querySelector(step.sel[i]); if (seen(el)) return el; }
     return null;
@@ -7292,14 +7292,55 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var mine = (p.notifs || []), unread = mine.filter(function (n) { return !n.read; }).length;
     var ref = useRef(null);
     useEffect(function () { if (!open) return; function off(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); } document.addEventListener('mousedown', off); return function () { document.removeEventListener('mousedown', off); }; }, [open]);
-    function navLinks(cls) { return p.nav ? h('nav', { className: cls, 'aria-label': 'Menu' }, p.nav.map(function (n) { return h('a', { key: n.key, href: '#' + n.key, className: n.active ? 'is-on' : '', 'aria-current': n.active ? 'page' : null, onClick: function (e) { e.preventDefault(); n.onClick(); } }, n.label, n.count ? h('span', { className: 'app-navcount' }, n.count) : null); })) : null; }
-    return h('header', { className: cx('lor-header app-header', p.wide && 'is-wide') },
+    /* меню в строке шапки — только пока все пункты помещаются целиком, иначе оно своей строкой под шапкой (app-subnav).
+       Спрятанная копия в строке остаётся на месте (visibility), поэтому проверка даёт один ответ в обоих видах — без
+       мигания. Так же и подпись под логотипом: видна, только если помещается в одну строку. Высота шапки — в --hdr-h
+       (по ней прилипают оглавление и дерево «Kontent»). */
+    var hdr = useRef(null), stk = useState(false), cap = useState(true), subW = useRef(0);
+    function fitHeader() {
+      var el = hdr.current; if (!el) return;
+      var nv = el.querySelector('.lor-header-nav'), cp = el.querySelector('.lor-header-app'), sub = el.querySelector('.app-subnav');
+      stk[1](!!nv && nv.scrollWidth > nv.clientWidth + 1);
+      cap[1](!cp || cp.scrollWidth <= cp.clientWidth + 1);
+      if (sub && sub.clientWidth !== subW.current) { subW.current = sub.clientWidth; showOn(sub); }   // ширина сменилась
+      if (sub) subFade(sub);
+      document.documentElement.style.setProperty('--hdr-h', el.offsetHeight + 'px');
+    }
+    /* открытый пункт в прокручиваемой строке меню всегда виден целиком (после перехода и смены ширины; прокрутку
+       рукой не трогает) */
+    function showOn(sub) {
+      var a = sub.querySelector('a.is-on');
+      if (!a || sub.scrollWidth <= sub.clientWidth + 1) return;
+      var x = a.offsetLeft - sub.offsetLeft, pad = 28;
+      if (x < sub.scrollLeft + pad) sub.scrollLeft = Math.max(0, x - pad);
+      else if (x + a.offsetWidth > sub.scrollLeft + sub.clientWidth - pad) sub.scrollLeft = x + a.offsetWidth - sub.clientWidth + pad;
+    }
+    /* строка меню, которая прокручивается: затухание у края, за которым ещё есть пункты */
+    function subFade(sub) {
+      var l = sub.scrollLeft > 2, r = sub.scrollLeft + sub.clientWidth < sub.scrollWidth - 2;
+      sub.setAttribute('data-fade', (l ? 'l' : '') + (r ? 'r' : ''));
+    }
+    useLayoutEffect(fitHeader);
+    useLayoutEffect(function () {
+      var el = hdr.current, raf = 0; if (!el) return;
+      function later() { if (!raf) raf = requestAnimationFrame(function () { raf = 0; fitHeader(); }); }
+      var ro = window.ResizeObserver ? new ResizeObserver(later) : null;
+      if (ro) { ro.observe(el); [].forEach.call(el.querySelectorAll('.lor-header-nav, .lor-header-nav a, .lor-header-brand'), function (x) { ro.observe(x); }); }
+      window.addEventListener('resize', later);
+      if (document.fonts && document.fonts.ready) document.fonts.ready.then(later);
+      return function () { if (ro) ro.disconnect(); window.removeEventListener('resize', later); if (raf) cancelAnimationFrame(raf); document.documentElement.style.removeProperty('--hdr-h'); };
+    }, []);
+    var onKey = (p.nav || []).filter(function (n) { return n.active; }).map(function (n) { return n.key; }).join();
+    useEffect(function () { var sub = hdr.current && hdr.current.querySelector('.app-subnav'); if (sub) { showOn(sub); subFade(sub); } }, [onKey, stk[0]]);
+    function navLinks(cls) { return p.nav ? h('nav', { className: cls, 'aria-label': 'Menu', 'aria-hidden': cls === 'lor-header-nav' && stk[0] ? true : null, onScroll: cls === 'app-subnav' ? function (e) { subFade(e.currentTarget); } : null }, p.nav.map(function (n) { return h('a', { key: n.key, href: '#' + n.key, className: n.active ? 'is-on' : '', 'aria-current': n.active ? 'page' : null, onClick: function (e) { e.preventDefault(); n.onClick(); } }, n.label, n.count ? h('span', { className: 'app-navcount' }, n.count) : null); })) : null; }
+    return h('header', { ref: hdr, className: cx('lor-header app-header', p.wide && 'is-wide', stk[0] && 'is-stacked', !cap[0] && 'no-cap') },
       h('div', { className: 'lor-header-in' },
         p.onMenu ? h('button', { type: 'button', className: 'app-menu-btn', onClick: p.onMenu, 'aria-label': t('contents') }, h(Burger)) : null,
-        h('img', { className: 'lor-header-logo', src: LOGO_W, alt: 'BURAQ logistics', width: 87, height: 30 }),
-        h('span', { className: 'lor-header-app' }, t('app')),
+        h('div', { className: 'lor-header-brand' },
+          h('img', { className: 'lor-header-logo', src: LOGO_W, alt: 'BURAQ logistics', width: 81, height: 28 }),
+          h('span', { className: 'lor-header-app' }, t('app'))),
         navLinks('lor-header-nav'),
-        h('span', { className: 'lor-header-sp' }),
+        p.nav ? null : h('span', { className: 'lor-header-sp' }),
         p.extra || null,
         p.onSearch ? h('button', { type: 'button', className: 'search-btn', 'aria-label': t('gs_title'), title: t('gs_title') + ' · Ctrl+K', onClick: p.onSearch }, h(Ico, { name: 'search', size: 17 })) : null,
         p.onHelp ? h('button', { type: 'button', className: 'help-btn', 'aria-label': t('nav_help'), title: t('nav_help'), onClick: p.onHelp }, '?') : null,

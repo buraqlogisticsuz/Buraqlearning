@@ -221,8 +221,9 @@
     var t = tr(p.lang), u = p.user || {};
     return h('header', { className: 'lor-header' },
       h('div', { className: 'lor-header-in' },
-        p.logoSrc ? h('img', { className: 'lor-header-logo', src: p.logoSrc, alt: 'BURAQ logistics' }) : null,
-        h('span', { className: 'lor-header-app' }, p.appName || t('app')),
+        h('div', { className: 'lor-header-brand' },   // подпись — под логотипом, по его левому краю
+          p.logoSrc ? h('img', { className: 'lor-header-logo', src: p.logoSrc, alt: 'BURAQ logistics' }) : null,
+          h('span', { className: 'lor-header-app' }, p.appName || t('app'))),
         p.nav ? h('nav', { className: 'lor-header-nav' }, p.nav.map(function (n, i) { return h('a', { key: i, href: n.href || '#', className: n.active ? 'is-on' : '' }, n.label); })) : null,
         h('span', { className: 'lor-header-sp' }),
         h(LangSwitch, { value: p.lang, onChange: p.onLang, inverse: true }),

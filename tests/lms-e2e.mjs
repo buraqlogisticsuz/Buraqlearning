@@ -51,6 +51,40 @@ async function signIn(p, login, password) {
 }
 const click = async (p, name, opts = {}) => { await p.getByRole('button', { name, exact: !!opts.exact }).first().click(); await p.waitForTimeout(opts.wait || 400); };
 const nav = async (p, hash) => { await p.locator('a[href="#' + hash + '"]:visible').first().click(); await p.waitForTimeout(600); };
+// шапка кабинета на разной ширине: «O‘quv platformasi» — под логотипом, по его левому краю, без черты-разделителя;
+// логотип не искажён; меню 16 px; ни один пункт не обрезан — в строке шапки только целиком, иначе меню своей строкой
+// (на компьютере переносится, на телефоне прокручивается, открытый пункт виден целиком); красная черта открытого
+// пункта — на нижнем краю его строки; --hdr-h — настоящая высота шапки; страница вбок не прокручивается
+async function checkHeader(p, tag) {
+  const vp = p.viewportSize();
+  for (const w of [1600, 1280, 1024, 390]) {
+    await p.setViewportSize({ width: w, height: 800 }); await p.waitForTimeout(300);
+    const r = await p.evaluate(() => {
+      const hd = document.querySelector('.app-header'), box = e => e.getBoundingClientRect();
+      const vis = e => !!e && getComputedStyle(e).display !== 'none' && getComputedStyle(e).visibility !== 'hidden';
+      const logo = hd.querySelector('.lor-header-logo'), cap = hd.querySelector('.lor-header-app'), inl = hd.querySelector('.lor-header-nav'), sub = hd.querySelector('.app-subnav');
+      const nv = vis(inl) ? inl : sub, N = box(nv), links = [...nv.querySelectorAll('a')], on = nv.querySelector('a.is-on'), L = box(logo), C = box(cap);
+      const rows = new Set(links.map(a => Math.round(box(a).top))).size, scrolls = getComputedStyle(nv).overflowX === 'auto';
+      return { inline: vis(inl), sub: vis(sub), capVis: vis(cap), capGap: C.top - L.bottom, capLeft: Math.abs(C.left - L.left), divider: getComputedStyle(cap).borderLeftWidth,
+        ratio: L.width / L.height, font: Math.min(...links.map(a => parseFloat(getComputedStyle(a).fontSize))), rows, scrolls,
+        cut: scrolls ? [] : links.filter(a => box(a).right > N.right + .5 || box(a).left < N.left - .5).map(a => a.textContent),
+        onSeen: !on || (box(on).left >= N.left - .5 && box(on).right <= N.right + .5),
+        line: on && rows === 1 ? Math.abs(box(on).bottom - N.bottom) : 0,
+        hdrH: parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--hdr-h')), hdH: box(hd).height, docW: document.documentElement.scrollWidth };
+    });
+    const at = tag + ' ' + w + 'px: ' + JSON.stringify(r);
+    assert.ok(r.inline !== r.sub, 'меню — либо в строке шапки, либо своей строкой: ' + at);
+    assert.ok(Math.abs(r.ratio - 526 / 181.15) < .05, 'логотип не искажён: ' + at);
+    if (w >= 1024) assert.ok(r.capVis, 'подпись видна: ' + at);
+    if (r.capVis) assert.ok(r.capGap >= 6 && r.capLeft < 1 && r.divider === '0px', 'подпись под логотипом, по левому краю, без черты: ' + at);
+    assert.ok(r.font >= 16, 'меню крупное: ' + at);
+    assert.deepEqual(r.cut, [], 'ни один пункт меню не обрезан: ' + at);
+    assert.ok(r.onSeen && r.line < 1, 'открытый пункт виден целиком, черта — на краю строки: ' + at);
+    assert.ok(Math.abs(r.hdrH - r.hdH) < 1 && r.docW <= w, '--hdr-h = высота шапки, страница вбок не едет: ' + at);
+    if (w === 390) assert.ok(r.sub && (r.scrolls || r.rows === 1), 'на телефоне меню своей строкой: ' + at);
+  }
+  await p.setViewportSize(vp); await p.waitForTimeout(300);
+}
 // .xlsx в тесте — zip: прочитать (как есть или deflate) и собрать заново без сжатия, как сохраняет Excel или Google Sheets
 function unzip(buf) {
   const out = {};
@@ -344,6 +378,9 @@ try {
   assert.ok(st2.notifications.filter(n => n.userId === emp.id).every(n => n.read), 'все уведомления прочитаны');
   assert.equal(Object.keys(st2.users.find(u => u.id === emp.id).plan || {}).length, 1, 'пункт плана отмечен');
   step('идея, уведомления, план адаптации — на сервере');
+  await checkHeader(E, 'сотрудник'); await checkHeader(C, 'CEO'); await checkHeader(A, 'SOP-менеджер');
+  await shot(E, 'shapka-xodim');
+  step('шапка: подпись под логотипом, меню 16 px без обрезанных слов — у сотрудника, CEO и SOP-менеджера, 1600–390 px');
 
   // ---------- видео урока: ссылка YouTube «по ссылке» ----------
   await nav(A, 'cms');
