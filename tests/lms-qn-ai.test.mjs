@@ -76,6 +76,35 @@ test('запрос по человеку: минимум данных — без
   assert.ok(/Omborchi, Ombor/.test(p), 'должность и отдел');
 });
 
+test('без пометок [profil:] и [sana]: вопрос об имени узнаётся по тексту, дата рождения — группой и в тексте; имя и паспорт из ответа убираются', () => {
+  const q = { questions: [
+    { id: 'fio', type: 'long', text: 'Familiya, ism, sharif' },
+    { id: 'fio2', type: 'text', text: 'Ваше ФИО' },
+    { id: 'tb', type: 'long', text: 'Tug‘ilgan sanangiz' },
+    { id: 'tp', type: 'text', text: 'Tug‘ilgan joyingiz' },
+    { id: 'ab', type: 'long', text: 'O‘zingiz haqingizda' },
+    { id: 'jf', type: 'long', text: 'Jismoniy faollik' },
+    { id: 'tm', type: 'scale', scale: 'M', text: 'Suhbatni o‘zim boshlayman' }
+  ], scales: [{ id: 'M', name: 'Muloqot', bands: [] }] };
+  const u = emp({ fio: 'Karimova Dilnoza Rustamovna', fio2: 'Каримова Дильноза', tb: '12.04.1999', tp: 'Samarqand', ab: 'Men Dilnoza, pasportim AA 1234567, ID AB1234567. Onam Gulnora. Dilnozaman, 2015 - 2020 omborda ishladim', jf: 'Har kuni yuraman', tm: 4 },
+    { name: 'Karimova Dilnoza Rustamovna', profile: { emgName: 'Gulnora opa' } });
+  const p = promptOf(q, u);
+  assert.ok(!/Karimova|Dilnoza|Rustamovna|Каримова|Gulnora/i.test(p), 'имени человека и родных нет: ' + p);
+  assert.ok(!/AA 1234567|AB1234567/.test(p) && /\[pasport\]/.test(p), 'паспорт и ID — «[pasport]»');
+  assert.ok(!/12\.04|1999/.test(p) && /Tug‘ilgan sanangiz\n   Javob: yosh guruhi: 25–34/.test(p), 'дата рождения в тексте — группой');
+  assert.ok(!/Familiya, ism, sharif|Ваше ФИО/.test(p), 'вопросы об имени без пометки — не уходят');
+  assert.ok(!/Samarqand/.test(p), 'место рождения (вопрос о рождении без года) — без ответа');
+  assert.ok(/Men \[ism\], pasportim \[pasport\]/.test(p) && /\[ism\], 2015 - 2020 omborda ishladim/.test(p), 'остальной текст — на месте');
+  assert.ok(/Jismoniy faollik\n   Javob: Har kuni yuraman/.test(p), '«jismoniy» — не вопрос об имени');
+  assert.equal(qnScrub('Dilnoza va dilnozaning ukasi', { name: 'Dilnoza Karimova' }), '[ism] va [ism] ukasi', 'с окончаниями, без учёта регистра');
+  assert.equal(qnScrub('Ali bilan', {}), 'Ali bilan', 'без карточки — как раньше');
+  // анализ коллектива — то же
+  const rows = [1, 2, 3, 4, 5].map(i => { const x = Object.assign({}, u, { id: i }); const res = qnScore(q, x); return { u: x, res, ta: qnTemperAll(q, res) }; });
+  const tq = Object.assign({}, q, { questions: q.questions.map(x => Object.assign({}, x, { key: true })) });
+  const tp = qnTeamPrompt(tq, rows, 'uz', NOW);
+  assert.ok(!/Karimova|Dilnoza|AA 1234567|1999|Gulnora/.test(tp), 'в анализе коллектива — тоже: ' + tp);
+});
+
 test('запрос по человеку: пересказ измеренного, evidence, «verify» вместо «fit», запреты; без теста — «test o‘lchanmagan»', () => {
   const p = promptOf(Q, emp());
   assert.ok(/Muloqot: 4,5 \/ 5/.test(p), 'шкала — средним 1–5');

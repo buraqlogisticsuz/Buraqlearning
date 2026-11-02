@@ -4102,7 +4102,7 @@ select.lor-input.slim:not([multiple]) { background-position: right 10px center; 
 .qn-ai-draft { margin: 0; padding: 6px 12px; border-left: var(--arrow) solid var(--red); background: var(--surface-sunken); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; font-size: 13px; line-height: 18px; color: var(--ink-muted); }
 .qn-ai-ev { display: block; margin-top: 1px; font-size: 12px; line-height: 17px; color: var(--ink-muted); }
 .qn-ai-sec li + li { margin-top: 4px; }
-.qn-ai-nocons, .qn-team-min { padding: 8px 12px; border-radius: var(--radius-md); background: var(--surface-sunken); color: var(--ink-muted); }
+.qn-ai-nocons, .qn-team-min, .qn-team-gone { padding: 8px 12px; border-radius: var(--radius-md); background: var(--surface-sunken); color: var(--ink-muted); }
 .qn-ai-off { color: var(--red-text); }
 /* «Savolnoma» → согласие: шаг перед анкетой (три карточки-галочки), плашки у CEO / SOP-менеджера, «Rozilik» в профиле */
 .qn-cons-form { display: flex; flex-direction: column; gap: var(--space-3); }

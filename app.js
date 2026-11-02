@@ -448,7 +448,13 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   }
   /* qa.retake — CEO или SOP-менеджер попросил пройти тест ещё раз: пока не отправил снова — «к заполнению» */
   function qnDone(q, u) { var a = (u.qa && u.qa.answers) || {}, c = qnCons(u); return !!(u.qa && u.qa.at) && !u.qa.retake && qnAsk(q).every(function (x) { return !x.req || !qnShowIf(x, a, c) || qnFilled(x, a[x.id]); }); }
-  function qnDue(db, u) { var q = qnOf(db); return !!(q && u && u.role === 'employee' && !qnDone(q, u)); }
+  /* «к заполнению» — и когда анкета отправлена, а согласия нет (анкета до шага согласий), оно старой версии или обработку
+     отозвали: тогда первым шагом спросят только согласие, ответы остаются */
+  function qnDue(db, u) { var q = qnOf(db); return !!(q && u && u.role === 'employee' && (!qnDone(q, u) || !qnConsOk(u))); }
+  /* спросить нужно только согласие: анкета отправлена и полна */
+  function qnConsOnly(db, u) { var q = qnOf(db); return !!(q && u && u.qa && u.qa.at && qnDone(q, u) && !qnConsOk(u)); }
+  /* есть сохранённые ответы на [maxfiy] — без согласия на особые данные они сотрутся (qnConsSet): спросить сначала */
+  function qnSecStored(q, ans) { return qnAsk(q).some(function (x) { return x.secret && qnHas((ans || {})[x.id]); }); }
   /* «сначала анкета»: пока не отправлена — вместо программы страница анкеты */
   function qnGate(db, u) { var q = qnOf(db); return !!(q && q.first && qnDue(db, u)); }
   function qnDate(v) { var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(v || '')); return m ? m[3] + '.' + m[2] + '.' + m[1] : String(v || ''); }
@@ -624,7 +630,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     });
     return out;
   }
-  /* { level: green | amber | red | na, n, ix: [{ k, lv, … }], why: [до 3 сработавших], skip: [speed | pattern | pairs | attn],
+  /* { level: green | amber | red | na, n, ix: [{ k, lv, … }], why: [до 3 сработавших], skip: [speed | pattern | order | pairs | attn],
      sd: { n, k, flag } | null, v: сырые значения } или null — ответов 1–5 нет */
   function qnQuality(q, ans, meta) {
     var a = ans || {}, rt = (meta && meta.rt) || {}, C = QN_Q, E = 1e-9;
@@ -643,8 +649,12 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       var run = 1, mx = 1;
       for (var i = 1; i < n; i++) { run = vals[i] === vals[i - 1] ? run + 1 : 1; if (run > mx) mx = run; }
       var mid = vals.filter(function (z) { return z === 3; }).length / n;
+      /* утверждения одной шкалы стоят подряд (раздел «# … [shkala: …]») — у честного человека серия одинаковых ответов
+         ожидаема: серию не судим (skip «order»), пока утверждения не перемешаны */
+      var grp = 1, gmx = 1;
+      for (var j = 1; j < n; j++) { grp = got[j].scale && got[j].scale === got[j - 1].scale ? grp + 1 : 1; if (grp > gmx) gmx = grp; }
       v.run = mx; v.mid = mid;
-      add('run', mx >= C.run[1], mx >= C.run[0], { run: mx });
+      if (gmx >= C.run[0]) skip.push('order'); else add('run', mx >= C.run[1], mx >= C.run[0], { run: mx });
       add('mid', mid >= C.mid[1] - E, mid >= C.mid[0] - E, { mid: mid });
     } else skip.push('pattern');
     var ps = qnQPairs(q).filter(function (pr) { return got.indexOf(pr[0]) >= 0 && got.indexOf(pr[1]) >= 0; });
@@ -782,7 +792,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     return (q.questions || []).map(function (x) {
       if (!qnShowIf(x, a, c)) return null;
       if (x.type !== 'section' && x.type !== 'consent' && x.type !== 'note') n++;
-      var f = h(QnField, { key: x.id, t: t, q: x, n: n, value: a[x.id], err: errs && errs[x.id], onChange: set ? function (v) { set(x.id, v); } : null });
+      var f = h(QnField, { key: x.id, t: t, q: x, n: n, value: a[x.id], err: errs && errs[x.id], onChange: set && !(o && o.ro && o.ro(x)) ? function (v) { set(x.id, v); } : null });
       var b = o && o.before ? o.before(x) : null, e = o && o.after ? o.after(x) : null;
       return (b && b.length) || e ? h(F, { key: x.id }, b, f, e) : f;
     });
@@ -864,7 +874,10 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     }
     function meta(ans) { var s = pd.current, rt = {}; Object.keys(s.rt).forEach(function (k) { if (k in ans) rt[k] = s.rt[k]; }); return { rt: rt, changes: s.ch }; }
     var byId = {}; all.forEach(function (x) { byId[x.id] = x; });
-    function set(id, v) { if (byId[id]) track(byId[id], v); a[1](function (o) { var n = Object.assign({}, o); n[id] = v; return n; }); if (errs[0][id]) errs[1](function (e) { var n = Object.assign({}, e); delete n[id]; return n; }); }
+    /* анкета уже отправлена: ответы теста — только посмотреть. Пройти тест заново — лишь по «Testni qayta topshirishni
+       so‘rash» (qnRetake: первая попытка — в qa.prev), иначе правка обошла бы время ответов, счётчик изменений и повтор */
+    var lockT = function (x) { return !due && qnTestItem(x); };
+    function set(id, v) { if (byId[id] && lockT(byId[id])) return; if (byId[id]) track(byId[id], v); a[1](function (o) { var n = Object.assign({}, o); n[id] = v; return n; }); if (errs[0][id]) errs[1](function (e) { var n = Object.assign({}, e); delete n[id]; return n; }); }
     /* честное предупреждение перед тестом (q.testWarn: свой текст, false — выключено, нет — стандартный на языке
        сотрудника) — у первого вопроса шкал темперамента (или первого пункта теста 1–5); «пройдите ещё раз» — у первого
        пункта теста без ответа. На странице по шагам — сверху шага, в окне — перед вопросом */
@@ -873,9 +886,10 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var warnTxt = q.testWarn === false ? '' : String(q.testWarn || '').trim() || t('qn_warn_def');
     var warnId = due && warnTxt && wq ? wq.id : null, rk = useRef(undefined);
     if (rk.current === undefined) { var rq = retake ? vq.filter(function (x) { return qnTestItem(x) && !qnFilled(x, prev[x.id]); })[0] : null; rk.current = rq ? rq.id : null; }
-    var retakeId = retake ? rk.current : null;
+    var retakeId = retake ? rk.current : null, roId = !due ? (vq.filter(qnTestItem)[0] || {}).id : null;
     var noteOf = function (id) {
-      return [id === retakeId ? h('div', { key: 'rt', className: 'qn-note-box qn-retake' }, h(Ico, { name: 'refresh', size: 20 }), h('div', null, h('p', null, t('qn_retake_note')))) : null,
+      return [id === roId ? h('p', { key: 'ro', className: 'lor-sm lor-muted qn-test-ro' }, t('qn_test_ro')) : null,
+        id === retakeId ? h('div', { key: 'rt', className: 'qn-note-box qn-retake' }, h(Ico, { name: 'refresh', size: 20 }), h('div', null, h('p', null, t('qn_retake_note')))) : null,
         id === warnId ? h('div', { key: 'w', className: 'qn-note-box qn-warn' }, h(Ico, { name: 'shieldok', size: 20 }), h('div', null, paras(warnTxt))) : null].filter(Boolean);
     };
     var fastNote = function (x) { return fastQ[0] === x.id ? h('p', { key: 'fast', className: 'qn-fast', role: 'status' }, h(Ico, { name: 'clock', size: 16 }), h('span', null, t('qn_fast'))) : null; };
@@ -930,10 +944,14 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       var setC = function (k, v) { cv[1](function (o) { var n = Object.assign({}, o); n[k] = v; return n; }); if (k === 'base' && v) cErr[1](false); };
       var giveC = function () {
         if (!cv[0].base) { cErr[1](true); return; }
-        var at = Date.now(), o = { v: QN_CONSENT_V, base: true, ai: cv[0].ai === true, special: hasSec && cv[0].special === true };
+        var at = Date.now(), o = { v: QN_CONSENT_V, base: true, ai: cv[0].ai === true, special: hasSec && cv[0].special === true }, only = qnConsOnly(p.db, u);
+        /* без особых данных уже сохранённые ответы на [maxfiy] сотрутся — спросить, как и в «Rozilik» */
+        if (!o.special && (qnSecStored(q, prev) || qnSecStored(q, a[0])) && !window.confirm(t('qn_cons_sp_off_q'))) return;
         p.update(function (d) { qnConsSet(d, u.id, o, at); });
         if (!o.special) a[1](function (x) { var n = Object.assign({}, x); qnAsk(q).forEach(function (y) { if (y.secret) delete n[y.id]; }); return n; });
         window.scrollTo(0, 0);
+        /* анкета уже отправлена (спрашивали только согласие) — окно закрывается */
+        if (only && !p.page) { SAY('qn_cons_saved'); if (p.onClose) p.onClose(); }
       };
       var form = h(QnConsForm, { t: t, v: cv[0], set: setC, err: cErr[0], special: hasSec });
       if (p.page) return h('div', { className: 'qn-page', ref: box }, bar,
@@ -1002,7 +1020,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         h('span', { className: 'lor-eyebrow' }, due ? t('qn_banner_t') : t('qn_tab')),
         head, prog,
         own ? h('section', { className: 'qn-own' }, h('span', { className: 'lor-eyebrow' }, t('qn_own_t')), h(QnProfile, { t: t, q: q, res: own, ta: qnTemperAll(q, own) })) : null,
-        h('div', { className: 'qn-list' }, qnFields(q, a[0], set, errs[0], t, cons, { before: function (x) { return noteOf(x.id); }, after: fastNote })),
+        h('div', { className: 'qn-list' }, qnFields(q, a[0], set, errs[0], t, cons, { before: function (x) { return noteOf(x.id); }, after: fastNote, ro: lockT })),
         !due && u.qa && u.qa.at ? h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, '✓ ' + tpl(t('qn_sent_on'), { d: fmt(u.qa.at, t) })) : null,
         h('div', { className: 'lor-modal-actions' },
           h(Btn, { variant: 'ghost', onClick: later }, due ? t('clk_later') : t('close')),
@@ -1012,9 +1030,10 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   function QnBanner(p) {
     var t = p.t, q = qnOf(p.db);
     if (!p.openQn || !qnDue(p.db, p.user)) return null;
+    var co = qnConsOnly(p.db, p.user);
     return h('section', { className: 'clock-banner intro-banner qn-banner' },
       h('svg', { className: 'cb-ico', width: 24, height: 24, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true }, h('rect', { x: 5, y: 4, width: 14, height: 17, rx: 2 }), h('path', { d: 'M9 4V3h6v1M8.5 10h7M8.5 14h7M8.5 18h4' })),
-      h('div', { className: 'cb-body' }, h('b', null, t('qn_banner_t')), h('span', null, tpl(t('qn_banner_sub'), { n: qnAsk(q).length }))),
+      h('div', { className: 'cb-body' }, h('b', null, t(co ? 'qn_cons_t' : 'qn_banner_t')), h('span', null, co ? t('qn_banner_cons') : tpl(t('qn_banner_sub'), { n: qnAsk(q).length }))),
       h(Btn, { variant: 'primary', arrow: true, onClick: p.openQn }, t('qn_open')));
   }
   /* знакомство поверх программы: обязательное (ещё не подтверждено) — с галочкой и «Tasdiqlash»; уже подтверждено — просто посмотреть.
@@ -7106,9 +7125,11 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       h(TgBox, { t: t, user: u }),
       u.role === 'employee' && (qnOf(p.db) || u.qa) ? h(QnConsBox, p) : null);
   }
-  /* «Rozilik» в «Mening profilim»: что разрешено по анкете. Обработка ответов (base) — отметкой с датой (отозвать — через
-     SOP-менеджера); ИИ-анализ и особые данные — переключатели: выключил ИИ — вывод ИИ удалит страница CEO / SOP-менеджера
-     (qnAiPurge), выключил особые — ответы на [maxfiy] стираются. Анкета до шага согласий — «Rozilik berish»: те же три галочки */
+  /* «Rozilik» в «Mening profilim»: что разрешено по анкете. Обработка ответов (base) — отметкой с датой и «Qaytarib olish»
+     (ответы анкеты, их время и прежняя попытка теста стираются, ИИ и особые данные выключаются; анкета обязательна — снова
+     «к заполнению», первым шагом согласие); ИИ-анализ и особые данные — переключатели: выключил ИИ — вывод ИИ удаляет сервер
+     (aiConsentPurge_, v18) или страница CEO / SOP-менеджера (qnAiPurge), выключил особые — ответы на [maxfiy] стираются.
+     Анкета до шага согласий или отозванное согласие — «Rozilik berish»: те же три галочки (без особых — сначала спросить) */
   function QnConsBox(p) {
     var t = p.t, u = p.user, c = qnCons(u), q = (p.db.settings && p.db.settings.questionnaire) || {}, hasSec = qnAsk(q).some(function (x) { return x.secret; });
     var form = useState(null), fErr = useState(false);
@@ -7119,8 +7140,16 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       var o = {}; o[k] = !on; put(o, k === 'ai' && on ? 'qn_cons_ai_gone' : null);
     }
     function give() {
-      var v = form[0]; if (!v.base) { fErr[1](true); return; }
-      put({ v: QN_CONSENT_V, base: true, ai: v.ai === true, special: hasSec && v.special === true }); form[1](null);
+      var v = form[0], sp = hasSec && v.special === true; if (!v.base) { fErr[1](true); return; }
+      if (!sp && qnSecStored(q, u.qa && u.qa.answers) && !window.confirm(t('qn_cons_sp_off_q'))) return;
+      put({ v: QN_CONSENT_V, base: true, ai: v.ai === true, special: sp }); form[1](null);
+    }
+    function withdraw() {
+      if (!window.confirm(t('qn_cons_base_off_q'))) return;
+      var at = Date.now();
+      p.update(function (d) { qnConsSet(d, u.id, { base: false, ai: false, special: false }, at); patchUser(d, u.id, function (x) { x.qa = { consent: x.qa.consent }; }); });
+      p.say(t('qn_cons_base_gone'));
+      if (p.onClose) p.onClose();   /* анкета снова первым шагом — окно профиля не держим поверх */
     }
     var swRow = function (k) {
       var on = c[k] === true;
@@ -7130,14 +7159,15 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     };
     return h('section', { className: 'pf-sec qn-cons-box' },
       h('h3', { className: 'lor-h pf-sub' }, t('qn_cons_box_t')),
-      c ? h(F, null,
-        h('p', { className: cx('lor-sm', c.base === true ? 'qn-cons-base' : 'lor-field-error'), style: { margin: 0 } }, c.base === true ? '✓ ' + tpl(t('qn_cons_base_on'), { d: c.at ? fmtDate(c.at) : '—' }) + ' ' + t('qn_cons_base_how') : t('qn_cons_err')),
-        swRow('ai'), hasSec || c.special === true ? swRow('special') : null)
+      c && c.base === true ? h(F, null,
+        h('p', { className: 'lor-sm qn-cons-base', style: { margin: 0 } }, '✓ ' + tpl(t('qn_cons_base_on'), { d: c.at ? fmtDate(c.at) : '—' }) + ' ' + t('qn_cons_base_how')),
+        swRow('ai'), hasSec || c.special === true ? swRow('special') : null,
+        h('div', { className: 'pf-tg' }, h(Btn, { variant: 'ghost', size: 'sm', className: 'qn-cons-off', onClick: withdraw }, t('qn_cons_base_off'))))
         : form[0] ? h(F, null,
           h(QnConsForm, { t: t, v: form[0], err: fErr[0], special: hasSec, set: function (k, v) { form[1](function (o) { var n = Object.assign({}, o); n[k] = v; return n; }); if (k === 'base' && v) fErr[1](false); } }),
           h('div', { className: 'lor-modal-actions' }, h(Btn, { variant: 'ghost', size: 'sm', onClick: function () { form[1](null); fErr[1](false); } }, t('cancel')), h(Btn, { variant: 'primary', size: 'sm', className: 'qn-cons-go', onClick: give }, t('save'))))
         : h(F, null,
-          h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('qn_cons_none_emp')),
+          h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t(c ? 'qn_cons_off_emp' : 'qn_cons_none_emp')),
           h('div', { className: 'pf-tg' }, h(Btn, { variant: 'secondary', size: 'sm', className: 'qn-cons-give', onClick: function () { form[1]({ base: false, ai: false, special: false }); } }, t('qn_cons_give')))));
   }
   /* Telegram: a link to the bot; after «Start» there the card gets tg: true (the server) */
@@ -7706,7 +7736,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var rows = [['ID', 'Xodim', 'Lavozim', 'Bo‘lim', 'Yuborilgan', T0('qn_cons_box_t')].concat(tm ? [T0('qn_tm_card')] : [], hq ? [T0('qn_q_t')] : [], scs.map(function (s) { return s.name + ' (1–5)'; }), scs.map(function (s) { return s.name; }), ask.map(function (x) { return x.text; }))];
     db.users.filter(function (u) { return u.role === 'employee' && u.qa; }).forEach(function (u) {
       var a = u.qa.answers || {}, res = qnScore(q, u), ta = qnTemperAll(q, res);
-      rows.push([u.id, u.name, u.position || '', u.department || '', u.qa.at ? fmtDate(u.qa.at) : '—', cons(u)].concat(tm ? [qnTmText(T0, ta)] : [], hq ? [qual(u)] : [], res.map(function (r) { return !r.n ? '' : r.few ? T0('qn_few') + ' (' + r.n + ' / ' + r.total + ')' : qnNum(T0, r.mean); }), res.map(function (r) { return r.n && !r.few ? r.band : ''; }), ask.map(function (x) { return qnText(x, a[x.id]); })));
+      rows.push([u.id, u.name, u.position || '', u.department || '', u.qa.at ? fmtDate(u.qa.at) : '—', cons(u)].concat(tm ? [qnTmText(T0, ta)] : [], hq ? [qual(u)] : [], res.map(function (r) { return !r.n ? '' : r.few ? T0('qn_few') + ' (' + r.n + ' / ' + r.total + ')' : qnNum(T0, r.mean); }), res.map(function (r) { return r.n && !r.few ? r.band : ''; }), ask.map(function (x) { return x.secret && !qnCons(u) ? '' : qnText(x, a[x.id]); })));
     });
     return '﻿' + rows.map(function (r) { return r.map(cell).join(';'); }).join('\r\n');
   }
@@ -7779,18 +7809,36 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
      согласий (до шага согласий, «rozilik so‘ralmagan») — нельзя. Без согласия вывод не готовится ни сам, ни кнопкой, не
      показывается, человек не идёт в анализ коллектива */
   function qnAiAllowed(u) { var c = qnCons(u); return !!c && c.ai === true; }
-  /* отозвал согласие на ИИ (или не дал его) — прежний вывод ИИ по нему удаляется. Сотрудник сам users[].qaReport не пишет
-     (LOCKED_USER), поэтому удаляет страница CEO или SOP-менеджера при заходе (AdminApp). Анкеты без поля согласий — вывод
-     только скрыт (вдруг согласие дадут) */
-  function qnAiGone(db) { return (db.users || []).filter(function (u) { return u.qaReport && qnCons(u) && !qnAiAllowed(u); }).map(function (u) { return u.id; }); }
-  function qnAiPurge(d) { var ids = qnAiGone(d); d.users.forEach(function (u) { if (ids.indexOf(u.id) >= 0) delete u.qaReport; }); return ids.length; }
+  /* нет согласия на ИИ (отозвал, не дал или анкета до шага согласий) — выводы ИИ по нему не хранятся: users[].qaReport
+     удаляется, анализ коллектива (users[].qaTeam), где он есть, — тоже (общий текст по нему не очистить): вместо него
+     отметка { gone, at, by, v }. Делает сервер при любой правке (aiConsentPurge_, v18); страница CEO или SOP-менеджера —
+     то же при заходе (AdminApp) для сервера постарше. mine(u) — можно ли писать в карточку u (SOP-менеджер карточки
+     руководства, кроме своей, не меняет) */
+  function qnAiNo(db) { var no = {}; (db.users || []).forEach(function (u) { if (!qnAiAllowed(u)) no[u.id] = 1; }); return no; }
+  function qnTeamGone(u, no) { var tm = u.qaTeam; return !!(tm && tm.data && (tm.ids || []).some(function (id) { return no[id]; })); }
+  function qnAiGone(db, mine) {
+    var no = qnAiNo(db);
+    return (db.users || []).filter(function (u) { return (u.qaReport && no[u.id]) || (qnTeamGone(u, no) && (!mine || mine(u))); }).map(function (u) { return u.id; });
+  }
+  function qnAiPurge(d, mine, at) {
+    var ids = qnAiGone(d, mine), no = qnAiNo(d);
+    d.users.forEach(function (u) {
+      if (ids.indexOf(u.id) < 0) return;
+      if (u.qaReport && no[u.id]) delete u.qaReport;
+      if (qnTeamGone(u, no) && (!mine || mine(u))) { var tm = u.qaTeam; u.qaTeam = { gone: at || Date.now(), at: tm.at || null, by: tm.by != null ? tm.by : null, v: tm.v || 1 }; }
+    });
+    return ids.length;
+  }
   /* что уходит в ИИ — минимум: без скрытых ([maxfiy]), согласий, пояснений, скрытых условием вопросов и вопросов-«полей
-     профиля» с именем, телефоном, Telegram, почтой, адресом, паспортом, контактом родных; дата рождения — возрастной группой;
-     из свободного текста убираются телефоны, почта, @-ники и ссылки на мессенджеры */
+     профиля» с именем, телефоном, Telegram, почтой, адресом, паспортом, контактом родных (и без пометки [profil:] — вопрос
+     об имени узнаётся по тексту: «Familiya, ism, sharif», «ФИО»); дата рождения — возрастной группой (и в текстовом ответе);
+     из свободного текста убираются имя человека (из карточки и профиля), паспорт, телефоны, почта, @-ники и ссылки */
   var QN_AI_PROF_SKIP = ['name', 'phone', 'telegram', 'email', 'address', 'passport', 'emg'];
+  var QN_NAME_Q = /(^|[^a-zа-яёʻ‘’'])(ism[a-z]*|ism-sharif[a-zʻ‘’']*|familiya[a-z]*|имя|имени|фамили[а-яё]*|отчеств[а-яё]*|фио|full name|first name|last name|surname|your name)(?![a-zа-яё])|f\.\s?i\.\s?sh|ф\.\s?и\.\s?о|姓名/i;
+  function qnIsName(x) { return x.prof === 'name' || (!x.prof && (x.type === 'text' || x.type === 'long') && QN_NAME_Q.test(String(x.text || ''))); }
   /* пункты на внимательность и проверки ([diqqat], [tekshiruv]) — тоже нет: о них в ИИ уходят только готовые пометки качества */
-  function qnAiSkip(x) { return !!x.secret || x.type === 'consent' || x.type === 'note' || x.type === 'section' || x.type === 'attn' || !!x.infreq || QN_AI_PROF_SKIP.indexOf(x.prof) >= 0; }
-  function qnIsBirth(x) { return x.prof === 'birth' || (x.type === 'date' && /tug.?il|рожд|birth|出生/i.test(String(x.text || ''))); }
+  function qnAiSkip(x) { return !!x.secret || x.type === 'consent' || x.type === 'note' || x.type === 'section' || x.type === 'attn' || !!x.infreq || QN_AI_PROF_SKIP.indexOf(x.prof) >= 0 || qnIsName(x); }
+  function qnIsBirth(x) { return x.prof === 'birth' || ((x.type === 'date' || x.type === 'text' || x.type === 'long') && /tug.?il|рожд|birth|出生/i.test(String(x.text || ''))); }
   function qnAgeGroup(v, now) {
     var s = String(v || ''), m = /(\d{4})-(\d{1,2})-(\d{1,2})/.exec(s), y, mo = 1, d = 1;
     if (m) { y = +m[1]; mo = +m[2]; d = +m[3]; }
@@ -7800,19 +7848,36 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var t = new Date(now || Date.now()), age = t.getFullYear() - y - (t.getMonth() + 1 < mo || (t.getMonth() + 1 === mo && t.getDate() < d) ? 1 : 0);
     return age < 0 || age > 100 ? '' : age < 18 ? '18 dan kichik' : age < 25 ? '18–24' : age < 35 ? '25–34' : age < 45 ? '35–44' : age < 55 ? '45–54' : '55+';
   }
-  function qnScrub(s) {
-    return String(s || '')
+  /* имя человека в ответах: слова (от 3 букв) из имени карточки и профиля (имя, фамилия, отчество, контакт родных) —
+     с окончаниями («Dilnozaman»), без учёта регистра */
+  var QN_LET = 'A-Za-z\u00C0-\u024F\u0400-\u04FFʻʼ‘’\'';
+  function qnNameRe(u) {
+    var pf = (u && u.profile) || {}, seen = {}, w = [];
+    [u && u.name, pf.firstName, pf.lastName, pf.middleName, pf.emgName].forEach(function (s) {
+      String(s || '').split(new RegExp('[^' + QN_LET + ']+')).forEach(function (x) {
+        x = x.replace(/^['ʻʼ‘’]+|['ʻʼ‘’]+$/g, ''); var k = x.toLowerCase();
+        if (x.length >= 3 && !seen[k]) { seen[k] = 1; w.push(x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')); }
+      });
+    });
+    return w.length ? new RegExp('(^|[^' + QN_LET + '])(' + w.join('|') + ')[' + QN_LET + ']*', 'gi') : null;
+  }
+  function qnScrub(s, u) {
+    var re = qnNameRe(u);
+    s = String(s || '')
       .replace(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g, '[email]')
       .replace(/(https?:\/\/)?(t\.me|telegram\.me|wa\.me|instagram\.com|facebook\.com)\/[\w./?=-]+/gi, '[kontakt]')
       .replace(/(^|[^\w])@[A-Za-z][\w]{3,}/g, '$1[kontakt]')
       /* телефон — 9–15 цифр подряд с пробелами, скобками, дефисами; «2015 - 2020» и даты не трогаем */
-      .replace(/\+?\d[\d\s()-]{6,}\d/g, function (x) { var n = x.replace(/\D/g, '').length; return n >= 9 && n <= 15 && !/^(19|20)\d\d(\s*-\s*(19|20)\d\d)+$/.test(x.trim()) ? '[telefon]' : x; });
+      .replace(/\+?\d[\d\s()-]{6,}\d/g, function (x) { var n = x.replace(/\D/g, '').length; return n >= 9 && n <= 15 && !/^(19|20)\d\d(\s*-\s*(19|20)\d\d)+$/.test(x.trim()) ? '[telefon]' : x; })
+      /* паспорт или ID-карта: «AA 1234567», «AB1234567» */
+      .replace(/(^|[^A-Za-z])[A-Za-z]{2}\s?\d{7}(?!\d)/g, '$1[pasport]');
+    return re ? s.replace(re, '$1[ism]') : s;
   }
-  /* ответ для ИИ: дата рождения → «yosh guruhi: 25–34», остальное — текстом без контактов */
-  function qnAiAns(x, v, now) {
+  /* ответ для ИИ: дата рождения → «yosh guruhi: 25–34» (нет года — ничего), остальное — текстом без имени и контактов */
+  function qnAiAns(x, v, now, u) {
     if (!qnHas(v)) return '';
     if (qnIsBirth(x)) { var g = qnAgeGroup(v, now); return g ? 'yosh guruhi: ' + g : ''; }
-    return qnScrub(qnText(x, v));
+    return qnScrub(qnText(x, v), u);
   }
   /* шкала для ИИ: «Muloqot: 3,4 / 5 (O‘rta)» или «kam javob (6 / 10) — talqin qilinmaydi» */
   function qnAiScale(r) { var T0 = T('uz'); return r.s.name + ': ' + (r.few ? T0('qn_few_n').replace('{n}', r.n).replace('{m}', r.total) : qnNum(T0, r.mean) + ' / 5' + (r.band ? ' (' + r.band + ')' : '')); }
@@ -7826,7 +7891,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var a = (u.qa && u.qa.answers) || {}, n = 0, T0 = T('uz'), measured = !!ta || res.some(function (r) { return r.n; }), emp = u.role === 'employee' && u.status !== 'candidate';
     var qa = (q.questions || []).filter(function (x) { return x.type === 'section' || (!qnAiSkip(x) && qnShowIf(x, a)); }).map(function (x) {
       if (x.type === 'section') return '\n## ' + x.text;
-      n++; return n + '. ' + x.text + '\n   Javob: ' + (qnAiAns(x, a[x.id], o.now) || '—');
+      n++; return n + '. ' + x.text + '\n   Javob: ' + (qnAiAns(x, a[x.id], o.now, u) || '—');
     }).join('\n');
     var sc = res.filter(function (r) { return r.n; }).map(function (r) { return '- ' + qnAiScale(r); }).join('\n');
     var notes = (o.notes || []).filter(function (x) { return typeof x === 'string' && x.trim(); });
@@ -7903,7 +7968,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var list = rows.map(function (r, i) {
       var a = r.u.qa.answers || {};
       var sc = r.res.filter(function (x) { return x.n; }).map(qnAiScale).join('; ');
-      var ka = keys.filter(function (x) { return qnShowIf(x, a); }).map(function (x) { return qnShort(x) + ': ' + String(qnAiAns(x, a[x.id], now) || '—').slice(0, 120); }).join('; ');
+      var ka = keys.filter(function (x) { return qnShowIf(x, a); }).map(function (x) { return qnShort(x) + ': ' + String(qnAiAns(x, a[x.id], now, r.u) || '—').slice(0, 120); }).join('; ');
       return '#' + (i + 1) + ' — ' + ([r.u.position, r.u.department].filter(Boolean).join(', ') || '—') + (sc ? ' | ' + sc : '') + (ka ? ' | ' + ka : '');
     });
     return 'Siz BURAQ Logistics kompaniyasida HR-tahlilchi yordamchisisiz. Quyida xodimlarning anketa va o‘z-o‘zini baholash testi natijalari (ism o‘rniga raqam). Rahbariyat (CEO va SOP menejeri) uchun JAMOA haqida qisqa qoralama tuzing: xodimlar o‘zlarini qanday tasvirlaydi (umumlashtirib), jamoaning kuchli tomonlari, muhokama uchun ko‘nikma va rollardagi bo‘shliqlar, ishga oid xavflar va amaliy qadamlar.\n' +
@@ -7979,6 +8044,11 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     /* в ИИ — только те, кто согласен на ИИ-анализ; меньше QN_TEAM_MIN — анализа нет, подсказка */
     var rows = p.rows.filter(function (r) { return qnAiAllowed(r.u); }), enough = rows.length >= QN_TEAM_MIN;
     var own = db.users.filter(function (u) { return u.role === 'admin' && u.qaTeam && u.qaTeam.data; }).sort(function (a, b) { return b.qaTeam.at - a.qaTeam.at; })[0], team = own && own.qaTeam;
+    /* последний анализ удалён, потому что кто-то в нём отозвал согласие на ИИ (qnAiPurge / aiConsentPurge_) — сказать */
+    var lastT = db.users.filter(function (u) { return u.role === 'admin' && u.qaTeam && (u.qaTeam.data || u.qaTeam.gone); }).sort(function (a, b) { return (b.qaTeam.at || 0) - (a.qaTeam.at || 0); })[0], goneT = !team && lastT && lastT.qaTeam.gone;
+    /* «Rad etish» пишет в карточку того, кто готовил анализ: SOP-менеджер карточки руководства, кроме своей, не меняет
+       (сервер: checkSopUsers_) — у анализа CEO кнопки у него нет */
+    var canOff = !!own && (lvlOf(p.user) !== 'sop' || own.id === p.user.id);
     var old = !!team && team.v !== QN_AI_V, newer = team && rows.some(function (r) { return r.u.qa.at > team.at; }), todo = rows.filter(function (r) { return qnAiStale(r.u); });
     /* в анализе есть те, кто потом отозвал согласие на ИИ: строки о них не показываем, анализ — «qayta tayyorlang» */
     var noAi = function (id) { var x = (db.users || []).filter(function (z) { return z.id === id; })[0]; return !!x && !qnAiAllowed(x); };
@@ -7994,7 +8064,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       }).catch(function (e) { if (e && e.code === 'cancelled') return; er[1](e && e.code === 'invalid_json' ? t('ai_bad_json') : aiErr(e, t)); }).then(function () { busy[1](false); });
     }
     function dismiss() {
-      if (!own || !window.confirm(t('qn_ai_dismiss_q'))) return;
+      if (!own || !canOff || !window.confirm(t('qn_ai_dismiss_q'))) return;
       var at = Date.now(), me = p.user.id, oid = own.id;
       p.update(function (d) { patchUser(d, oid, function (z) { var r = z.qaTeam || {}; z.qaTeam = { off: at, offBy: me, at: r.at || null, by: r.by != null ? r.by : null, v: r.v || 1 }; }); });
       if (p.say) p.say(t('qn_ai_dismissed'));
@@ -8018,7 +8088,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         old ? h('span', { className: 'qn-ai-stale' }, t('qn_ai_old')) : gone ? h('span', { className: 'qn-ai-stale' }, t('qn_team_cons')) : newer ? h('span', { className: 'qn-ai-stale' }, t('qn_team_newer')) : null,
         p.ro ? null : h('span', { className: 'qn-ai-acts' },
           todo.length ? h(Btn, { variant: 'outline', size: 'sm', disabled: !sampler || !!bat[0], onClick: runAll }, bat[0] ? tpl(t('qn_ai_all_busy'), { n: bat[0].n, m: bat[0].m }) : tpl(t('qn_ai_all'), { n: todo.length })) : null,
-          d ? h(Btn, { variant: 'ghost', size: 'sm', className: 'qn-ai-off', disabled: busy[0], onClick: dismiss }, t('qn_ai_dismiss')) : null,
+          d && canOff ? h(Btn, { variant: 'ghost', size: 'sm', className: 'qn-ai-off', disabled: busy[0], onClick: dismiss }, t('qn_ai_dismiss')) : null,
           h(Btn, { variant: d ? 'ghost' : 'primary', size: 'sm', arrow: !d, className: 'qn-team-go', disabled: !sampler || busy[0] || !enough, onClick: make }, busy[0] ? t('qn_ai_busy') : d ? t('qn_ai_again') : t('qn_team_make')))),
       sampler === null ? h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('srv_ai_unavail'), ' ', h('span', { className: 'qn-ai-key' }, t('qn_ai_key_hint'))) : null,
       enough ? null : h('p', { className: 'lor-sm qn-team-min', style: { margin: 0 } }, tpl(t('qn_team_min'), { n: QN_TEAM_MIN, m: rows.length })),
@@ -8032,6 +8102,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         h('div', { className: 'qn-team-cols' }, qnAiList(t, 'qn_ai_risks', d.risks), qnAiList(t, 'qn_team_actions', d.actions)),
         d.dropped ? muted(tpl(t('qn_ai_dropped'), { n: d.dropped })) : null,
         muted(tpl(t('qn_team_made'), { d: fmt(team.at, t), n: (team.ids || []).length }) + ' · ' + userOf(db, team.by).name + ' · v' + (team.v || 1) + ' · ' + t('qn_ai_hidden_all'))) :
+        goneT && !busy[0] ? h('p', { className: 'lor-sm qn-team-gone', style: { margin: 0 } }, t('qn_team_gone')) :
         !busy[0] && enough ? muted(t('qn_team_none')) : null);
   }
   /* ответ для CEO и SOP-менеджера: скрытый ([maxfiy]) — точками, пока не нажали «показать» */
@@ -8088,7 +8159,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   function QnPerson(p) {
     var t = p.t, u = p.u, q = p.q, a = (u.qa && u.qa.answers) || {}, n = 0, res = qnScore(q, u), ta = qnTemperAll(q, res), open = useState(false), c = qnCons(u);
     var prof = ta || res.some(function (r) { return r.n; });
-    var keys = qnKeys(q), cons = qnAsk(q).filter(function (x) { return x.type === 'consent'; }), hasSecret = qnAsk(q).some(function (x) { return x.secret && qnHas(a[x.id]); });
+    /* ответы на [maxfiy] анкеты до шага согласий не открываются, пока человек не дал согласие (на особые данные — или они стёрты) */
+    var keys = qnKeys(q), cons = qnAsk(q).filter(function (x) { return x.type === 'consent'; }), secAny = qnSecStored(q, a), hasSecret = secAny && !!c;
     useEffect(function () { function k(e) { if (e.key === 'Escape') p.onClose(); } window.addEventListener('keydown', k); return function () { window.removeEventListener('keydown', k); document.body.classList.remove('qn-printing'); }; }, []);
     function print() {
       document.body.classList.add('qn-printing');
@@ -8116,6 +8188,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
             var ok = c[k[0]] === true;
             return h('p', { key: k[0], className: cx('lor-sm', ok ? 'is-ok' : 'is-no') }, (ok ? '✓ ' : '— ') + t(k[1]) + (ok && k[0] === 'base' && c.at ? ' · ' + fmtDate(c.at) + ' · v' + (c.v || 1) + (u.login ? ' · ' + u.login : '') : ''));
           }) : h('p', { className: 'lor-sm is-no' }, '— ' + t('qn_cons_l_none')),
+          secAny && !c ? h('p', { className: 'lor-sm is-no qn-sec-wait' }, '— ' + t('qn_secret_wait')) : null,
           cons.map(function (x) {
             var ok = a[x.id] === true;
             return h('p', { key: x.id, className: cx('lor-sm', ok ? 'is-ok' : 'is-no') }, (ok ? '✓ ' : '— ') + x.text + (ok && u.qa && u.qa.at ? ' · ' + fmtDate(u.qa.at) + (u.login ? ' · ' + u.login : '') : ''));
@@ -9614,8 +9687,9 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var theme = useThemePref(p.say, t);
     var hint = { on: hintOn, toggle: function (v) { p.update(function (d) { d.users.forEach(function (x) { if (x.id === p.user.id) x.hints = v; }); }); p.say(t(v ? 'hint_said_on' : 'hint_said_off')); } };
     /* сотрудник отозвал согласие на ИИ-анализ — его вывод ИИ (users[].qaReport) удаляет страница CEO или SOP-менеджера */
-    var aiGone = lv === 'boss' ? '' : qnAiGone(db).join(',');
-    useEffect(function () { if (aiGone) p.update(qnAiPurge); }, [aiGone]);
+    var mineCard = function (x) { return lv === 'ceo' || x.id === p.user.id; };
+    var aiGone = lv === 'boss' ? '' : qnAiGone(db, mineCard).join(',');
+    useEffect(function () { if (aiGone) p.update(function (d) { qnAiPurge(d, mineCard); }); }, [aiGone]);
 
     var attnA = (db.assets || []).filter(assetAttn).length, newIni = (db.initiatives || []).filter(function (x) { var to = iniTo(x); return (!to.length || to.indexOf(p.user.post) >= 0) && x.status === 'new'; }).length;
     var qN = errStats(db, 90).open;

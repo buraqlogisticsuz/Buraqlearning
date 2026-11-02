@@ -21,7 +21,7 @@
  *
  * Запрос — POST с JSON { action, token, … }, ответ — JSON { ok, … } или { ok: false, code, error }.
  */
-var LMS_VERSION = 17;          // 2: файлы — отдельно на Диске, действие file; 3: ИИ через Claude API (действие ai);
+var LMS_VERSION = 18;          // 2: файлы — отдельно на Диске, действие file; 3: ИИ через Claude API (действие ai);
                                // 4: адресаты идей — CEO, Project Manager, руководитель компании (свой вход, role 'leader');
                                // 5: у идеи несколько адресатов (to — список), repliedBy — кто ответил;
                                // 6: свой профиль — имя и фото, смена логина и пароля (действие account);
@@ -37,6 +37,8 @@ var LMS_VERSION = 17;          // 2: файлы — отдельно на Дис
                                // 16: удалили сотрудника — файлы из его карточки (скан паспорта) уходят с Диска, если больше нигде не нужны
                                // 17: фото при отметке прихода больше нет (решение владельца «delete face control»): clock не
                                //     принимает снимок, прежние снимки один раз убираются из данных и с Диска (facePurge_)
+                               // 18: очистка снимков (FACE_PURGE_V 2) — и файлы «ishga-kelish» без ссылок; выводы ИИ без согласия
+                               //     на ИИ-анализ (users[].qa.consent.ai) не хранятся — aiConsentPurge_ при каждой правке
 var PBKDF2_ITER = 10000;          // пароль хранится только как PBKDF2-SHA256 с солью
 var SESSION_DAYS = 30;            // вход на устройстве живёт 30 дней с последнего запроса
 var FAIL_MAX = 5, FAIL_LOCK_MIN = 15;  // 5 неверных паролей подряд — логин закрыт на 15 минут
@@ -48,8 +50,11 @@ var FILE_MIN = 2048;              // data:-строки короче (значк
 var AVATAR_MAX = 16000;           // фото профиля (128×128 JPEG) — в данных, не файлом: его показывают везде, где имя
 // снимки лица при отметке прихода (до v17: attend[uid][день].inPhoto / outPhoto = 'lmsfile:…') больше не храним: фото лица
 // может считаться биометрией, а её нельзя держать вне Узбекистана (сервер — на Railway). FACE_PURGE_V — версия очистки
-// в settings.facePurgedV; поля сверки лица в карточке (faceEnroll, facePhoto) программа не заводила — убираются на всякий случай
-var FACE_PURGE_V = 1;
+// в settings.facePurgedV; поля сверки лица в карточке (faceEnroll, facePhoto) программа не заводила — убираются на всякий случай.
+// 2: и файлы-снимки, на которые ссылки уже нет (до v17 снимок сохранялся до проверки «приход уже отмечен»; запись прихода
+// со снимком могли стереть или заменить правкой) — по имени файла FACE_FILE в папке files
+var FACE_PURGE_V = 2;
+var FACE_FILE = 'ishga-kelish';   // имя, с которым clock до v17 сохранял каждый снимок
 var FACE_KEYS = ['inPhoto', 'outPhoto', 'faceEnroll', 'facePhoto'];
 var FACE_TRASH = null;            // номера файлов-снимков: в корзину Диска после записи состояния, где на них нет ссылок
 var LOGIN_RE = /^[a-z0-9][a-z0-9._-]{2,31}$/;   // логин: 3–32 символа, латиница, цифры, точка, дефис, подчёркивание
@@ -230,35 +235,45 @@ function facePurge_(st) {
   FACE_TRASH = refs;
   return st;
 }
+/* после записи: снимки из ссылок (ids) и все файлы FACE_FILE в папке files, на которые в данных ссылок нет, — в корзину;
+   сколько ушло — ответ */
 function faceTrash_(st) {
-  var ids = FACE_TRASH, all = null;
+  var ids = FACE_TRASH, all = null, gone = {};
   FACE_TRASH = null;
-  (ids || []).forEach(function (id) {
+  if (!ids) return 0;
+  var trash = function (id, f) {
+    if (gone[id]) return;
     if (all === null) all = JSON.stringify(st);
     if (all.indexOf('"lmsfile:' + id + '"') >= 0) return;   // на файл ещё ссылается что-то другое
-    try { DriveApp.getFileById(id).setTrashed(true); } catch (e) {}
-  });
+    try { (f || DriveApp.getFileById(id)).setTrashed(true); gone[id] = 1; } catch (e) {}
+  };
+  ids.forEach(function (id) { trash(id); });
+  if (props_().getProperty('LMS_FILES')) {
+    var it = filesFolder_().getFilesByName(FACE_FILE), list = [];
+    while (it.hasNext()) list.push(it.next());
+    list.forEach(function (f) { if (!(f.isTrashed && f.isTrashed())) trash(f.getId(), f); });
+  }
+  return Object.keys(gone).length;
 }
 /* очистка сразу, не дожидаясь первой записи: сервер на Node вызывает её при запуске; в Apps Script — вручную
    (▶ Выполнить → purgeFaces) или сама при первой правке. Повторный вызов ничего не делает */
 function purgeFaces() {
   if (!props_().getProperty('LMS_STATE')) return { purged: false, files: 0 };
   return withLock_(function () {
-    var st = readState_(), ids = FACE_TRASH, seen = {}, all;
-    if (!ids) return { purged: false, files: 0 };
+    var st = readState_();
+    if (!FACE_TRASH) return { purged: false, files: 0 };
     st.rev = (+st.rev || 0) + 1;
-    writeState_(st);
-    all = JSON.stringify(st);
-    ids.forEach(function (id) { if (all.indexOf('"lmsfile:' + id + '"') < 0) seen[id] = 1; });
-    return { purged: true, files: Object.keys(seen).length };   // снимков ушло в корзину
+    return { purged: true, files: writeState_(st) };   // снимков ушло в корзину
   });
 }
+/* ответ — сколько файлов-снимков ушло в корзину (faceTrash_; 0, если очистки не было) */
 function writeState_(st) {
   DriveApp.getFileById(props_().getProperty('LMS_STATE')).setContent(JSON.stringify(st));
   props_().setProperty('LMS_REV', String(st.rev));
-  faceTrash_(st);
+  var faces = faceTrash_(st);
   // сервер на Node (server/telegram.mjs): новые уведомления — в Telegram; в Apps Script этой функции нет
   if (typeof LMS_AFTER_WRITE === 'function') LMS_AFTER_WRITE(st);
+  return faces;
 }
 /* «Kun hikmati» на странице входа — её видят и до входа, поэтому отдаётся только этот список:
    settings.wisdom = { std: показывать ли узбекские пословицы страницы, list: [{ text, by }] } — правит SOP-менеджер в «Kontent» */
@@ -758,11 +773,30 @@ function patch_(s, ops) {
       } catch (e) { rejected.push({ i: i, reason: e.message }); }
     });
     if (admin) syncCreds_(st, before, me, s, rejected);
+    if (applied) aiConsentPurge_(st);
     if ((st.audit || []).length > AUDIT_KEEP) st.audit = st.audit.slice(0, AUDIT_KEEP);
     if (applied) { st.rev = (+st.rev || 0) + 1; writeState_(st); }
     if (admin && applied) dropGoneFiles_(st, before);
     return { ok: true, rev: st.rev, applied: applied, rejected: rejected };
   });
+}
+
+/* выводы ИИ по анкете хранятся, только пока у человека есть согласие на ИИ-анализ (users[].qa.consent.ai === true):
+   отозвал, не дал или анкета до шага согласий — вывод по нему (qaReport) удаляется сразу, той же правкой; анализ
+   коллектива (qaTeam в карточке того, кто готовил), где он есть, — тоже: общий текст по нему не очистить, остаётся отметка
+   { gone, at, by, v } («кто-то отозвал согласие — подготовьте заново»). Сколько карточек изменилось — ответ */
+function aiConsentPurge_(st) {
+  var no = {}, n = 0, at = now_();
+  (st.users || []).forEach(function (u) { var c = u && u.qa && u.qa.consent; if (u && !(c && typeof c === 'object' && c.ai === true)) no[String(u.id)] = 1; });
+  (st.users || []).forEach(function (u) {
+    if (!u) return;
+    if (u.qaReport && no[String(u.id)]) { delete u.qaReport; n++; }
+    var tm = u.qaTeam;
+    if (tm && tm.data && (tm.ids || []).some(function (id) { return no[String(id)]; })) {
+      u.qaTeam = { gone: at, at: tm.at || null, by: tm.by != null ? tm.by : null, v: tm.v || 1 }; n++;
+    }
+  });
+  return n;
 }
 
 /* правка записей прихода или карточек: поле снимка в пути — отказ (null); снимок внутри значения (страница, открытая

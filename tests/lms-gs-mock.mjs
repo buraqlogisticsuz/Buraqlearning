@@ -29,7 +29,8 @@ export function loadLms({ now, iter, fetch } = {}) {
       return file(fid); },
     createFolder: n => { const fid = newId('folder'); folders[fid] = { name: n, parent: id }; return folder(fid); },
     getFoldersByName: n => { const l = Object.keys(folders).filter(k => folders[k].parent === id && folders[k].name === n); return { hasNext: () => l.length > 0, next: () => folder(l.shift()) }; },
-    getFiles: () => { const l = Object.keys(files).filter(k => files[k].folder === id); return { hasNext: () => l.length > 0, next: () => file(l.shift()) }; }
+    getFiles: () => { const l = Object.keys(files).filter(k => files[k].folder === id); return { hasNext: () => l.length > 0, next: () => file(l.shift()) }; },
+    getFilesByName: n => { const l = Object.keys(files).filter(k => files[k].folder === id && files[k].name === n); return { hasNext: () => l.length > 0, next: () => file(l.shift()) }; }
   });
   let locked = false;
   const ctx = {

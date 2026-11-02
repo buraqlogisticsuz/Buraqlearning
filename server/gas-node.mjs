@@ -90,6 +90,10 @@ export function loadServer({ dir, env = process.env, iter, log = console.log } =
     getFiles: () => {
       const l = Object.keys(drive.files).filter(k => drive.files[k].folder === id);
       return { hasNext: () => l.length > 0, next: () => file(l.shift()) };
+    },
+    getFilesByName: n => {
+      const l = Object.keys(drive.files).filter(k => drive.files[k].folder === id && drive.files[k].name === n);
+      return { hasNext: () => l.length > 0, next: () => file(l.shift()) };
     }
   });
   function makeFolder(name, parent) {

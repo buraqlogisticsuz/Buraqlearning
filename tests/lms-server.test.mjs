@@ -414,7 +414,7 @@ const pickN = n => ({ userId: n.userId, kind: n.kind, route: n.route, err: n.err
 test('since: та же версия — без данных; после правки — новое состояние', () => {
   const { D, A } = platform();
   const v = D({ action: 'load' });
-  assert.deepEqual(D({ action: 'since', rev: v.rev }), { ok: true, v: 17, ai: false, rev: v.rev, same: true });
+  assert.deepEqual(D({ action: 'since', rev: v.rev }), { ok: true, v: 18, ai: false, rev: v.rev, same: true });
   A({ action: 'patch', ops: [{ op: 'set', path: ['notifications', { id: 9 }], value: { id: 9, userId: 10427, text: 'yangi' }, after: null }] });
   const n = D({ action: 'since', rev: v.rev });
   assert.equal(n.rev, v.rev + 1); assert.equal(n.state.notifications[0].text, 'yangi');
@@ -800,7 +800,7 @@ test('v17: старые снимки — один раз из данных и в
   assert.ok(ids.every(id => g.files[id]), 'до записи файлы на месте — данные на Диске ещё ссылаются на них');
   assert.deepEqual({ ...g.ctx.purgeFaces() }, { purged: true, files: 4 });
   const st = g.state();
-  assert.equal(st.settings.facePurgedV, 1); assert.equal(st.rev, rev + 1);
+  assert.equal(st.settings.facePurgedV, 2); assert.equal(st.rev, rev + 1);
   assert.doesNotMatch(JSON.stringify(st.attend) + JSON.stringify(st.users.map(u => u.faceEnroll || null)), /inPhoto|outPhoto|faceEnroll|file-face-0[1-4]/);
   assert.deepEqual(st.attend['10427']['2026-10-21'], { in: '09:30', src: 'manual', by: 1, prev: { in: '09:40', src: 'app' } });
   assert.deepEqual(st.attend['10391']['2026-10-20'], { in: '08:55', src: 'turnstile' });
@@ -815,9 +815,31 @@ test('v17: в Apps Script очистка записывается первой �
   const ids = oldFaces(g);
   assert.equal(D({ action: 'clock', kind: 'in' }).ok, true);
   const st = g.state();
-  assert.equal(st.settings.facePurgedV, 1);
+  assert.equal(st.settings.facePurgedV, 2);
   assert.doesNotMatch(JSON.stringify(st.attend) + JSON.stringify(st.users), FACE_RE);
   assert.ok(ids.every(id => !g.files[id]), 'снимки — в корзине');
+});
+
+test('v18: очистка снимков ещё раз (FACE_PURGE_V 2) — и файлы «ishga-kelish», на которые ссылок уже нет', () => {
+  const { g, A } = platform();
+  // папка files есть (в ней документ, на который ссылаются); снимки без ссылок остались после повторной отметки или правки
+  const pdf = 'data:application/pdf;base64,' + Buffer.from('%PDF-1.4 ' + 'x'.repeat(3000)).toString('base64');
+  assert.deepEqual(rejected(A({ action: 'patch', ops: [{ op: 'set', path: ['settings', 'welcome'], value: { introText: 'Matn', at: 1, docs: [{ id: 'd1', name: 'Qoidalar.pdf', data: pdf, at: 1 }] } }] })), []);
+  const fid = g.props.LMS_FILES, doc = g.state().settings.welcome.docs[0].data.slice('lmsfile:'.length);
+  assert.ok(fid && g.files[doc], 'папка files и документ');
+  const face = (id, name) => { g.files[id] = { name, type: 'image/jpeg', bytes: [1, 2, 3], folder: fid, created: 0 }; };
+  face('file-orphan-1', 'ishga-kelish'); face('file-orphan-2', 'ishga-kelish'); face('file-kept-1', 'ishga-kelish'); face('file-other-1', 'rasm.jpg');
+  const st = g.state();
+  st.settings.facePurgedV = 1;   // очистка v17 уже была
+  st.users.find(u => u.id === 10427).profile = { photoFile: 'lmsfile:file-kept-1' };   // на этот файл ссылка есть — остаётся
+  g.files[g.props.LMS_STATE].content = JSON.stringify(st);
+  assert.deepEqual({ ...g.ctx.purgeFaces() }, { purged: true, files: 2 });
+  assert.ok(!g.files['file-orphan-1'] && !g.files['file-orphan-2'], 'снимки без ссылок — в корзине');
+  assert.ok(g.files['file-kept-1'] && g.files['file-other-1'] && g.files[doc], 'файл со ссылкой, другие файлы и документ — на месте');
+  assert.equal(g.state().settings.facePurgedV, 2);
+  face('file-orphan-3', 'ishga-kelish');
+  assert.deepEqual({ ...g.ctx.purgeFaces() }, { purged: false, files: 0 }, 'второй раз — ничего');
+  assert.ok(g.files['file-orphan-3']);
 });
 
 test('«Tanishuv»: документы (PDF, Word) — файлом на сервере, в данных ссылка; сотрудник их получает, правит только SOP/CEO', () => {
@@ -851,11 +873,45 @@ test('«Savolnoma»: ответы — в своей карточке; колле
 test('вывод по анкете (users[].qaReport, v14): пишут и видят CEO и SOP-менеджер; сотрудник — ни в своей карточке, ни записать', () => {
   const { A, D, Z } = platform();
   const rep = { at: 1, by: 'sop', data: { temperament: 'Sangvinik', summary: 'ochiq' } };
+  // вывод ИИ хранится только с согласием на ИИ-анализ (v18)
+  assert.deepEqual(rejected(D({ action: 'patch', ops: [{ op: 'set', path: ['users', { id: 10427 }, 'qa'], value: { at: 1, answers: {}, consent: { v: 1, at: 1, base: true, ai: true, special: false } } }] })), []);
   assert.deepEqual(rejected(A({ action: 'patch', ops: [{ op: 'set', path: ['users', { id: 10427 }, 'qaReport'], value: rep }] })), []);
   assert.equal(A({ action: 'load' }).state.users.find(u => u.id === 10427).qaReport.data.temperament, 'Sangvinik');
   assert.equal(D({ action: 'load' }).state.users.find(u => u.id === 10427).qaReport, undefined, 'сотрудник свой вывод не видит');
   assert.equal(Z({ action: 'load' }).state.users.find(u => u.id === 10427).qaReport, undefined, 'коллега — тоже');
   assert.equal(D({ action: 'patch', ops: [{ op: 'set', path: ['users', { id: 10427 }, 'qaReport'], value: { data: {} } }] }).rejected.length, 1, 'и не пишет его');
+});
+
+test('v18: без согласия на ИИ выводов ИИ нет — отозвал (той же правкой), не дал, анкета до согласий; анализ коллектива — отметкой', () => {
+  const pl = platform(), { g, A, D } = pl, { C } = chiefs(pl);
+  const cons = ai => ({ v: 1, at: 5, base: true, ai, special: false });
+  const qa = (c) => Object.assign({ at: 10, answers: { q1: 'javob' } }, c ? { consent: c } : {});
+  const rep = { at: 20, by: 10901, v: 2, data: { summary: 'qisqa' } };
+  assert.deepEqual(rejected(A({ action: 'patch', ops: [
+    { op: 'set', path: ['users', { id: 10427 }, 'qa'], value: qa(cons(true)) },
+    { op: 'set', path: ['users', { id: 10391 }, 'qa'], value: qa(cons(true)) },
+    { op: 'set', path: ['users', { id: 10288 }, 'qa'], value: qa(cons(true)) }] })), []);
+  assert.deepEqual(rejected(A({ action: 'patch', ops: [10427, 10391, 10288].map(id => ({ op: 'set', path: ['users', { id }, 'qaReport'], value: rep })) })), []);
+  const team = { at: 30, by: 10901, v: 2, lang: 'uz', ids: [10427, 10391], data: { summary: 'jamoa', people: [{ n: 1, note: 'Dilnoza haqida' }] } };
+  assert.deepEqual(rejected(C({ action: 'patch', ops: [{ op: 'set', path: ['users', { id: 10901 }, 'qaTeam'], value: team }] })), [], 'анализ коллектива — в карточке CEO');
+  const st0 = g.state();
+  assert.ok(st0.users.every(u => [10427, 10391, 10288].indexOf(u.id) < 0 || u.qaReport), 'с согласием выводы хранятся');
+  // сотрудник сам отзывает согласие на ИИ: его вывод и анализ коллектива с ним — прочь той же правкой (SOP-менеджеру не нужно заходить)
+  assert.deepEqual(rejected(D({ action: 'patch', ops: [{ op: 'set', path: ['users', { id: 10427 }, 'qa', 'consent'], value: cons(false) }] })), []);
+  let st = g.state(), by = id => st.users.find(u => u.id === id);
+  assert.equal(by(10427).qaReport, undefined, 'вывод по нему удалён');
+  assert.ok(by(10391).qaReport && by(10288).qaReport, 'у остальных — на месте');
+  const ct = by(10901).qaTeam;
+  assert.ok(!ct.data && !ct.ids && ct.gone > 0 && ct.at === 30 && ct.by === 10901 && ct.v === 2, 'анализ коллектива — отметка без текста: ' + JSON.stringify(ct));
+  assert.doesNotMatch(JSON.stringify(st.users), /Dilnoza haqida|jamoa/, 'ни строки о нём, ни общего текста');
+  // анкета без поля согласий (до шага согласий) — вывод не хранится
+  assert.deepEqual(rejected(A({ action: 'patch', ops: [{ op: 'del', path: ['users', { id: 10391 }, 'qa', 'consent'] }] })), []);
+  st = g.state();
+  assert.equal(by(10391).qaReport, undefined, 'анкета до согласий — вывод удалён');
+  assert.ok(by(10288).qaReport, 'с согласием — остаётся');
+  // анализ коллектива, где все согласны, — не трогается
+  assert.deepEqual(rejected(C({ action: 'patch', ops: [{ op: 'set', path: ['users', { id: 10901 }, 'qaTeam'], value: Object.assign({}, team, { ids: [10288] }) }] })), []);
+  assert.equal(g.state().users.find(u => u.id === 10901).qaTeam.data.summary, 'jamoa');
 });
 
 test('должности и отделы (settings.positions / settings.depts, v15): меняет только CEO; SOP-менеджер и сотрудник — нет', () => {

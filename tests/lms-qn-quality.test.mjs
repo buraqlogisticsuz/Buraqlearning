@@ -114,6 +114,32 @@ test('серия одинаковых в порядке показа: 9 — но
   assert.equal(qnQuality(Q, mid(0.9), calm).ix.find(x => x.k === 'mid').lv, 'red');
 });
 
+test('утверждения одной шкалы стоят подряд (раздел «# … [shkala: …]») — серию не судим: пропуск «order», а не жёлтый или красный', () => {
+  // тест 5 × 10 из текста, утверждения сгруппированы по шкалам (так его вставляют по умолчанию)
+  const names = ['Muloqot', 'Liderlik', 'Ishonchlilik', 'Tartib', 'Xotirjamlik'];
+  const txt = names.map((n, k) => '# ' + n + ' [shkala: ' + n + ']\n' + Array.from({ length: 10 }, (_, i) => (k * 10 + i + 1) + '. ' + n + ' fikri ' + (i + 1) + ' [baho]').join('\n')).join('\n');
+  const q = qnParse(txt), its = q.questions.filter(x => x.type === 'scale');
+  assert.equal(its.length, 50);
+  // честный сильный экстраверт: «5» на всё «Muloqot» и на первые пять «Liderlik», дальше — разные
+  const a = {}, mix = [3, 4, 2, 4, 3, 2, 4, 3, 1, 2];
+  its.forEach((x, i) => { a[x.id] = i < 15 ? 5 : mix[i % 10]; });
+  const r = qnQuality(q, a, null);
+  assert.equal(r.v.run, 15, 'серия — 15');
+  assert.ok(!r.ix.some(x => x.k === 'run'), 'серия не судится');
+  assert.ok(r.skip.includes('order'));
+  assert.notEqual(r.level, 'red');
+  assert.match(T('uz')('qn_q_sk_order'), /aralashtirilmagan/);
+  // 10 «5» на «Ishonchlilik» — тоже не жёлтый
+  const b = {}; its.forEach((x, i) => { b[x.id] = i >= 20 && i < 30 ? 5 : mix[i % 10]; });
+  assert.ok(!qnQuality(q, b, null).ix.some(x => x.k === 'run'));
+  // те же утверждения вперемешку — серия снова судится
+  const shuffled = { questions: its.map((x, i) => its[(i % 5) * 10 + Math.floor(i / 5)]), scales: q.scales };
+  const one = Object.fromEntries(its.map(x => [x.id, 5]));
+  const rs = qnQuality(shuffled, one, null);
+  assert.equal(rs.ix.find(x => x.k === 'run').lv, 'red');
+  assert.ok(!rs.skip.includes('order'));
+});
+
 test('обратные пары: d = |a − (6 − b)|; gross ≥ 3 — жёлтый, ≥ 4 — красный; meanD ≥ 1,2 / 1,5; согласие со всем', () => {
   const contra = k => { const a = honest(); for (let i = 1; i <= k; i++) { a['i' + i] = 5; a['i' + (i + 25)] = 5; } return a; };
   const g3 = qnQuality(Q, contra(3), calm).ix.find(x => x.k === 'pairs');

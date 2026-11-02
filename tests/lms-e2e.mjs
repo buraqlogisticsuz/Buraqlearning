@@ -950,6 +950,10 @@ try {
     assert.deepEqual([by('Tug‘ilgan').type, by('Tug‘ilgan').prof, by('Pasport').secret, by('Pasport').prof, by('Ma’lumotlarim').type], ['date', 'birth', true, 'passport', 'consent']); }
   // как анкета до шага согласий: поля согласий нет. Анкета снова «к заполнению» (новые обязательные) — сначала шаг согласий
   assert.deepEqual(srv.g.post({ token: sopTk(), action: 'patch', ops: [{ op: 'del', path: ['users', { id: emp.id }, 'qa', 'consent'] }] }).rejected, []);
+  // без согласия на ИИ выводов ИИ сервер не хранит: отметка «Rad etish» по нему и анализ коллектива с ним — той же правкой
+  { const st = srv.g.state(), sop = st.users.find(u => u.login === srv.admin.login);
+    assert.equal(st.users.find(u => u.id === emp.id).qaReport, undefined, 'вывода ИИ по нему нет');
+    assert.ok(sop.qaTeam && !sop.qaTeam.data && !sop.qaTeam.ids && sop.qaTeam.gone > 0, 'анализ коллектива — отметкой без текста'); }
   await E.reload({ waitUntil: 'networkidle' }); await watchSync(E);
   await E.locator('.qn-page .qn-cons-step').waitFor({ timeout: 8000 });
   assert.equal(await E.locator('.app-body').count(), 0, 'пока анкета не отправлена — платформы нет');
@@ -1059,6 +1063,10 @@ try {
   { const tx = await E.locator('.qn-modal .qn-own').innerText();
     assert.ok(/Aralash profil/.test(tx) && /Ishonchlilik/.test(tx) && /qobiliyat yoki xarakterni emas/.test(tx), 'сотрудник видит свой профиль и оговорку'); }
   assert.equal(await E.locator('.qn-modal .qn-ai').count(), 0, 'вывода ИИ у сотрудника нет');
+  // анкета отправлена: ответы теста только посмотреть (заново — лишь по просьбе руководства), остальное можно поправить
+  assert.equal(await E.locator('.qn-modal .qn-test-ro').count(), 1, 'над тестом — «javoblarni o‘zgartirib bo‘lmaydi»');
+  assert.ok(await E.locator('.qn-modal .qn-sc').count() > 0 && await E.locator('.qn-modal .qn-sc:not([disabled])').count() === 0, 'оценки теста не нажать');
+  assert.ok(await E.locator('.qn-modal textarea').first().isEnabled(), 'ответ анкеты — можно поправить');
   await shot(E, 'savolnoma-xodim-profil');
   await E.locator('.qn-modal .lor-modal-x').click();
   step('тест после анкеты: пояснение, честное предупреждение перед шкалами темперамента, оценки 1–5 с подписями; среднее по шкалам, равные шкалы — «aralash profil», надёжность отдельно, ответы под шкалой, оговорка; сотрудник видит свой профиль');
@@ -1086,9 +1094,10 @@ try {
   await A.reload({ waitUntil: 'networkidle' }); await watchSync(A);
   await nav(A, 'cms'); await A.locator('.lor-tab').filter({ hasText: 'Savolnoma' }).click(); await A.waitForTimeout(300);
   await settle(A);
-  assert.equal(srv.g.state().users.find(u => u.id === emp.id).qaReport, undefined, 'страница SOP-менеджера удалила вывод ИИ');
+  assert.equal(srv.g.state().users.find(u => u.id === emp.id).qaReport, undefined, 'вывод ИИ удалён (сервер — той же правкой)');
   { const tx = await A.locator('.qn-team-ai').innerText();
-    assert.ok(/AI roziligini qaytarib oldi/.test(tx) && !/Dilnoza Karimova-Aliyeva — Hujjatlar/.test(tx), 'в анализе коллектива его строки нет: ' + tx); }
+    assert.ok(/AI roziligini qaytarib oldi/.test(tx) && !/Dilnoza Karimova-Aliyeva — Hujjatlar/.test(tx), 'анализа коллектива с ним нет — «qayta tayyorlang»: ' + tx);
+    assert.equal(await A.locator('.qn-team-ai .qn-team-gone').count(), 1); }
   assert.match(await A.locator('.qn-tbl tbody tr').first().innerText(), /✕ AI[\s\S]*✕ Maxfiy/, 'в таблице — плашки согласия');
   { const n0 = aiCalls.length;
     await A.locator('.qn-tbl tbody tr').first().click(); await A.locator('.qn-ans .qn-ai').waitFor({ timeout: 5000 }); await A.waitForTimeout(1000);
@@ -1311,6 +1320,59 @@ try {
   await E.locator('.qn-done').waitFor({ timeout: 5000 }); await settle(E);
   assert.equal(srv.g.state().users.find(u => u.id === emp.id).qa.answers[srv.g.state().settings.questionnaire.questions.find(x => x.text.startsWith('Oilaviy')).id], 'Oilasiz');
   step('вопрос по условию: «Farzandlaringiz soni» виден только при «Oilali»; с «Oilasiz» анкета отправляется без него');
+
+  // ---------- анкета, отправленная до шага согласий (как у сотрудника выше, но поля согласий нет, паспорт [maxfiy] сохранён, старый
+  // вывод ИИ): вывод ИИ сервер не хранит, у SOP паспорт закрыт; при входе — только шаг согласий; без особых — сначала вопрос ----------
+  // правка — входом страницы SOP-менеджера (новый вход сверх 10 закрыл бы самый старый — эту страницу)
+  { const st = srv.g.state(), ps = st.settings.questionnaire.questions.find(x => x.text.startsWith('Pasport')), me = st.users.find(u => u.id === emp.id);
+    const qa = Object.assign({}, me.qa, { answers: Object.assign({}, me.qa.answers, { [ps.id]: 'AA 7654321' }) }); delete qa.consent;
+    const aTok = await A.evaluate(() => localStorage.getItem('lor-lms-token'));
+    assert.deepEqual(srv.g.post({ token: aTok, action: 'patch', ops: [
+      { op: 'set', path: ['users', { id: emp.id }, 'qa'], value: qa },
+      { op: 'set', path: ['users', { id: emp.id }, 'qaReport'], value: { at: Date.now(), v: 1, data: { summary: 'eski xulosa', fit: 'mos' } } }] }).rejected, []);
+    assert.equal(srv.g.state().users.find(u => u.id === emp.id).qaReport, undefined, 'вывод ИИ без согласия сервер не хранит'); }
+  await A.reload({ waitUntil: 'networkidle' }); await watchSync(A);
+  await nav(A, 'cms'); await A.locator('.lor-tab').filter({ hasText: 'Savolnoma' }).click(); await A.waitForTimeout(300);
+  await A.locator('.qn-tbl tbody tr', { hasText: 'Dilnoza' }).first().click(); await A.locator('.qn-ans').waitFor({ timeout: 5000 });
+  assert.match(await A.locator('.qn-ans .qn-sec-wait').innerText(), /Maxfiy javoblar yopiq/, 'паспорт анкеты до согласий — закрыт');
+  assert.equal(await A.getByRole('button', { name: 'Maxfiy ma’lumotlarni ko‘rsatish' }).count(), 0, '…и кнопки «показать» нет');
+  assert.ok(!(await A.locator('.qn-ans').innerText()).includes('AA 7654321'));
+  await A.locator('.qn-ans .lor-modal-x').click();
+  await E.reload({ waitUntil: 'networkidle' }); await watchSync(E);
+  await E.locator('.qn-page .qn-cons-step').waitFor({ timeout: 8000 });
+  assert.equal(await E.locator('.qn-cons-opt').count(), 3);
+  await E.locator('.qn-cons-opt[data-c="base"] .qn-consent-l').click();
+  let jMsg = '';
+  E.once('dialog', d => { jMsg = d.message(); d.dismiss(); });
+  await E.locator('.qn-cons-go').click(); await E.waitForTimeout(300);
+  assert.match(jMsg, /Maxfiy savollarga javoblaringiz o‘chiriladi/, 'без особых данных — сначала вопрос');
+  assert.equal(await E.locator('.qn-page .qn-cons-step').count(), 1, '«Bekor qilish» — согласие не записано');
+  assert.equal(srv.g.state().users.find(u => u.id === emp.id).qa.consent, undefined);
+  E.once('dialog', d => d.accept());
+  await E.locator('.qn-cons-go').click();
+  await E.waitForFunction(() => !document.querySelector('.qn-page'), null, { timeout: 5000 }); await settle(E);
+  { const me = srv.g.state().users.find(u => u.id === emp.id), ps = srv.g.state().settings.questionnaire.questions.find(x => x.text.startsWith('Pasport'));
+    assert.deepEqual([me.qa.consent.base, me.qa.consent.ai, me.qa.consent.special], [true, false, false], 'согласие записано — анкету заново не спрашивают');
+    assert.ok(!(ps.id in me.qa.answers) && me.qa.at && Object.keys(me.qa.answers).length > 5, 'паспорт стёрт, остальные ответы и дата отправки — на месте'); }
+  assert.deepEqual(await rejected(E), [], 'сервер принял согласие');
+  // ---------- отзыв согласия на обработку: «Mening profilim» → «Rozilik» → «Rozilikni qaytarib olish» — ответы стираются, анкета снова первым шагом ----------
+  await E.reload({ waitUntil: 'networkidle' }); await watchSync(E);
+  await E.locator('.app-body').waitFor({ timeout: 8000 }); await E.waitForTimeout(500);
+  for (let i = 0; i < 3 && await E.locator('.lor-scrim .lor-modal-x').count(); i++) { await E.locator('.lor-scrim .lor-modal-x').first().click(); await E.waitForTimeout(200); }
+  await E.locator('.user-btn').first().click(); await E.locator('.user-pop-links .profile').click(); await E.waitForTimeout(300);
+  assert.ok(!/SOP menejeriga murojaat/.test(await E.locator('.pf-modal .qn-cons-box').innerText()), 'не отправляет «к SOP-менеджеру»');
+  let eMsg = '';
+  E.once('dialog', d => { eMsg = d.message(); d.accept(); });
+  await E.locator('.pf-modal .qn-cons-off').click();
+  await E.locator('.qn-page .qn-cons-step').waitFor({ timeout: 8000 }); await settle(E);
+  assert.match(eMsg, /barcha javoblaringiz/, 'сначала — что удалится');
+  assert.equal(await E.locator('.pf-modal').count(), 0, 'окно профиля закрылось — виден шаг согласий');
+  { const me = srv.g.state().users.find(u => u.id === emp.id);
+    assert.deepEqual(Object.keys(me.qa), ['consent'], 'ответов, их времени и прежней попытки теста нет');
+    assert.deepEqual([me.qa.consent.base, me.qa.consent.ai, me.qa.consent.special], [false, false, false]);
+    assert.ok(srv.g.state().audit.some(x => x.key === 'qn-consent' && x.userId === emp.id && x.base === false), 'отзыв — в журнале'); }
+  assert.deepEqual(await rejected(E), [], 'сервер принял отзыв');
+  step('анкета до шага согласий: при входе — только согласие (без особых — вопрос, паспорт стёрт), у SOP паспорт закрыт; отзыв согласия на обработку в профиле');
 
   // ---------- демо больше нет: ?demo=1 — тот же вход на сервер; без адреса сервера — «Server ulanmagan» ----------
   const D = await device('бывшее демо', '?demo=1');
