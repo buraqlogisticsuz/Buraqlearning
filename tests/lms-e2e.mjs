@@ -1195,7 +1195,15 @@ try {
     assert.notEqual(await pc.locator('.qn-hb-bar').first().evaluate(e => getComputedStyle(e).animationName), 'none', 'полоса вырастает');
     await A.emulateMedia({ reducedMotion: 'reduce' });
     assert.equal(await pc.locator('.qn-hb-bar').first().evaluate(e => getComputedStyle(e).animationName), 'none', 'reduced motion — сразу целиком');
-    await A.emulateMedia({ reducedMotion: 'no-preference' }); }
+    await A.emulateMedia({ reducedMotion: 'no-preference' });
+    // на телефоне имя — над полосой: сетка у каждой полосы своя, линии не идут по именам шкал
+    await A.setViewportSize({ width: 390, height: 844 }); await A.waitForTimeout(300);
+    { const g = await pc.evaluate(f => { const ls = [...f.querySelectorAll('.qn-hb-grid line, .qn-hb-rgrid line')].map(l => l.getBoundingClientRect()).filter(r => r.height > 0);
+        const hits = [...f.querySelectorAll('.qn-hb-name')].filter(n => { const b = n.getBoundingClientRect(); return ls.some(r => r.left >= b.left - 1 && r.left <= b.right && r.top < b.bottom - 1 && r.bottom > b.top + 1); });
+        return { lines: ls.length, hits: hits.map(n => n.textContent) }; });
+      assert.ok(g.lines >= 5 * 5, 'сетка на телефоне есть — у каждой полосы (' + g.lines + ')');
+      assert.deepEqual(g.hits, [], 'линии сетки не пересекают имена шкал'); }
+    await A.setViewportSize({ width: 1280, height: 900 }); await A.waitForTimeout(300); }
   { const grp = A.locator('.qn-ans .qn-sl'), tg = grp.locator('.qn-why-tg').first();
     assert.ok(await grp.locator('.qn-why').first().isHidden(), 'ответы под шкалой свёрнуты');
     assert.match(await tg.innerText(), /Javoblar \(1\)/, 'кнопка — «Javoblar (n)»');
@@ -1208,7 +1216,11 @@ try {
     assert.ok(await grp.locator('.qn-why').first().isVisible(), 'в печати ответы под шкалой раскрыты');
     assert.ok(await A.locator('.qn-ans .qn-pc .qn-hb-bar').first().evaluate(e => e.getBoundingClientRect().width > 100), 'в печати график — с полосами');
     assert.ok(await A.locator('.qn-ans .qn-cons-full').first().evaluate(e => e.getBoundingClientRect().width > 50), 'в печати согласия — полным текстом');
-    await A.emulateMedia({ media: 'screen' }); await A.evaluate(() => document.body.classList.remove('qn-printing')); }
+    // печать из тёмной темы: график — как в светлой (фирменный синий, серый без прозрачности, тень в легенде видна)
+    await A.emulateMedia({ media: 'print', colorScheme: 'dark' });
+    { const c = await A.locator('.qn-ans .qn-pc').evaluate(f => { const cs = s => getComputedStyle(f.querySelector(s)); return [cs('.qn-hb-row.is-acc .qn-hb-fill rect').fill, cs('.qn-hb-row.is-mute .qn-hb-fill').opacity, cs('.qn-hb-sw.is-sem').backgroundColor === cs('.qn-hb-v').fill]; });
+      assert.deepEqual(c, ['rgb(3, 76, 170)', '1', true], 'PDF из тёмной темы — те же цвета графика, что из светлой'); }
+    await A.emulateMedia({ media: 'screen', colorScheme: 'light' }); await A.evaluate(() => document.body.classList.remove('qn-printing')); }
   await A.waitForTimeout(400); await shot(A, 'savolnoma-profil');
   await A.locator('.qn-ans .lor-modal-x').click();
   await A.locator('.lor-tab').filter({ hasText: 'Darslar' }).click();

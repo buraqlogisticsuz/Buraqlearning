@@ -3567,10 +3567,12 @@ button.qn-fold-tg:hover { background: var(--surface-sunken); color: var(--blue-t
    Цвета — только токены lor.css: acc — синий (--blue; в тёмной теме — светлее, --blue-text: --blue на тёмно-синем не
    виден), mute — серый (--gray; в тёмной — вполовину прозрачный, чтобы не спорил с синим); тень погрешности и «усы» —
    цветом текста, сетка — волосные линии --line. Значения подписаны у каждой полосы, рядом скрытая таблица — поэтому
-   светлому серому (контраст ниже 3:1) не нужно читаться самому. Узкий блок (@container < 440 px) — имя над полосой */
+   светлому серому (контраст ниже 3:1) не нужно читаться самому. Узкий блок (@container < 440 px) — имя над полосой,
+   сетка — у каждой полосы своя (.qn-hb-rgrid), не по именам. Тёмные цвета графика — только на экране: в печати из
+   тёмной темы — фирменный синий и серый без прозрачности на белом */
 .qn-hb, .qn-sl { --hb-acc: var(--blue); --hb-mute: var(--gray); --hb-mute-o: 1; --hb-sem-o: .09; --hb-bg: var(--surface-raised); }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .qn-hb, :root:not([data-theme="light"]) .qn-sl { --hb-acc: var(--blue-text); --hb-mute-o: .5; --hb-sem-o: .12; } }
-:root[data-theme="dark"] .qn-hb, :root[data-theme="dark"] .qn-sl { --hb-acc: var(--blue-text); --hb-mute-o: .5; --hb-sem-o: .12; }
+@media screen and (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .qn-hb, :root:not([data-theme="light"]) .qn-sl { --hb-acc: var(--blue-text); --hb-mute-o: .5; --hb-sem-o: .12; } }
+@media screen { :root[data-theme="dark"] .qn-hb, :root[data-theme="dark"] .qn-sl { --hb-acc: var(--blue-text); --hb-mute-o: .5; --hb-sem-o: .12; } }
 .qn-hb { container-type: inline-size; margin: 0; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
 .qn-hb-cap { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 6px 16px; }
 .qn-hb-t { display: inline-flex; align-items: baseline; flex-wrap: wrap; gap: 2px 10px; }
@@ -3584,8 +3586,9 @@ button.qn-fold-tg:hover { background: var(--surface-sunken); color: var(--blue-t
 .qn-hb-plot { --hb-lab: 210px; --hb-gap: 16px; --hb-pad: 40px; display: flex; flex-direction: column; }
 .qn-hb-grp { position: relative; display: flex; flex-direction: column; gap: 6px; padding: 4px 0; }
 .qn-hb-grid { position: absolute; top: 0; left: calc(var(--hb-lab) + var(--hb-gap)); width: calc(100% - var(--hb-lab) - var(--hb-gap) - var(--hb-pad)); height: 100%; overflow: visible; pointer-events: none; }
-.qn-hb-grid line { stroke: var(--line); stroke-width: 1; shape-rendering: crispEdges; }
-.qn-hb-grid line.is-base { stroke: var(--border); }
+.qn-hb-grid line, .qn-hb-rgrid line { stroke: var(--line); stroke-width: 1; shape-rendering: crispEdges; }
+.qn-hb-grid line.is-base, .qn-hb-rgrid line.is-base { stroke: var(--border); }
+.qn-hb-rgrid { display: none; }
 .qn-hb-row { position: relative; display: grid; grid-template-columns: var(--hb-lab) minmax(0, 1fr); column-gap: var(--hb-gap); align-items: center; padding-right: var(--hb-pad); }
 .qn-hb-name { min-width: 0; font-size: 14px; line-height: 18px; color: var(--ink); overflow-wrap: anywhere; }
 .qn-hb-svg { display: block; width: 100%; height: 24px; overflow: visible; }
@@ -3613,6 +3616,7 @@ button.qn-fold-tg:hover { background: var(--surface-sunken); color: var(--blue-t
 @container (max-width: 440px) {
   .qn-hb-plot { --hb-lab: 0px; --hb-gap: 0px; --hb-pad: 34px; }
   .qn-hb-grp { gap: 10px; }
+  .qn-hb-grid { display: none; } .qn-hb-rgrid { display: inline; }
   .qn-hb-row, .qn-hb-axrow { grid-template-columns: minmax(0, 1fr); row-gap: 1px; }
   .qn-hb-axrow > span { display: none; }
   .qn-hb-name { font-size: 13px; line-height: 17px; }
@@ -3637,10 +3641,11 @@ button.qn-fold-tg:hover { background: var(--surface-sunken); color: var(--blue-t
 .qn-tc { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: var(--space-6) var(--space-8); margin-top: 4px; padding-top: var(--space-4); border-top: var(--hairline) solid var(--line); }
 .qn-tc-min { margin: 4px 0 0; padding: 8px 12px; border-radius: var(--radius-md); background: var(--surface-sunken); color: var(--ink-muted); }
 @media print {
-  .qn-hb, .qn-sl { --hb-acc: var(--blue); --hb-mute: var(--gray); --hb-mute-o: 1; --hb-bg: var(--white); }
+  .qn-hb, .qn-sl { --hb-acc: var(--blue); --hb-mute: var(--gray); --hb-mute-o: 1; --hb-sem-o: .12; --hb-bg: var(--white); }
   .qn-hb-bar, .qn-hb-sem, .qn-hb-rng, .qn-hb-v { animation: none !important; }
-  .qn-hb-grid line { stroke: var(--gray); } .qn-hb-grid line.is-base { stroke: var(--navy); }
-  .qn-hb-v, .qn-hb-na, .qn-hb-ax text { fill: var(--navy); } .qn-hb-sem { fill: var(--navy); fill-opacity: .12; } .qn-hb-rng line { stroke: var(--navy); } .qn-hb-rng line.is-in { stroke: var(--white); }
+  .qn-hb-grid line, .qn-hb-rgrid line { stroke: var(--gray); } .qn-hb-grid line.is-base, .qn-hb-rgrid line.is-base { stroke: var(--navy); }
+  .qn-hb-v, .qn-hb-na, .qn-hb-ax text { fill: var(--navy); } .qn-hb-sem { fill: var(--navy); } .qn-hb-rng line { stroke: var(--navy); } .qn-hb-rng line.is-in { stroke: var(--white); }
+  .qn-hb-sw.is-sem { background: var(--navy); } .qn-hb-sw.is-rng { border-color: var(--navy); background-image: linear-gradient(var(--navy), var(--navy)); }
   .qn-hb-name, .qn-hb-leg, .qn-hb-sep, .qn-sl-top, .qn-sl-band { color: var(--navy); }
 }
 .qn-foot { margin: 0; padding: 10px 12px; border-left: 2px solid var(--red); background: var(--surface-sunken); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; font-size: 13px; line-height: 19px; color: var(--ink); }

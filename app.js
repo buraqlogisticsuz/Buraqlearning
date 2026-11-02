@@ -7967,6 +7967,9 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var d0 = p.d[0], d1 = p.d[1], X = function (v) { return Math.max(0, Math.min(100, (v - d0) / (d1 - d0) * 100)); }, pc = function (v) { return X(v) + '%'; };
     var groups = [], k = 0;
     p.rows.forEach(function (r) { if (!groups.length || r.sep) groups.push({ l: r.sep || '', rows: [] }); groups[groups.length - 1].rows.push(r); });
+    /* сетка: в широком блоке — одним SVG на группу (сквозные линии), в узком (имя над полосой) — у каждой полосы своя
+       (.qn-hb-rgrid), чтобы линии не шли по именам шкал */
+    function lines(y2) { return (p.grid || []).map(function (v) { return h('line', { key: v, className: v === d0 ? 'is-base' : '', x1: pc(v), x2: pc(v), y1: 0, y2: y2 }); }); }
     /* «усы» min–max: поверх полосы — цветом фона (вырезаны в полосе), за её концом — цветом текста */
     function whisk(r) {
       var L = function (k, cls, x1, x2, y1, y2) { return h('line', { key: k, className: cls, x1: pc(x1), x2: pc(x2), y1: y1, y2: y2 }); }, v = r.v;
@@ -7980,6 +7983,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         h('span', { className: 'qn-hb-name' }, r.name),
         h('svg', { className: 'qn-hb-svg', height: 24, 'aria-hidden': true, focusable: 'false' },
           has && r.tip ? h('title', null, r.tip) : null,
+          h('g', { className: 'qn-hb-rgrid' }, lines(24)),
           has && p.kind === 'sem' ? h('rect', { className: 'qn-hb-sem', style: late, x: pc(r.v - p.sem), width: (X(r.v + p.sem) - X(r.v - p.sem)) + '%', y: 2, height: 20, rx: 4 }) : null,
           /* полоса — подложка цветом фона и сама полоса: полупрозрачная (тёмная тема) не просвечивает тенью погрешности */
           has ? h('g', { className: 'qn-hb-bar', style: { animationDelay: i * 60 + 'ms' } }, ['qn-hb-under', 'qn-hb-fill'].map(function (c) {
@@ -7988,8 +7992,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           has && p.kind === 'range' ? h('g', { className: 'qn-hb-rng', style: late }, whisk(r)) : null,
           h('text', { className: has ? 'qn-hb-v' : 'qn-hb-na', style: has ? late : null, x: pc(end), dx: has ? 6 : 8, y: 12, dy: '.35em' }, has ? r.lab : r.note || '—')));
     }
-    var grid = h('svg', { className: 'qn-hb-grid', 'aria-hidden': true, focusable: 'false' },
-      (p.grid || []).map(function (v) { return h('line', { key: v, className: v === d0 ? 'is-base' : '', x1: pc(v), x2: pc(v), y1: 0, y2: '100%' }); }));
+    var grid = h('svg', { className: 'qn-hb-grid', 'aria-hidden': true, focusable: 'false' }, lines('100%'));
     return h('figure', { className: cx('qn-hb', p.className) },
       p.title || (p.legend && p.legend.length) ? h('figcaption', { className: 'qn-hb-cap' },
         p.title ? h('span', { className: 'qn-hb-t' }, h('span', { className: 'lor-eyebrow' }, p.title), p.sub ? h('small', null, p.sub) : null) : null,

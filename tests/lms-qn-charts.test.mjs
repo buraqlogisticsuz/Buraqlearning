@@ -104,6 +104,18 @@ test('график: role=img с подписью, скрытая таблица 
   assert.ok(!/#[0-9a-f]{3,8}\b|rgba?\(/i.test(blk), 'новых цветов нет — только var(--…)');
   assert.match(blk, /--hb-acc: var\(--blue\)/); assert.match(blk, /--hb-acc: var\(--blue-text\)/, 'в тёмной теме — светлее');
   assert.match(css, /@media print \{\n  \.qn-hb, \.qn-sl \{ --hb-acc: var\(--blue\)/, 'в печати — фирменный синий на белом');
+  // тёмные цвета графика — только на экране: иначе (0,3,0) перебивает печатное (0,1,0), и PDF из тёмной темы — бледный
+  const dark = blk.split('\n').filter(l => /\[data-theme/.test(l) && /--hb-acc/.test(l));
+  assert.equal(dark.length, 2);
+  for (const l of dark) assert.match(l, /^@media screen( and \(prefers-color-scheme: dark\))? \{ :root/, 'тёмная тема графика — @media screen: ' + l.slice(0, 60));
+  const pr = css.slice(css.indexOf('@media print {\n  .qn-hb, .qn-sl {'), css.indexOf('.qn-foot {'));
+  assert.match(pr, /\.qn-hb-sw\.is-sem \{ background: var\(--navy\); \}/, 'в печати тень в легенде — тёмно-синяя (не --ink: в тёмной теме белый)');
+  assert.match(pr, /\.qn-hb-sw\.is-rng \{ border-color: var\(--navy\);/);
+  // узкий блок: имя над полосой — сетка у каждой полосы своя, общая (сквозь имена) скрыта
+  assert.match(src, /h\('g', \{ className: 'qn-hb-rgrid' \}, lines\(24\)\)/, 'сетка в строке — только по высоте полосы');
+  const narrow = css.slice(css.indexOf('@container (max-width: 440px) {\n  .qn-hb-plot'), css.indexOf('/* под графиком профиля'));
+  assert.match(narrow, /\.qn-hb-grid \{ display: none; \} \.qn-hb-rgrid \{ display: inline; \}/);
+  assert.match(blk, /\n\.qn-hb-rgrid \{ display: none; \}/, 'в широком — общая сетка группы, у строк — нет');
   const uz = T('uz'), ru = T('ru'), en = T('en'), zh = T('zh');
   for (const k of ['qn_pc_t', 'qn_pc_sem', 'qn_pc_hint', 'qn_few_s', 'qn_tbl_sc', 'qn_tbl_avg', 'qn_tbl_band', 'qn_tc_avg_t', 'qn_tc_by', 'qn_tc_avg', 'qn_tc_rng', 'qn_tc_item',
     'qn_tc_few', 'qn_tc_lo', 'qn_tc_hi', 'qn_tc_n', 'qn_tc_dist_t', 'qn_tc_style', 'qn_tc_ppl', 'qn_tc_nolead', 'qn_tc_min'])
