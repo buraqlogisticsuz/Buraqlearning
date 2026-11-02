@@ -3630,3 +3630,45 @@ input.org-name:hover, input.org-name:focus { border-color: var(--line); backgrou
 .dv-alt p { color: var(--ink-muted); }
 .dv-alt-ext { font-size: 13px; padding: 10px 12px; }
 .dv-open { text-decoration: none; }
+
+/* ---------- «Tanishuv» на весь экран: документ слева во всю высоту, справа его видео, текст и кнопки ---------- */
+.ir { position: fixed; inset: 0; z-index: 65; display: flex; flex-direction: column; background: var(--glass-drawer); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); color: var(--ink); animation: fade-in var(--t-md) var(--ease) backwards; }
+.ir-head { flex: none; display: flex; align-items: center; gap: var(--space-4); padding: 10px 20px; background: var(--navy); color: var(--on-navy); border-bottom: 2px solid var(--red); }
+.ir-logo { flex: none; display: block; }
+.ir-title { flex: 1; min-width: 0; display: flex; flex-direction: column; padding-left: var(--space-4); border-left: var(--hairline) solid rgba(255, 255, 255, .25); }
+.ir-step { font-size: 12px; line-height: 16px; letter-spacing: .06em; opacity: .75; }
+.ir-title h1 { margin: 0; font-size: 20px; line-height: 26px; font-weight: 400; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ir-tabs { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.ir-tab { height: 32px; padding: 0 14px; border-radius: var(--radius-pill); border: var(--hairline) solid rgba(255, 255, 255, .4); background: transparent; color: var(--on-navy); font: inherit; font-size: 13px; cursor: pointer; max-width: 260px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ir-tab.is-on { background: var(--white); border-color: var(--white); color: var(--navy); }
+.ir-x { position: static; flex: none; color: var(--on-navy); }
+.ir-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(340px, 440px); }
+.ir-body.no-video { grid-template-columns: minmax(0, 1fr) minmax(300px, 360px); }
+.ir-doc { min-width: 0; min-height: 0; display: flex; flex-direction: column; border-right: var(--hairline) solid var(--line); }
+.ir-doc-bar { flex: none; display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: var(--hairline) solid var(--line); }
+.ir-doc-name { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.ir-doc-name b { font-weight: 500; font-size: 15px; line-height: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ir-doc-name small { font-size: 12px; color: var(--ink-muted); }
+.ir-doc .dv-body { flex: 1; min-height: 0; overflow: auto; }
+.ir-doc .dv-body.is-pdf { overflow: hidden; }
+.ir-side { min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: var(--space-4); padding: var(--space-6) var(--space-6) var(--space-4); }
+.ir-how { margin: 0; }
+.ir-video .lor-video { margin: 0; }
+.ir-text { max-height: none; font-size: 14px; line-height: 21px; }
+.ir-foot { margin-top: auto; display: flex; flex-direction: column; gap: 10px; padding-top: var(--space-4); border-top: var(--hairline) solid var(--line); }
+.ir-actions { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.in-dl-video { height: 32px; font-size: 13px; margin: 2px 0; }
+@media (max-width: 900px) {
+  .ir-head { flex-wrap: wrap; gap: 10px; padding: 10px 14px; }
+  .ir-title { padding-left: 10px; }
+  .ir-title h1 { font-size: 16px; line-height: 22px; }
+  .ir-tabs { order: 3; width: 100%; justify-content: flex-start; flex-wrap: nowrap; overflow-x: auto; }
+  .ir-body, .ir-body.no-video { display: flex; flex-direction: column; overflow: auto; }
+  .ir-doc { flex: none; border-right: 0; }
+  .ir-doc .dv-body { flex: none; overflow: visible; }
+  .ir-doc .dv-body.is-pdf { height: 75vh; }
+  .ir-doc .dv-body.is-pdf:has(.dv-alt) { height: auto; }
+  .ir-side { flex: none; overflow: visible; padding: var(--space-4); }
+  .ir-foot { padding-bottom: var(--space-3); }
+  .ir-doc-bar .dv-acts { display: none; }   /* на телефоне кнопки — в самой карточке документа */
+}

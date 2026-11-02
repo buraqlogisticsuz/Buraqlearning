@@ -730,41 +730,40 @@ try {
   await A.locator('.in-dl-item').nth(1).locator('.in-dl-mv').first().click();   // Word — первым
   assert.equal(await A.locator('.in-dl-item').nth(1).locator('.in-dl-title').inputValue(), 'Kompaniya qoidalari', 'название — из имени файла');
   await A.locator('.in-dl-item').nth(1).locator('.in-dl-title').fill('Kompaniya qoidalari (2026)');
+  await A.locator('.in-dl-item').nth(0).locator('.in-dl-video').fill('https://youtu.be/abc123XYZ00');
   await A.locator('.in-admin .in-actions .lor-btn-primary').click(); await settle(A); await A.waitForTimeout(800);
   { const w = srv.g.state().settings.welcome;
     assert.equal(w.title, 'Xush kelibsiz!');
     assert.ok(w.at && w.video && /youtu/.test(w.video.src) && /Ikkinchi/.test(w.introText), 'приветствие, знакомство и видео — на сервере');
     assert.deepEqual(w.docs.map(d => d.name), ['Ichki tartib.docx', 'Kompaniya qoidalari.pdf'], 'документы — на сервере, в выбранном порядке');
     assert.ok(w.docs.every(d => /^lmsfile:/.test(d.data)), 'сами файлы — на Диске, в данных только ссылки');
-    assert.equal(w.docs[1].title, 'Kompaniya qoidalari (2026)', 'своё название документа'); }
+    assert.equal(w.docs[1].title, 'Kompaniya qoidalari (2026)', 'своё название документа');
+    assert.equal(w.docs[0].video.src, 'https://youtu.be/abc123XYZ00', 'у Word — своё видео'); }
   await A.waitForFunction(() => document.querySelectorAll('.in-dl-st.is-ok').length === 2, null, { timeout: 8000 });
   await A.locator('.in-drop').scrollIntoViewIfNeeded(); await shot(A, 'tanishuv-hujjatlar');
   await A.locator('.lor-tab').filter({ hasText: 'Darslar' }).click();
   await E.reload({ waitUntil: 'networkidle' }); await watchSync(E); await E.waitForTimeout(1500);
-  // окно открывается само при входе; если страница ещё взяла данные из копии на устройстве — из меню пользователя
-  if (!(await E.locator('.intro-modal').count())) { await E.locator('.user-btn').first().click(); await E.locator('.user-pop-links button.intro').click(); }
-  await E.locator('.intro-modal').waitFor({ timeout: 5000 });
-  assert.ok(await E.locator('.intro-modal button:has-text("Tasdiqlash")').isDisabled(), 'без галочки подтвердить нельзя');
-  assert.ok(await E.locator('#in-seen').isDisabled(), 'пока документы не открыты — галочку не поставить');
-  assert.equal(await E.locator('.intro-modal .in-doc').count(), 2, 'оба документа — в окне');
-  await E.locator('.intro-modal .in-doc').first().click();
-  await E.locator('.doc-viewer .dv-doc').waitFor({ timeout: 8000 });
-  assert.match(await E.locator('.doc-viewer .dv-doc').innerText(), /Birinchi band/, 'Word читается прямо на сайте');
-  await E.waitForTimeout(400); await shot(E, 'tanishuv-word');
-  await E.keyboard.press('Escape');
-  assert.equal(await E.locator('.doc-viewer').count(), 0, 'Esc закрыл просмотр');
-  assert.equal(await E.locator('.intro-modal').count(), 1, '…а окно знакомства осталось');
-  assert.ok(await E.locator('#in-seen').isDisabled(), 'открыт один документ из двух');
-  await E.locator('.intro-modal .in-doc').nth(1).click();
+  // с документами знакомство — на весь экран (документ слева, его видео справа); открывается само при входе,
+  // а если страница ещё взяла данные из копии на устройстве — из меню пользователя
+  if (!(await E.locator('.ir').count())) { await E.locator('.user-btn').first().click(); await E.locator('.user-pop-links button.intro').click(); }
+  await E.locator('.ir').waitFor({ timeout: 5000 });
+  assert.ok(await E.locator('.ir-actions button:has-text("Tasdiqlash")').isDisabled(), 'без галочки подтвердить нельзя');
+  assert.equal(await E.locator('.ir-tab').count(), 2, 'два документа — две вкладки');
+  await E.locator('.ir .dv-doc').waitFor({ timeout: 8000 });
+  assert.match(await E.locator('.ir .dv-doc').innerText(), /Birinchi band/, 'Word — сразу на экране, во всю высоту');
+  assert.ok(await E.locator('.ir-side iframe[src*="abc123XYZ00"]').count(), 'справа — видео этого документа');
+  assert.ok(await E.locator('#in-seen').isDisabled(), 'открыт один документ из двух — галочку не поставить');
+  await E.waitForTimeout(400); await shot(E, 'tanishuv-ekran');
+  await E.locator('.ir-tab').nth(1).click();
   // PDF: встроенный просмотр, а где браузер не умеет (headless, Android) — кнопка «Hujjatni ochish» с тем же файлом
-  await E.locator('.doc-viewer iframe.dv-pdf[src^="blob:"], .doc-viewer a.dv-open[href^="blob:"]').waitFor({ timeout: 8000 });
-  await E.locator('.doc-viewer .lor-modal-x').click();
-  assert.equal(await E.locator('.intro-modal .in-doc.is-seen').count(), 2, 'оба документа отмечены открытыми');
-  await shot(E, 'tanishuv-oyna');
-  await E.check('#in-seen'); await E.locator('.intro-modal button:has-text("Tasdiqlash")').click(); await settle(E);
+  await E.locator('.ir iframe.dv-pdf[src^="blob:"], .ir a.dv-open[href^="blob:"]').waitFor({ timeout: 8000 });
+  assert.ok(await E.locator('.ir-side iframe[src*="dQw4w9WgXcQ"]').count(), 'у PDF своего видео нет — справа общее видео знакомства');
+  if (await E.locator('.ir a.dv-open').count()) { const [tab] = await Promise.all([E.context().waitForEvent('page'), E.locator('.ir a.dv-open').click()]); await tab.close(); }
+  assert.equal(await E.locator('.ir-tab.is-seen').count(), 2, 'оба документа отмечены открытыми');
+  await E.check('#in-seen'); await E.locator('.ir-actions button:has-text("Tasdiqlash")').click(); await settle(E);
   assert.ok(srv.g.state().users.find(u => u.id === emp.id).introSeenAt, 'знакомство подтверждено — на сервере');
-  assert.equal(await E.locator('.intro-modal').count(), 0, 'окно закрылось');
-  step('«Tanishuv»: SOP-менеджер задал приветствие и обязательное знакомство (текст, PDF и Word, видео), сотрудник открыл документы и подтвердил');
+  assert.equal(await E.locator('.ir').count(), 0, 'экран знакомства закрылся');
+  step('«Tanishuv»: SOP-менеджер задал приветствие и обязательное знакомство (текст, PDF и Word, видео), на весь экран: документ слева, его видео справа; сотрудник открыл документы и подтвердил');
 
   // ---------- «Savolnoma»: SOP-менеджер добавляет вопросы списком (варианты, раздел, оценка); сотрудник заполняет; ответы видит SOP ----------
   await nav(A, 'cms'); await A.locator('.lor-tab').filter({ hasText: 'Savolnoma' }).click(); await A.waitForTimeout(300);
