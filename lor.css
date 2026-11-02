@@ -3549,14 +3549,16 @@ button.mc-cell.at-cell:hover { outline: 2px solid var(--blue-text); outline-offs
 .qn-disc { margin: 0; }
 .qn-res { display: flex; flex-direction: column; gap: var(--space-4); }
 .qn-team { display: flex; flex-direction: column; gap: 8px; }
-.qn-tm-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 4px; }
-.qn-tm-cell { display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; border-radius: var(--radius-md); }
+/* по коллективу — сколько у кого ведущая склонность / смешанный профиль: нейтрально, без цветных «ярлыков» темперамента */
+.qn-tm-eb { margin-top: 4px; }
+.qn-tm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.qn-tm-cell { display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; border-radius: var(--radius-md); background: var(--surface-sunken); color: var(--ink); }
 .qn-tm-cell b { font-size: 28px; line-height: 32px; font-weight: 400; font-variant-numeric: tabular-nums; }
-.qn-tm-cell span { font-size: 13px; }
-.is-sanguine.qn-tm-cell, .qn-tm-chip.is-sanguine, .qn-temper.is-sanguine { background: var(--blue-soft); color: var(--blue-text); }
-.is-choleric.qn-tm-cell, .qn-tm-chip.is-choleric, .qn-temper.is-choleric { background: var(--red-soft); color: var(--red-text); }
-.is-phlegmatic.qn-tm-cell, .qn-tm-chip.is-phlegmatic, .qn-temper.is-phlegmatic { background: var(--surface-sunken); color: var(--ink); }
-.is-melancholic.qn-tm-cell, .qn-tm-chip.is-melancholic, .qn-temper.is-melancholic { background: var(--navy); color: var(--on-navy); }
+.qn-tm-cell span { font-size: 13px; line-height: 18px; color: var(--ink-muted); }
+.qn-tm-kind { display: inline-flex; flex-direction: column; gap: 1px; font-size: 13px; line-height: 18px; color: var(--ink); }
+.qn-tm-kind b { font-weight: 500; }
+.qn-tm-kind small { font-size: 12px; line-height: 16px; color: var(--ink-muted); }
+.qn-person-top .qn-tm-kind { flex: none; max-width: 45%; text-align: right; }
 .qn-avg { display: flex; flex-wrap: wrap; gap: 6px; }
 .qn-people { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--space-3); }
 .qn-person { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border: var(--hairline) solid var(--line); border-radius: var(--radius-lg); background: var(--surface-raised); color: var(--ink); font: inherit; text-align: left; cursor: pointer; transition: border-color var(--t-sm) var(--ease); }
@@ -3566,23 +3568,47 @@ button.mc-cell.at-cell:hover { outline: 2px solid var(--blue-text); outline-offs
 .qn-person-t { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .qn-person-t b { font-weight: 500; font-size: 15px; line-height: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .qn-person-t small { font-size: 12px; color: var(--ink-muted); }
-.qn-tm-chip { flex: none; padding: 3px 10px; border-radius: var(--radius-pill); font-size: 12px; line-height: 16px; }
 .qn-person-sc { display: flex; flex-direction: column; gap: 2px; font-size: 13px; line-height: 18px; color: var(--ink); }
 .qn-person-sc i { font-style: normal; color: var(--ink-muted); }
 .qn-person-go { display: flex; align-items: center; justify-content: flex-end; gap: 8px; font-size: 13px; color: var(--red-text); }
 .qn-person-go::after { content: '→'; }
 .qn-ai-chip { padding: 2px 8px; border-radius: var(--radius-pill); background: var(--blue-soft); color: var(--blue-text); font-size: 11px; }
-.qn-res-top { display: grid; grid-template-columns: minmax(0, 220px) minmax(0, 1fr); gap: var(--space-4); align-items: start; }
-.qn-temper { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border-radius: var(--radius-md); }
-.qn-temper .lor-eyebrow { color: inherit; opacity: .8; }
-.qn-temper b { font-size: 24px; line-height: 30px; font-weight: 400; }
+.qn-res-top { display: grid; grid-template-columns: minmax(0, 240px) minmax(0, 1fr); gap: var(--space-4); align-items: start; }
+.qn-res-top.is-one { grid-template-columns: minmax(0, 1fr); }
+.qn-temper { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border-radius: var(--radius-md); border: var(--hairline) solid var(--line); background: var(--surface-sunken); color: var(--ink); }
+.qn-temper b { font-size: 20px; line-height: 26px; font-weight: 400; }
+.qn-temper-d { font-size: 15px; line-height: 21px; }
+.qn-temper-ms { font-size: 12px; line-height: 17px; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
 .qn-temper p { margin: 0; font-size: 13px; line-height: 19px; }
-.qn-bars { display: flex; flex-direction: column; gap: 12px; }
+.qn-bars { display: flex; flex-direction: column; gap: 14px; }
 .qn-bar { display: flex; flex-direction: column; gap: 4px; }
 .qn-bar-top { display: flex; justify-content: space-between; gap: 8px; font-size: 14px; line-height: 20px; }
 .qn-bar-n { font-variant-numeric: tabular-nums; color: var(--ink-muted); }
 .qn-bar-band { font-size: 13px; line-height: 18px; color: var(--ink); }
 .qn-bar-band small { color: var(--ink-muted); font-size: 12px; }
+/* полоса 1–5: заливка до среднего, черта — среднее, тень — погрешность ±QN_SEM (выходит за дорожку сверху и снизу) */
+.qn-meter { position: relative; display: block; height: 8px; margin: 5px 0 0; border-radius: var(--radius-sm); background: var(--line); }
+.qn-meter i { position: absolute; display: block; }
+.qn-meter-fill { left: 0; top: 0; bottom: 0; border-radius: var(--radius-sm); background: var(--blue-text); opacity: .55; }
+.qn-meter-sem { top: -4px; bottom: -4px; border-radius: var(--radius-sm); background: var(--blue-text); opacity: .22; }
+.qn-meter-dot { top: -5px; bottom: -5px; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--ink); }
+.qn-meter-ax { display: flex; justify-content: space-between; margin-top: 3px; font-size: 11px; line-height: 14px; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+.qn-bar.is-few .qn-bar-n { color: var(--ink-muted); }
+.qn-why { display: flex; flex-direction: column; gap: 2px; margin-top: 2px; }
+.qn-why-h { font-size: 12px; line-height: 16px; color: var(--ink-muted); }
+.qn-why ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.qn-why li { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; gap: 6px; align-items: baseline; font-size: 13px; line-height: 18px; }
+.qn-why-dir { color: var(--ink-muted); }
+.qn-why li small { font-size: 12px; color: var(--ink-muted); text-align: right; }
+/* профиль: шкалы темперамента и отдельно — остальные («Ishonchlilik»), под ними постоянная оговорка */
+.qn-prof { display: flex; flex-direction: column; gap: var(--space-3); }
+.qn-prof-sc { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
+.qn-prof-grp { display: flex; flex-direction: column; gap: 8px; }
+.qn-prof-grp.is-apart { padding-top: var(--space-4); border-top: var(--hairline) dashed var(--border); }
+.qn-prof-hint { margin: 0; }
+.qn-foot { margin: 0; padding: 10px 12px; border-left: 2px solid var(--red); background: var(--surface-sunken); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; font-size: 13px; line-height: 19px; color: var(--ink); }
+.qn-own { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border: var(--hairline) solid var(--line); border-radius: var(--radius-md); background: var(--surface); }
+@media (max-width: 640px) { .qn-why li { grid-template-columns: 14px minmax(0, 1fr); } .qn-why li small { grid-column: 2; text-align: left; } }
 .qn-ai { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border: var(--hairline) solid var(--line); border-radius: var(--radius-md); background: var(--surface); }
 .qn-ai-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .qn-ai-body { display: flex; flex-direction: column; gap: 10px; }
@@ -3883,7 +3909,6 @@ input.org-name:hover, input.org-name:focus { border-color: var(--line); backgrou
 .qn-scale.has-labels .qn-sc small { font-size: 11px; line-height: 14px; opacity: .85; text-align: center; }
 .qn-scale.has-labels .qn-sc.is-on { transform: none; }
 .qn-temper-2 { font-size: 13px; line-height: 18px; opacity: .85; }
-.qn-tm-2 { color: var(--ink-muted); }
 .qn-tm-scn { min-width: 160px; font-size: 14px; color: var(--ink); }
 @media (max-width: 640px) {
   .qn-scale.has-labels .qn-sc-row { gap: 4px; }

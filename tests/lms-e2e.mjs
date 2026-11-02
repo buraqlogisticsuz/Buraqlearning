@@ -811,13 +811,16 @@ try {
   assert.equal(await E.locator('.qn-banner').count(), 0, 'напоминания больше нет');
   await A.reload({ waitUntil: 'networkidle' }); await watchSync(A);
   await nav(A, 'cms'); await A.locator('.lor-tab').filter({ hasText: 'Savolnoma' }).click(); await A.waitForTimeout(300);
-  // «Natijalar»: Masofadan → экстраверсия 0, оценка 4 → нейротизм 4: оба ниже средней точки (12) — флегматик
-  assert.equal(await A.locator('.qn-tm-cell.is-phlegmatic b').innerText(), '1', 'в коллективе — один флегматик');
-  assert.match(await A.locator('.qn-person').first().innerText(), /Flegmatik/);
+  // «Natijalar»: Masofadan → экстраверсия 0, оценка 4 → нейротизм 4: оба далеко ниже средней точки (12) — склонность
+  // «флегматический стиль» (словами склонности, не «он — флегматик»)
+  assert.equal(await A.locator('.qn-tm-cell.is-phlegmatic b').innerText(), '1', 'в коллективе — у одного ведущая склонность «flegmatik»');
+  assert.match(await A.locator('.qn-person').first().innerText(), /Yetakchi moyillik[\s\S]*ko‘proq flegmatik uslubi/);
+  assert.equal(await A.locator('.qn-tm-chip').count(), 0, 'цветных ярлыков темперамента нет');
   await shot(A, 'savolnoma-natijalar');
   await A.locator('.qn-person').first().click();
   const qnCard = await A.locator('.qn-ans').innerText();
-  assert.ok(/Masofadan/.test(qnCard) && /Flegmatik/.test(qnCard), 'SOP-менеджер видит ответы и темперамент');
+  assert.ok(/Masofadan/.test(qnCard) && /ko‘proq flegmatik uslubi/.test(qnCard), 'SOP-менеджер видит ответы и склонность');
+  assert.match(qnCard, /O‘z-o‘zini baholash so‘rovnomasi\. Moyilliklarni ko‘rsatadi/, 'под результатом — постоянная оговорка');
   // вывод ИИ готовится сам, когда карточку открыли (кнопку нажимать не нужно)
   await A.locator('.qn-ans .qn-ai-body').waitFor({ timeout: 8000 });
   assert.match(await A.locator('.qn-ans .qn-ai-body').innerText(), /Puxta, barqaror xodim/, 'вывод ИИ — в карточке, сам');
@@ -921,6 +924,7 @@ try {
   assert.ok(await E.locator('.qn-note-box').count(), 'пояснение показано');
   await E.locator('.qn-page-foot .lor-btn-primary').click(); await E.waitForTimeout(250);
   await E.locator('.qn-sc').nth(1).click(); assert.match(await E.locator('.qn-lk-cap').innerText(), /Kam/, 'подпись выбранной оценки — под шкалой');
+  await E.locator('.qn-sc').nth(4).click(); assert.match(await E.locator('.qn-lk-cap').innerText(), /To‘liq/, 'оценку можно поменять');
   await E.locator('.qn-page-foot .lor-btn-primary').click(); await E.waitForTimeout(250);
   await E.locator('.qn-sc').nth(4).click();
   await E.locator('.qn-page-foot .lor-btn-primary').click(); await E.waitForTimeout(250);
@@ -930,13 +934,29 @@ try {
   await E.locator('.qn-done .lor-btn-primary').click();
   await A.reload({ waitUntil: 'networkidle' }); await watchSync(A);
   await nav(A, 'cms'); await A.locator('.lor-tab').filter({ hasText: 'Savolnoma' }).click(); await A.waitForTimeout(300);
+  // Muloqot 5 и Liderlik 5 — равны: не «основной + дополнительный», а смешанный профиль; в таблице — словами, без цвета
+  assert.match(await A.locator('.qn-tbl tbody tr').first().innerText(), /Aralash profil[\s\S]*sangvinik va xolerik uslublari/, 'в таблице — «aralash profil»');
   await A.locator('.qn-tbl tbody tr').first().click();
   { const tx = await A.locator('.qn-temper').innerText();
-    assert.ok(/Xolerik/.test(tx) && /Sangvinik/.test(tx), 'основной — Xolerik (5), дополнительный — Sangvinik (2)'); }
-  assert.match(await A.locator('.qn-bars').innerText(), /Ishonchlilik[\s\S]*3 \/ 5/, 'надёжность — отдельной шкалой');
+    assert.ok(/Aralash profil/.test(tx) && /sangvinik va xolerik uslublari/.test(tx) && !/Xolerik|Sangvinik/.test(tx), 'равные шкалы — смешанный профиль, без ярлыка «основной / дополнительный»'); }
+  assert.equal(await A.locator('.qn-ans .qn-prof-grp').count(), 2, 'шкалы темперамента и остальные — двумя группами');
+  assert.match(await A.locator('.qn-ans .qn-prof-grp').first().innerText(), /Muloqot[\s\S]*5,0 \/ 5[\s\S]*Liderlik/, 'шкалы темперамента — средним 1–5');
+  assert.match(await A.locator('.qn-ans .qn-prof-grp.is-apart').innerText(), /Ishonchlilik[\s\S]*3,0 \/ 5/, 'надёжность — отдельно от шкал темперамента');
+  assert.match(await A.locator('.qn-ans .qn-prof-grp').first().locator('.qn-why').first().innerText(), /Yangi odamlar bilan tez chiqishaman[\s\S]*To‘liq \(5\)/, 'под шкалой — ответ, сильнее всего сдвинувший балл');
+  assert.ok(await A.locator('.qn-ans .qn-meter-sem').count() >= 3, 'у полос — затенённая погрешность');
+  await A.waitForTimeout(400); await shot(A, 'savolnoma-profil');
   await A.locator('.qn-ans .lor-modal-x').click();
   await A.locator('.lor-tab').filter({ hasText: 'Darslar' }).click();
-  step('тест после анкеты: пояснение, оценки 1–5 с подписями, темперамент — по самой высокой шкале (основной + дополнительный), надёжность отдельно');
+  // сотрудник видит свой профиль по шкалам и оговорку, но не вывод ИИ (окно анкеты после «Rahmat!» открывается само — или из меню)
+  await E.locator('.app-body').waitFor({ timeout: 5000 }); await E.waitForTimeout(400);
+  if (!(await E.locator('.qn-modal').count())) { await E.locator('.user-btn').first().click(); await E.locator('.user-pop-links button.qn').click(); }
+  await E.locator('.qn-modal .qn-own').waitFor({ timeout: 5000 });
+  { const tx = await E.locator('.qn-modal .qn-own').innerText();
+    assert.ok(/Aralash profil/.test(tx) && /Ishonchlilik/.test(tx) && /qobiliyat yoki xarakterni emas/.test(tx), 'сотрудник видит свой профиль и оговорку'); }
+  assert.equal(await E.locator('.qn-modal .qn-ai').count(), 0, 'вывода ИИ у сотрудника нет');
+  await shot(E, 'savolnoma-xodim-profil');
+  await E.locator('.qn-modal .lor-modal-x').click();
+  step('тест после анкеты: пояснение, оценки 1–5 с подписями; среднее по шкалам, равные шкалы — «aralash profil», надёжность отдельно, ответы под шкалой, оговорка; сотрудник видит свой профиль');
 
   // ---------- «Lavozim va bo‘limlar»: CEO добавляет должность и отдел; SOP-менеджер выбирает их у нового сотрудника, сам список не меняет ----------
   await C.reload({ waitUntil: 'networkidle' }); await watchSync(C);

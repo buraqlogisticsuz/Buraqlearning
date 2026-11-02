@@ -448,10 +448,19 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     });
     return o;
   }
-  /* результат по шкалам: вопрос с x.scale даёт баллы — вариант → x.pts[i], оценка 1–5 → она же (rev — 6 − оценка);
-     шкала = сумма, band — последняя граница scales[].bands[{ from, label }], которую балл перешёл.
-     temper: { e, n, eMid, nMid } — две шкалы (экстраверсия, нейротизм) → один из четырёх темпераментов (выше средней — «высоко») */
+  /* результат по шкалам: вопрос с x.scale даёт баллы — вариант → x.pts[i], оценка 1–5 → она же (rev — 6 − оценка).
+     Балл шкалы — СРЕДНЕЕ по отвеченным пунктам на шкале 1–5 (варианты с баллами растягиваются на 1–5 по min…max вопроса):
+     пропуск не занижает шкалу. Отвечено меньше 80% видимых пунктов шкалы — «kam javob», шкала не толкуется.
+     Границы scales[].bands[{ from, label }] писали по сырой сумме — сравниваем с raw: среднее, растянутое на сумму min…max
+     всех пунктов (у оценок 1–5 — среднее × число пунктов), так прежние границы работают как раньше.
+     temper — см. qnTemperAll. Пороги условные — до расчёта точности шкал по своим данным */
   var QN_TEMPERS = ['sanguine', 'choleric', 'phlegmatic', 'melancholic'];
+  var QN_DELTA = 0.5;   /* разница средних, которую считаем заметной (≈70% уверенности при SEM ≈ 0,3) */
+  var QN_STRONG = 3.5;  /* ниже — «hech bir moyillik kuchli emas» */
+  var QN_FEW = 0.8;     /* доля отвеченных пунктов шкалы, ниже — «kam javob» */
+  /* погрешность на экране (±, в баллах 1–5) — пока заглушка. Когда наберётся ~50 заполнений, по каждой шкале считать
+     α Кронбаха и SEM = SD × √(1 − α), показывать её вместо 0,3, а QN_DELTA пересчитать: Δ = 1,28 × SEM × √2 */
+  var QN_SEM = 0.3;
   function qnScored(x) { return !!x.scale && (x.type === 'one' || x.type === 'many' || x.type === 'scale'); }
   function qnPts(x, v) {
     if (!qnHas(v)) return null;
@@ -465,30 +474,91 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var ps = (x.options || []).map(function (_, i) { return +(x.pts || [])[i] || 0; });
     return x.type === 'one' ? Math.max.apply(null, ps.concat([0])) : ps.reduce(function (s, n) { return s + Math.max(0, n); }, 0);
   }
+  /* min…max баллов вопроса (для растяжки на 1–5): оценка — 1…5, один вариант — от меньшего балла до большего,
+     несколько — сумма отрицательных … сумма положительных */
+  function qnRange(x) {
+    if (x.type === 'scale') return [1, 5];
+    var ps = (x.options || []).map(function (_, i) { return +(x.pts || [])[i] || 0; });
+    if (x.type === 'one') return ps.length ? [Math.min.apply(null, ps), Math.max.apply(null, ps)] : [0, 0];
+    return [ps.reduce(function (s, n) { return s + Math.min(0, n); }, 0), ps.reduce(function (s, n) { return s + Math.max(0, n); }, 0)];
+  }
+  /* ответ на шкале 1–5 (обратный пункт уже перевёрнут) или null — нет ответа */
+  function qnVal(x, v) {
+    var pt = qnPts(x, v); if (pt == null) return null;
+    if (x.type === 'scale') return pt;
+    var r = qnRange(x);
+    return r[1] > r[0] ? 1 + 4 * (Math.max(r[0], Math.min(r[1], pt)) - r[0]) / (r[1] - r[0]) : 3;
+  }
+  /* по шкале: mean — среднее 1–5 (null — нет ответов), n / total — отвечено / видимых пунктов, few — «kam javob»,
+     raw — среднее в сырых баллах (для границ и средних точек «en»), lo…hi — сырой размах, band — вывод границы,
+     top — 2–3 ответа, сильнее всего сдвинувших балл от середины (|v − 3|), score / max — прежние сырые сумма и максимум */
   function qnScore(q, u) {
     var a = (u && u.qa && u.qa.answers) || {};
     return ((q && q.scales) || []).map(function (sc) {
-      var qs = qnAsk(q).filter(function (x) { return qnScored(x) && x.scale === sc.id; }), score = 0, max = 0, n = 0;
-      qs.forEach(function (x) { max += qnMax(x); var pt = qnPts(x, a[x.id]); if (pt != null) { score += pt; n++; } });
-      var band = (sc.bands || []).filter(function (b) { return String(b.label || '').trim() && score >= +b.from; }).sort(function (a, b) { return a.from - b.from; }).pop();
-      return { s: sc, score: score, max: max, n: n, total: qs.length, band: band ? band.label : '' };
+      var qs = qnAsk(q).filter(function (x) { return qnScored(x) && x.scale === sc.id && qnShowIf(x, a); });
+      var score = 0, max = 0, lo = 0, hi = 0, sum = 0, n = 0, items = [];
+      qs.forEach(function (x) {
+        var r = qnRange(x); lo += r[0]; hi += r[1]; max += qnMax(x);
+        var v = qnVal(x, a[x.id]); if (v == null) return;
+        score += qnPts(x, a[x.id]); sum += v; n++; items.push({ x: x, v: v, a: a[x.id] });
+      });
+      var mean = n ? sum / n : null, few = n < QN_FEW * qs.length - 1e-9 || !n;
+      var raw = mean == null ? null : lo + (mean - 1) / 4 * (hi - lo);
+      var band = few ? null : (sc.bands || []).filter(function (b) { return String(b.label || '').trim() && raw >= +b.from - 1e-9; }).sort(function (a, b) { return a.from - b.from; }).pop();
+      var top = items.filter(function (z) { return Math.abs(z.v - 3) > 1e-9; }).sort(function (a, b) { return Math.abs(b.v - 3) - Math.abs(a.v - 3); }).slice(0, 3);
+      return { s: sc, mean: mean, n: n, total: qs.length, few: few, raw: raw, lo: lo, hi: hi, band: band ? band.label : '', top: top, score: score, max: max };
     });
   }
-  /* темперамент двумя способами: «en» — экстраверсия × нейротизм (выше средней — «высоко»); «max» — у каждой из четырёх шкал
-     свой темперамент (temper.map), основной — самая высокая шкала, дополнительный — вторая */
+  /* темперамент — склонность по самоотчёту, а не тип человека. Два способа:
+     «max» — у каждой из четырёх шкал свой темперамент (temper.map); средние по убыванию m1 ≥ m2 ≥ m3:
+       m1 − m2 ≥ Δ → «yetakchi moyillik: T1» (lead); иначе m1 − m3 ≥ Δ (или третьей шкалы нет) → «aralash profil: T1 va T2»
+       (mixed, без основного и дополнительного); иначе → «aniq yetakchi moyillik yo‘q» (none); m1 < 3,5 → ещё weak
+       («hech bir moyillik kuchli emas»). Ничьи порядком шкал не решаются; хоть одна шкала «kam javob» → few (не толкуется).
+     «en» — экстраверсия × нейротизм: выше средней точки (eMid, nMid — в сырых баллах, как их писали) — «высоко»; ближе
+       10% размаха шкалы к точке — between («turlar oralig‘ida», near — какие темпераменты возможны).
+     { mode, kind: lead | mixed | none | between | few, main (lead), pair (mixed), near (between), weak, list: [{ k, m }] } */
   function qnHasTemper(q) { var tp = q && q.temper; return !!(tp && (tp.mode === 'max' ? Object.keys(tp.map || {}).length : tp.e && tp.n)); }
   function qnTemperAll(q, res) {
     var tp = q && q.temper; if (!qnHasTemper(q)) return null;
     if (tp.mode === 'max') {
-      var c = res.filter(function (r) { return tp.map[r.s.id] && r.n; }).sort(function (a, b) { return b.score - a.score; });
-      return c.length ? { main: tp.map[c[0].s.id], second: c[1] && c[1].score > 0 ? tp.map[c[1].s.id] : null } : null;
+      var c = res.filter(function (r) { return tp.map[r.s.id] && r.total; });
+      if (!c.some(function (r) { return r.n; })) return null;
+      var list = c.filter(function (r) { return r.n; }).map(function (r) { return { k: tp.map[r.s.id], m: r.mean }; })
+        .sort(function (a, b) { return b.m - a.m || QN_TEMPERS.indexOf(a.k) - QN_TEMPERS.indexOf(b.k); });
+      if (c.some(function (r) { return r.few; })) return { mode: 'max', kind: 'few', list: list };
+      var m = list.map(function (x) { return x.m; }), o = { mode: 'max', list: list, weak: m[0] < QN_STRONG };
+      if (m.length < 2 || m[0] - m[1] >= QN_DELTA - 1e-9) { o.kind = 'lead'; o.main = list[0].k; }
+      else if (m.length < 3 || m[0] - m[2] >= QN_DELTA - 1e-9) { o.kind = 'mixed'; o.pair = [list[0].k, list[1].k]; }
+      else o.kind = 'none';
+      return o;
     }
     var e = res.filter(function (r) { return r.s.id === tp.e; })[0], nn = res.filter(function (r) { return r.s.id === tp.n; })[0];
     if (!e || !nn || !e.n || !nn.n) return null;
-    var hiE = e.score > +tp.eMid, hiN = nn.score > +tp.nMid;
-    return { main: hiE ? (hiN ? 'choleric' : 'sanguine') : (hiN ? 'melancholic' : 'phlegmatic') };
+    if (e.few || nn.few) return { mode: 'en', kind: 'few', list: [] };
+    var qd = function (hE, hN) { return hE ? (hN ? 'choleric' : 'sanguine') : (hN ? 'melancholic' : 'phlegmatic'); };
+    var hiE = e.raw > +tp.eMid, hiN = nn.raw > +tp.nMid, main = qd(hiE, hiN);
+    var nearE = Math.abs(e.raw - +tp.eMid) <= 0.1 * (e.hi - e.lo) + 1e-9, nearN = Math.abs(nn.raw - +tp.nMid) <= 0.1 * (nn.hi - nn.lo) + 1e-9;
+    if (!nearE && !nearN) return { mode: 'en', kind: 'lead', main: main, list: [] };
+    var near = [main];
+    if (nearE) near.push(qd(!hiE, hiN));
+    if (nearN) near.push(qd(hiE, !hiN));
+    if (nearE && nearN) near.push(qd(!hiE, !hiN));
+    return { mode: 'en', kind: 'between', near: near, list: [] };
   }
-  function qnTemper(q, res) { var x = qnTemperAll(q, res); return x ? x.main : null; }
+  /* ведущая склонность (только при явном лидере) */
+  function qnTemper(q, res) { var x = qnTemperAll(q, res); return x && x.kind === 'lead' ? x.main : null; }
+  /* число 1–5 с одним знаком: «3,4» (uz, ru) или «3.4» (en, zh) */
+  function qnNum(t, m) { return (Math.round(m * 10) / 10).toFixed(1).replace('.', t('qn_dec')); }
+  /* склонность словами: kind — «Yetakchi moyillik» / «Aralash profil» / …, detail — «ko‘proq xolerik uslubi» */
+  function qnTmParts(t, ta) {
+    var a = function (k) { return t('qn_tma_' + k); };
+    return {
+      kind: t('qn_tmk_' + ta.kind),
+      detail: ta.kind === 'lead' ? tpl(t('qn_tmd_lead'), { t: a(ta.main) }) : ta.kind === 'mixed' ? tpl(t('qn_tmd_mixed'), { a: a(ta.pair[0]), b: a(ta.pair[1]) }) : ta.kind === 'between' ? ta.near.map(a).join(' / ') : '',
+      weak: ta.weak && ta.kind !== 'few' ? t('qn_tm_weak') : ''
+    };
+  }
+  function qnTmText(t, ta) { if (!ta) return ''; var x = qnTmParts(t, ta); return x.kind + (x.detail ? ': ' + x.detail : '') + (x.weak ? '; ' + x.weak : ''); }
   /* один вопрос анкеты. Варианты — плитки с буквами A, B, C (да / нет — крупные ✓ и ✕), несколько — те же плитки;
      таблица (языки) — ряд «таблеток»-уровней, заполненных до выбранного; оценка 1–5 — кружки; дата — календарь;
      согласие — карточка со щитом. Номер вопроса становится галочкой, когда ответ есть */
@@ -629,8 +699,11 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       String(q.intro || '').trim() ? h('div', { key: 'i', className: 'intro-text qn-intro' }, paras(q.intro)) : null,
       h('p', { key: 'n', className: 'lor-sm lor-muted qn-note' }, t('qn_note_emp'))];
     var prog = h('div', { className: 'qn-prog' }, h('span', { className: 'lor-sm lor-muted' }, tpl(t('qn_progress'), { n: got, m: ask.length }), draftAt[0] ? ' · ' + t('qn_draft_saved') : ''), h('span', { className: 'lor-progress-track qn-track' }, h('span', { className: 'lor-progress-fill', style: { width: Math.round(got / Math.max(1, ask.length) * 100) + '%' } })));
+    /* уже отправил — свой профиль по шкалам: полосы и оговорка (вывод ИИ сотруднику не показывается) */
+    var own = !due && u.qa && u.qa.at ? qnScore(q, u) : null;
+    if (own && !own.some(function (r) { return r.n; })) own = null;
     /* страница «сначала анкета»: по разделу за шаг — слева разделы с иконками и галочками, сверху полоса прогресса */
-    var bar = h('header', { className: 'qn-page-head' },
+    var bar =h('header', { className: 'qn-page-head' },
       h('img', { src: LOGO_W, alt: 'BURAQ logistics', width: 87, height: 30 }),
       h('span', { className: 'qn-page-hi' }, tpl(t('qn_page_hi'), { name: firstName(u) })),
       h(LOR.LangSwitch, { value: p.lang, onChange: p.setLang, inverse: true }),
@@ -680,6 +753,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         h('button', { type: 'button', className: 'lor-modal-x', 'aria-label': t('close'), onClick: later }, '×'),
         h('span', { className: 'lor-eyebrow' }, due ? t('qn_banner_t') : t('qn_tab')),
         head, prog,
+        own ? h('section', { className: 'qn-own' }, h('span', { className: 'lor-eyebrow' }, t('qn_own_t')), h(QnProfile, { t: t, q: q, res: own, ta: qnTemperAll(q, own) })) : null,
         h('div', { className: 'qn-list' }, qnFields(q, a[0], set, errs[0], t)),
         !due && u.qa && u.qa.at ? h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, '✓ ' + tpl(t('qn_sent_on'), { d: fmt(u.qa.at, t) })) : null,
         h('div', { className: 'lor-modal-actions' },
@@ -7368,43 +7442,81 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   function qnCsv(db, q) {
     var ask = qnAsk(q), cell = function (x) { x = String(x == null ? '' : x); return /[;"\n]/.test(x) ? '"' + x.replace(/"/g, '""') + '"' : x; }, T0 = T('uz');
     var scs = (q.scales || []), tm = qnHasTemper(q);
-    var rows = [['ID', 'Xodim', 'Lavozim', 'Bo‘lim', 'Yuborilgan'].concat(tm ? ['Temperament'] : [], scs.map(function (s) { return s.name + ' (ball)'; }), scs.map(function (s) { return s.name; }), ask.map(function (x) { return x.text; }))];
+    /* склонность — словами («Yetakchi moyillik: …»), шкала — среднее 1–5 по отвеченным или «kam javob (n / m)» */
+    var rows = [['ID', 'Xodim', 'Lavozim', 'Bo‘lim', 'Yuborilgan'].concat(tm ? [T0('qn_tm_card')] : [], scs.map(function (s) { return s.name + ' (1–5)'; }), scs.map(function (s) { return s.name; }), ask.map(function (x) { return x.text; }))];
     db.users.filter(function (u) { return u.role === 'employee' && u.qa; }).forEach(function (u) {
-      var a = u.qa.answers || {}, res = qnScore(q, u), ta = qnTemperAll(q, res), tp = ta && ta.main;
-      rows.push([u.id, u.name, u.position || '', u.department || '', u.qa.at ? fmtDate(u.qa.at) : '—'].concat(tm ? [tp ? T0('qn_tm_' + tp) + (ta.second ? ' + ' + T0('qn_tm_' + ta.second) : '') : ''] : [], res.map(function (r) { return r.n ? r.score + ' / ' + r.max : ''; }), res.map(function (r) { return r.n ? r.band : ''; }), ask.map(function (x) { return qnText(x, a[x.id]); })));
+      var a = u.qa.answers || {}, res = qnScore(q, u), ta = qnTemperAll(q, res);
+      rows.push([u.id, u.name, u.position || '', u.department || '', u.qa.at ? fmtDate(u.qa.at) : '—'].concat(tm ? [qnTmText(T0, ta)] : [], res.map(function (r) { return !r.n ? '' : r.few ? T0('qn_few') + ' (' + r.n + ' / ' + r.total + ')' : qnNum(T0, r.mean); }), res.map(function (r) { return r.n && !r.few ? r.band : ''; }), ask.map(function (x) { return qnText(x, a[x.id]); })));
     });
     return '﻿' + rows.map(function (r) { return r.map(cell).join(';'); }).join('\r\n');
   }
-  /* шкалы одного человека: полоска балла и вывод границы */
+  /* шкалы одного человека: полоса 1–5 — среднее и затенённая погрешность ±QN_SEM, вывод границы, сколько отвечено;
+     why — под шкалой 2–3 ответа, сильнее всего сдвинувших балл (чтобы проверить вывод в разговоре) */
   function QnBars(p) {
-    var t = p.t;
+    var t = p.t, pos = function (m) { return Math.max(0, Math.min(100, (m - 1) / 4 * 100)); };
+    var ans = function (x, v) { var labs = x.type === 'scale' && (x.labels || []).length === 5 ? x.labels : null; return labs ? labs[v - 1] + ' (' + v + ')' : qnText(x, v); };
     return h('div', { className: 'qn-bars' }, p.res.map(function (r) {
-      var pct = r.max > 0 ? Math.max(0, Math.min(100, Math.round(r.score / r.max * 100))) : 0;
-      return h('div', { key: r.s.id, className: 'qn-bar' },
-        h('div', { className: 'qn-bar-top' }, h('span', { className: 'qn-bar-name' }, r.s.name), h('span', { className: 'qn-bar-n' }, r.n ? r.score + ' / ' + r.max : '—')),
-        h('span', { className: 'lor-progress-track qn-track' }, h('span', { className: 'lor-progress-fill', style: { width: (r.n ? pct : 0) + '%' } })),
-        r.n ? h('span', { className: 'qn-bar-band' }, r.band || '', r.n < r.total ? h('small', null, (r.band ? ' · ' : '') + tpl(t('qn_answered'), { n: r.n, m: r.total })) : null) : h('span', { className: 'qn-bar-band lor-muted' }, t('qn_res_noans')));
+      var ok = r.n > 0 && !r.few, val = ok ? qnNum(t, r.mean) + ' / 5' : r.n ? t('qn_few') : '—';
+      return h('div', { key: r.s.id, className: cx('qn-bar', !ok && 'is-few') },
+        h('div', { className: 'qn-bar-top' }, h('span', { className: 'qn-bar-name' }, r.s.name), h('span', { className: 'qn-bar-n' }, val)),
+        h('span', { className: 'qn-meter', role: 'img', 'aria-label': r.s.name + ': ' + (ok ? val + ' (±' + qnNum(t, QN_SEM) + ')' : val) },
+          ok ? h('i', { className: 'qn-meter-fill', style: { width: pos(r.mean) + '%' } }) : null,
+          ok ? h('i', { className: 'qn-meter-sem', style: { left: pos(r.mean - QN_SEM) + '%', right: (100 - pos(r.mean + QN_SEM)) + '%' } }) : null,
+          ok ? h('i', { className: 'qn-meter-dot', style: { left: pos(r.mean) + '%' } }) : null),
+        h('span', { className: 'qn-meter-ax', 'aria-hidden': true }, [1, 2, 3, 4, 5].map(function (n) { return h('span', { key: n }, n); })),
+        ok ? h('span', { className: 'qn-bar-band' }, r.band || '', r.n < r.total ? h('small', null, (r.band ? ' · ' : '') + tpl(t('qn_answered'), { n: r.n, m: r.total })) : null)
+          : h('span', { className: 'qn-bar-band lor-muted' }, r.n ? tpl(t('qn_few_n'), { n: r.n, m: r.total }) : t('qn_res_noans')),
+        p.why && ok && r.top.length ? h('div', { className: 'qn-why' },
+          h('span', { className: 'qn-why-h' }, t('qn_why')),
+          h('ul', null, r.top.map(function (z) {
+            var s = String(z.x.text || ''), up = z.v > 3;
+            return h('li', { key: z.x.id },
+              h('span', { className: 'qn-why-dir', 'aria-hidden': true }, up ? '↑' : '↓'),
+              h('span', { className: 'qn-why-t' }, s.length > 110 ? s.slice(0, 108) + '…' : s),
+              h('small', null, ans(z.x, z.a) + (z.x.rev ? ' · ' + t('qn_rev') : '')));
+          }))) : null);
     }));
   }
+  /* склонность по тесту словами: «Yetakchi moyillik — ko‘proq xolerik uslubi», «Aralash profil — …», без «он — холерик» */
   function TemperCard(p) {
-    var t = p.t, k = p.k;
-    if (!k) return null;
-    return h('div', { className: 'qn-temper is-' + k },
-      h('span', { className: 'lor-eyebrow' }, t('qn_temper')),
-      h('b', null, t('qn_tm_' + k)),
-      p.k2 ? h('span', { className: 'qn-temper-2' }, tpl(t('qn_tm_second'), { t: t('qn_tm_' + p.k2) })) : null,
-      p.short ? null : h('p', null, t('qn_tm_' + k + '_d')));
+    var t = p.t, ta = p.ta;
+    if (!ta) return null;
+    var x = qnTmParts(t, ta);
+    return h('div', { className: cx('qn-temper', 'is-' + ta.kind) },
+      h('span', { className: 'lor-eyebrow' }, t('qn_tm_card')),
+      h('b', null, x.kind),
+      x.detail ? h('span', { className: 'qn-temper-d' }, x.detail) : null,
+      x.weak ? h('span', { className: 'qn-temper-2' }, x.weak) : null,
+      ta.kind !== 'few' && ta.list.length > 1 ? h('span', { className: 'qn-temper-ms' }, ta.list.map(function (z) { return t('qn_tma_' + z.k) + ' ' + qnNum(t, z.m); }).join(' · ')) : null);
+  }
+  /* профиль по шкалам — руководителю (карточка) и самому сотруднику (окно анкеты): склонность, полосы шкал темперамента,
+     отдельно — остальные шкалы («Ishonchlilik»), пояснение к полосам и постоянная оговорка */
+  function QnProfile(p) {
+    var t = p.t, tp = p.q && p.q.temper, res = p.res.filter(function (r) { return r.total; });
+    if (!res.length && !p.ta) return null;
+    var isTm = function (r) { return !!tp && (tp.mode === 'max' ? !!(tp.map || {})[r.s.id] : r.s.id === tp.e || r.s.id === tp.n); };
+    var tm = qnHasTemper(p.q) ? res.filter(isTm) : [], other = res.filter(function (r) { return tm.indexOf(r) < 0; }), two = tm.length && other.length;
+    return h('div', { className: 'qn-prof' },
+      h('div', { className: cx('qn-res-top', !p.ta && 'is-one') },
+        p.ta ? h(TemperCard, { t: t, ta: p.ta }) : null,
+        h('div', { className: 'qn-prof-sc' },
+          tm.length ? h('div', { className: 'qn-prof-grp' }, two ? h('span', { className: 'lor-eyebrow' }, t('qn_grp_tm')) : null, h(QnBars, { t: t, res: tm, why: p.why })) : null,
+          other.length ? h('div', { className: cx('qn-prof-grp', two && 'is-apart') }, two ? h('span', { className: 'lor-eyebrow' }, t('qn_grp_other')) : null, h(QnBars, { t: t, res: other, why: p.why })) : null,
+          res.length ? h('p', { className: 'lor-sm lor-muted qn-prof-hint' }, tpl(t('qn_bars_hint'), { d: qnNum(t, QN_SEM) })) : null)),
+      h('p', { className: 'qn-foot' }, t('qn_foot')));
   }
   /* AI-вывод по ответам: только для CEO, SOP-менеджера и руководителя (сервер не отдаёт users[].qaReport сотруднику) */
   /* в ИИ — только должность, отдел и ответы; скрытые вопросы (паспорт, родители, здоровье — [maxfiy]) и согласия не уходят */
-  function qnAiPrompt(q, u, res, tp, lang, tp2) {
+  /* шкала для ИИ: «Muloqot: 3,4 / 5 (O‘rta)» или «kam javob (6 / 10) — talqin qilinmaydi» */
+  function qnAiScale(r) { var T0 = T('uz'); return r.s.name + ': ' + (r.few ? T0('qn_few_n').replace('{n}', r.n).replace('{m}', r.total) : qnNum(T0, r.mean) + ' / 5' + (r.band ? ' (' + r.band + ')' : '')); }
+  function qnAiPrompt(q, u, res, ta, lang) {
     var a = (u.qa && u.qa.answers) || {}, n = 0;
     var qa = (q.questions || []).filter(function (x) { return !x.secret && x.type !== 'consent' && x.type !== 'note'; }).map(function (x) { if (x.type === 'section') return '\n## ' + x.text; n++; return n + '. ' + x.text + '\n   Javob: ' + (qnText(x, a[x.id]) || '—'); }).join('\n');
-    var sc = res.filter(function (r) { return r.n; }).map(function (r) { return '- ' + r.s.name + ': ' + r.score + ' / ' + r.max + (r.band ? ' (' + r.band + ')' : ''); }).join('\n');
+    var sc = res.filter(function (r) { return r.n; }).map(function (r) { return '- ' + qnAiScale(r); }).join('\n');
     return 'Siz BURAQ Logistics kompaniyasida HR-psixolog yordamchisisiz. Xodim (yoki ishga kirayotgan nomzod) kompaniya anketasini to‘ldirdi. Rahbariyat (CEO va SOP menejeri) uchun uning qisqa profilini tuzing: temperament, kuchli tomonlari, e’tibor berish kerak bo‘lgan joylar, motivatsiya, rahbarga maslahatlar va suhbatda aniqlashtiradigan savollar.\n' +
       'Qoidalar: faqat quyidagi javoblar va ballarga tayaning; dalil kam bo‘lsa, «ehtimol» deb yozing. Tibbiy yoki psixiatrik tashxis qo‘ymang. Din, millat, sog‘liq, siyosiy qarashlar, oilaviy holat, farzandlar haqida xulosa chiqarmang va ularni baholashda ishlatmang. «E’tibor berish kerak» bo‘limida faqat ishga oid kuzatuvlar bo‘lsin (masalan: ish joylarini tez-tez almashtirgan, javoblar juda qisqa, kutilgan maosh lavozimdan ancha yuqori, javoblar bir-biriga zid). Ohang — hurmatli va xolis; bu ishga olish yoki bo‘shatish uchun yagona asos emas. Javob tili: ' + (LANG_NAME[lang] || LANG_NAME.uz) + '.\n' +
       'LAVOZIM: ' + [u.position, u.department].filter(Boolean).join(', ') + '\n' +
-      'TEST BO‘YICHA TEMPERAMENT: ' + (tp ? T('uz')('qn_tm_' + tp) + (tp2 ? ' (qo‘shimcha: ' + T('uz')('qn_tm_' + tp2) + ')' : '') : 'hisoblanmagan — javoblardan ehtiyotkorlik bilan taxmin qiling') + '\n' +
+      'TEST BO‘YICHA TEMPERAMENT: ' + (ta ? qnTmText(T('uz'), ta) + ' (o‘z-o‘zini baholash, shkalalar 1–5)' : 'hisoblanmagan — javoblardan ehtiyotkorlik bilan taxmin qiling') + '\n' +
       (sc ? 'SHKALALAR:\n' + sc + '\n' : '') +
       'SAVOLLAR VA JAVOBLAR:\n' + qa.slice(0, 30000) + '\n\n' +
       'Faqat JSON qaytaring, izohsiz: {"temperament": "1 jumla: temperament va nima uchun", "summary": "2–3 jumla", "strengths": ["3–5 ta"], "risks": ["e’tibor berish kerak: 0–4 ta, ishga oid"], "growth": ["2–3 ta rivojlantirish nuqtasi"], "motivation": "1–2 jumla", "communication": "1–2 jumla", "management": ["rahbarga 2–4 amaliy maslahat"], "roles": "qaysi vazifalarda o‘zini yaxshi ko‘rsatadi, 1–2 jumla", "fit": "hozirgi (yoki so‘ralgan) lavozimga mosligi: kuchli va zaif tomonlari, 2–3 jumla", "plan": ["sinov muddati / birinchi oy uchun 3 ta aniq tavsiya rahbarga"], "interview": ["suhbatda aniqlashtirish uchun 2–4 savol"]}';
@@ -7419,7 +7531,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   function qnAiStale(u) { var r = u.qaReport; return !r || !r.data || !!(u.qa && u.qa.at && r.at < u.qa.at); }
   function qnAiRun(o) {
     var res = qnScore(o.q, o.u), ta = qnTemperAll(o.q, res);
-    return o.sampler.json(qnAiPrompt(o.q, o.u, res, ta && ta.main, o.lang, ta && ta.second), { signal: o.signal }).then(function (r) {
+    return o.sampler.json(qnAiPrompt(o.q, o.u, res, ta, o.lang), { signal: o.signal }).then(function (r) {
       var x = qnAiClean(r); if (!x) { var e = new Error('bad json'); e.code = 'invalid_json'; throw e; }
       var at = Date.now();
       o.update(function (db) { patchUser(db, o.u.id, function (z) { z.qaReport = { at: at, by: o.by, lang: o.lang, data: x }; }); });
@@ -7464,10 +7576,10 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var keys = qnKeys(q).filter(function (x) { return !x.secret; });
     var list = rows.map(function (r, i) {
       var a = r.u.qa.answers || {}, rep = r.u.qaReport && r.u.qaReport.data;
-      var sc = r.res.filter(function (x) { return x.n; }).map(function (x) { return x.s.name + ' ' + x.score + '/' + x.max; }).join('; ');
+      var sc = r.res.filter(function (x) { return x.n; }).map(qnAiScale).join('; ');
       var ka = keys.map(function (x) { return qnShort(x) + ': ' + String(qnText(x, a[x.id]) || '—').slice(0, 120); }).join('; ');
       return '#' + (i + 1) + ' — ' + [r.u.position, r.u.department].filter(Boolean).join(', ') +
-        (r.tp ? ' | temperament: ' + T('uz')('qn_tm_' + r.tp) + (r.tp2 ? ' + ' + T('uz')('qn_tm_' + r.tp2) : '') : '') + (sc ? ' | ' + sc : '') + (ka ? ' | ' + ka : '') +
+        (r.ta ? ' | temperament: ' + qnTmText(T('uz'), r.ta) : '') + (sc ? ' | ' + sc : '') + (ka ? ' | ' + ka : '') +
         (rep && rep.summary ? ' | AI xulosasi: ' + rep.summary.slice(0, 300) : '');
     });
     return 'Siz BURAQ Logistics kompaniyasida HR-tahlilchi yordamchisisiz. Quyida xodimlarning anketa va temperament testi natijalari (ism o‘rniga raqam). Rahbariyat (CEO va SOP menejeri) uchun JAMOA tahlilini tuzing: jamoa tarkibi va muvozanati, kuchli tomonlar, bo‘shliqlar, kim qaysi vazifada kuchliroq, xavflar va amaliy tavsiyalar, keyingi ishga olishda kim kerak.\n' +
@@ -7536,7 +7648,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   /* карточка одного сотрудника — CEO, SOP-менеджер, руководитель: главное, согласия, темперамент и шкалы, вывод ИИ,
      все ответы по разделам; скрытые ответы — по кнопке; «Chop etish» — печать или PDF */
   function QnPerson(p) {
-    var t = p.t, u = p.u, q = p.q, a = (u.qa && u.qa.answers) || {}, n = 0, res = qnScore(q, u), ta = qnTemperAll(q, res), tp = ta && ta.main, open = useState(false);
+    var t = p.t, u = p.u, q = p.q, a = (u.qa && u.qa.answers) || {}, n = 0, res = qnScore(q, u), ta = qnTemperAll(q, res), open = useState(false);
+    var prof = ta || res.some(function (r) { return r.n; });
     var keys = qnKeys(q), cons = qnAsk(q).filter(function (x) { return x.type === 'consent'; }), hasSecret = qnAsk(q).some(function (x) { return x.secret && qnHas(a[x.id]); });
     useEffect(function () { function k(e) { if (e.key === 'Escape') p.onClose(); } window.addEventListener('keydown', k); return function () { window.removeEventListener('keydown', k); document.body.classList.remove('qn-printing'); }; }, []);
     function print() {
@@ -7562,9 +7675,9 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           var ok = a[x.id] === true;
           return h('p', { key: x.id, className: cx('lor-sm', ok ? 'is-ok' : 'is-no') }, (ok ? '✓ ' : '— ') + x.text + (ok && u.qa && u.qa.at ? ' · ' + fmtDate(u.qa.at) + (u.login ? ' · ' + u.login : '') : ''));
         })) : null,
-        tp || res.length ? h('div', { className: 'qn-res-top' }, h(TemperCard, { t: t, k: tp, k2: ta && ta.second }), res.length ? h(QnBars, { t: t, res: res }) : null) : null,
+        prof ? h(QnProfile, { t: t, q: q, res: res, ta: ta, why: true }) : null,
         h(QnAi, Object.assign({}, p, { q: q, u: u })),
-        h('p', { className: 'lor-sm lor-muted qn-disc' }, t('qn_res_hint')),
+        prof ? null : h('p', { className: 'lor-sm lor-muted qn-disc' }, t('qn_res_hint')),
         h('h3', { className: 'qn-sec' }, t('qn_answers_t')),
         h('dl', { className: 'qn-dl' }, (q.questions || []).map(function (x) {
           if (x.type === 'section') return h('h3', { key: x.id, className: 'qn-sec' }, h(Ico, { name: qnSecIco(x.text), size: 18 }), h('span', null, x.text));
@@ -7579,18 +7692,23 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var t = p.t, db = p.db, q = p.q, emps = db.users.filter(function (u) { return u.role === 'employee'; }), qs = useState(''), keys = qnKeys(q);
     var sent = emps.filter(function (u) { return u.qa && u.qa.at; }).sort(function (a, b) { return b.qa.at - a.qa.at; }), wait = emps.filter(function (u) { return !(u.qa && u.qa.at); });
     var needle = qs[0].trim().toLowerCase();
-    var rows = sent.map(function (u) { var res = qnScore(q, u), ta = qnTemperAll(q, res); return { u: u, res: res, tp: ta && ta.main, tp2: ta && ta.second }; });
-    var tm = {}; rows.forEach(function (r) { if (r.tp) tm[r.tp] = (tm[r.tp] || 0) + 1; });
-    var scs = (q.scales || []).map(function (sc, i) { var xs = rows.map(function (r) { return r.res[i]; }).filter(function (r) { return r && r.n; }); return { s: sc, avg: xs.length ? Math.round(xs.reduce(function (s, r) { return s + r.score; }, 0) / xs.length * 10) / 10 : null, max: xs.length ? xs[0].max : 0 }; });
+    var rows = sent.map(function (u) { var res = qnScore(q, u); return { u: u, res: res, ta: qnTemperAll(q, res) }; });
+    /* по коллективу: у скольких ведущая склонность каждого стиля, у скольких профиль смешанный / без явного лидера / мало ответов */
+    var tm = {}; rows.forEach(function (r) { var k = r.ta ? (r.ta.kind === 'lead' ? r.ta.main : r.ta.kind) : ''; if (k) tm[k] = (tm[k] || 0) + 1; });
+    var tmCells = QN_TEMPERS.map(function (k) { return { k: k, n: tm[k] || 0, l: tpl(t('qn_tmd_lead'), { t: t('qn_tma_' + k) }) }; })
+      .concat(['mixed', 'none', 'between', 'few'].filter(function (k) { return k === 'mixed' || tm[k]; }).map(function (k) { return { k: k, n: tm[k] || 0, l: t('qn_tmk_' + k) }; }));
+    var scs = (q.scales || []).map(function (sc, i) { var xs = rows.map(function (r) { return r.res[i]; }).filter(function (r) { return r && r.n && !r.few; }); return { s: sc, avg: xs.length ? xs.reduce(function (s, r) { return s + r.mean; }, 0) / xs.length : null }; });
+    var tmCell = function (r) { if (!r.ta) return '—'; var x = qnTmParts(t, r.ta); return h('span', { className: 'qn-tm-kind' }, h('b', null, x.kind), x.detail ? h('small', null, x.detail) : null); };
     if (!sent.length) return h('section', { className: 'box' }, h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('qn_res_none')), wait.length ? h('div', { className: 'in-wait' }, h('span', { className: 'lor-sm lor-muted' }, t('qn_wait')), wait.map(function (u) { return h('span', { key: u.id, className: 'in-chip' }, u.name); })) : null);
     return h('div', { className: 'qn-res' },
       h('section', { className: 'box qn-team' },
         h('span', { className: 'lor-eyebrow' }, t('qn_res_team')),
         h('b', { className: 'in-stat-n' }, sent.length + ' / ' + emps.length),
         h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, tpl(t('qn_stat'), { n: sent.length, m: emps.length })),
-        qnHasTemper(q) ? h('div', { className: 'qn-tm-grid' }, QN_TEMPERS.map(function (k) { return h('div', { key: k, className: cx('qn-tm-cell', 'is-' + k) }, h('b', null, tm[k] || 0), h('span', null, t('qn_tm_' + k))); })) : null,
-        scs.some(function (x) { return x.avg != null; }) ? h('div', { className: 'qn-avg' }, scs.map(function (x) { return x.avg == null ? null : h('span', { key: x.s.id, className: 'in-chip' }, x.s.name + ': ' + tpl(t('qn_res_avg'), { n: x.avg }) + ' / ' + x.max); })) : null,
-        h('p', { className: 'lor-sm lor-muted qn-disc' }, t('qn_res_hint'))),
+        qnHasTemper(q) ? h('span', { className: 'lor-eyebrow qn-tm-eb' }, t('qn_tm_card')) : null,
+        qnHasTemper(q) ? h('div', { className: 'qn-tm-grid' }, tmCells.map(function (c) { return h('div', { key: c.k, className: cx('qn-tm-cell', 'is-' + c.k) }, h('b', null, c.n), h('span', null, c.l)); })) : null,
+        scs.some(function (x) { return x.avg != null; }) ? h('div', { className: 'qn-avg' }, scs.map(function (x) { return x.avg == null ? null : h('span', { key: x.s.id, className: 'in-chip' }, x.s.name + ': ' + tpl(t('qn_res_avg'), { n: qnNum(t, x.avg) }) + ' / 5'); })) : null,
+        h('p', { className: 'lor-sm lor-muted qn-disc' }, t('qn_foot'))),
       h(QnTeamAi, Object.assign({}, p, { rows: rows })),
       /* главные ответы ([asosiy]) — таблицей: строка на человека, поиск по имени, должности и ответам */
       keys.length ? h('section', { className: 'box qn-tbl-box' },
@@ -7598,7 +7716,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           h('h2', { className: 'lor-h' }, t('qn_tbl_t')),
           h('input', { type: 'search', className: 'lor-input qn-search', value: qs[0], placeholder: t('qn_search'), 'aria-label': t('qn_search'), onChange: function (e) { qs[1](e.target.value); } })),
         h('div', { className: 'qn-tbl-wrap' }, h('table', { className: 'qn-tbl' },
-          h('thead', null, h('tr', null, h('th', { scope: 'col' }, t('qn_tbl_who')), qnHasTemper(q) ? h('th', { scope: 'col' }, t('qn_temper')) : null, keys.map(function (x) { return h('th', { key: x.id, scope: 'col', title: x.text }, qnShort(x)); }), h('th', { scope: 'col' }, t('qn_tbl_sent')))),
+          h('thead', null, h('tr', null, h('th', { scope: 'col' }, t('qn_tbl_who')), qnHasTemper(q) ? h('th', { scope: 'col' }, t('qn_tm_card')) : null, keys.map(function (x) { return h('th', { key: x.id, scope: 'col', title: x.text }, qnShort(x)); }), h('th', { scope: 'col' }, t('qn_tbl_sent')))),
           h('tbody', null, rows.filter(function (r) {
             if (!needle) return true;
             var a = r.u.qa.answers || {};
@@ -7607,7 +7725,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
             var a = r.u.qa.answers || {};
             return h('tr', { key: r.u.id, tabIndex: 0, onClick: function () { p.onOpen(r.u.id); }, onKeyDown: function (e) { if (e.key === 'Enter') p.onOpen(r.u.id); } },
               h('th', { scope: 'row' }, h('span', { className: 'qn-tbl-who' }, h(Av, { name: r.u.name, src: r.u.avatar, size: 28 }), h('span', null, h('b', null, r.u.name), h('small', null, r.u.position || '')), r.u.qaReport ? h('span', { className: 'qn-ai-chip' }, 'AI') : null)),
-              qnHasTemper(q) ? h('td', null, r.tp ? h('span', { className: cx('qn-tm-chip', 'is-' + r.tp) }, t('qn_tm_' + r.tp)) : '—', r.tp2 ? h('small', { className: 'qn-tm-2' }, ' + ' + t('qn_tm_' + r.tp2)) : null) : null,
+              qnHasTemper(q) ? h('td', null, tmCell(r)) : null,
               keys.map(function (x) { return h('td', { key: x.id }, qnShow(x, a[x.id], false) || '—'); }),
               h('td', { className: 'qn-tbl-date' }, fmtDate(r.u.qa.at)));
           }))))) : null,
@@ -7616,8 +7734,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           h('span', { className: 'qn-person-top' },
             h(Av, { name: r.u.name, src: r.u.avatar, size: 36 }),
             h('span', { className: 'qn-person-t' }, h('b', null, r.u.name), h('small', null, [r.u.position, fmtDate(r.u.qa.at)].filter(Boolean).join(' · '))),
-            r.tp ? h('span', { className: cx('qn-tm-chip', 'is-' + r.tp) }, t('qn_tm_' + r.tp)) : null),
-          r.res.length ? h('span', { className: 'qn-person-sc' }, r.res.filter(function (x) { return x.n; }).map(function (x) { return h('span', { key: x.s.id }, h('i', null, x.s.name), ' ', x.score + '/' + x.max, x.band ? ' · ' + x.band : ''); })) : null,
+            r.ta ? tmCell(r) : null),
+          r.res.length ? h('span', { className: 'qn-person-sc' }, r.res.filter(function (x) { return x.n; }).map(function (x) { return h('span', { key: x.s.id }, h('i', null, x.s.name), ' ', x.few ? t('qn_few') + ' (' + x.n + '/' + x.total + ')' : qnNum(t, x.mean) + '/5', !x.few && x.band ? ' · ' + x.band : ''); })) : null,
           h('span', { className: 'qn-person-go' }, r.u.qaReport ? h('span', { className: 'qn-ai-chip' }, 'AI ✓') : null, t('qn_res_open')));
       })),
       wait.length ? h('section', { className: 'box' }, h('div', { className: 'in-wait', style: { marginTop: 0 } }, h('span', { className: 'lor-sm lor-muted' }, t('qn_wait')), wait.map(function (u) { return h(u.qa ? 'button' : 'span', { key: u.id, type: u.qa ? 'button' : undefined, className: cx('in-chip', u.qa && 'qn-who'), onClick: u.qa ? function () { p.onOpen(u.id); } : undefined }, u.name + (u.qa ? ' · ' + t('qn_draft') : '')); }))) : null);
