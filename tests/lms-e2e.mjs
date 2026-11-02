@@ -812,6 +812,9 @@ try {
   await E.locator('.ir-tab').nth(1).click();
   // PDF: встроенный просмотр, а где браузер не умеет (headless, Android) — кнопка «Hujjatni ochish» с тем же файлом
   await E.locator('.ir iframe.dv-pdf[src^="blob:"], .ir a.dv-open[href^="blob:"]').waitFor({ timeout: 8000 });
+  assert.equal(await E.getByRole('button', { name: 'Yuklab olish' }).count(), 0, 'сотруднику «Yuklab olish» не показывается');
+  { const src = await E.locator('.ir iframe.dv-pdf').getAttribute('src').catch(() => null) || await E.locator('.ir a.dv-open').getAttribute('href');
+    assert.match(src, /#toolbar=0/, 'PDF — без панели встроенного просмотра (скачать / печать)'); }
   assert.ok(await E.locator('.ir-side iframe[src*="dQw4w9WgXcQ"]').count(), 'у PDF своего видео нет — справа общее видео знакомства');
   if (await E.locator('.ir a.dv-open').count()) { const [tab] = await Promise.all([E.context().waitForEvent('page'), E.locator('.ir a.dv-open').click()]); await tab.close(); }
   assert.equal(await E.locator('.ir-tab.is-seen').count(), 2, 'оба документа отмечены открытыми');

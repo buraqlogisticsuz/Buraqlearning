@@ -254,19 +254,23 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   }
   /* содержимое документа: PDF — встроенный просмотр (или карточка «Hujjatni ochish»), .docx — текст, .doc — скачать.
      onSeen — документ на самом деле перед глазами: открыт или скачан с карточки */
-  function docBody(t, d, x, onSeen) {
+  /* canDl — скачивать может только SOP-менеджер / CEO (редактор, предпросмотр); сотруднику — только смотреть:
+     без «Yuklab olish» и без панели встроенного просмотра PDF (#toolbar=0 — значки скачать / печать в Chrome и Edge) */
+  function pdfSrc(url) { return url ? url + '#toolbar=0&navpanes=0' : url; }
+  function docBody(t, d, x, onSeen, canDl) {
     var k = docKind(d), seen = function () { if (onSeen) onSeen(); }, dl = function () { seen(); docSave(d); };
+    var dlBtn = function (variant) { return canDl ? (variant ? h(Btn, { variant: 'primary', onClick: dl }, t('in_doc_dl')) : h('button', { type: 'button', className: 'app-link', onClick: dl }, t('in_doc_dl'))) : null; };
     if (x.st === 'wait') return h('div', { className: 'dv-msg' }, h('span', { className: 'dv-spin', 'aria-hidden': true }), t('in_doc_loading'));
-    if (x.st === 'err') return h('div', { className: 'dv-msg' }, h('p', null, t('in_doc_err')), h(Btn, { variant: 'primary', onClick: dl }, t('in_doc_dl')));
-    if (k === 'pdf' && pdfInline()) return h('iframe', { className: 'dv-pdf', src: x.url, title: docTitle(d) });
+    if (x.st === 'err') return h('div', { className: 'dv-msg' }, h('p', null, t(canDl ? 'in_doc_err' : 'in_doc_err_view')), dlBtn(true));
+    if (k === 'pdf' && pdfInline()) return h('iframe', { className: 'dv-pdf', src: canDl ? x.url : pdfSrc(x.url), title: docTitle(d) });
     if (k === 'pdf') return h('div', { className: 'dv-msg dv-alt' },
       h('span', { className: 'jf-ext dv-alt-ext' }, 'PDF'),
       h('b', null, docTitle(d)),
       h('p', null, t(navigator.pdfViewerEnabled === false ? 'in_doc_noinline' : 'in_doc_phone')),
-      h('a', { className: 'lor-btn lor-btn-primary dv-open', href: x.url, target: '_blank', rel: 'noopener', onClick: seen }, t('in_doc_open')),
-      h('button', { type: 'button', className: 'app-link', onClick: dl }, t('in_doc_dl')));
+      h('a', { className: 'lor-btn lor-btn-primary dv-open', href: canDl ? x.url : pdfSrc(x.url), target: '_blank', rel: 'noopener', onClick: seen }, t('in_doc_open')),
+      dlBtn(false));
     if (k === 'docx' && x.html) return h('div', { className: 'dv-doc sop-body', dangerouslySetInnerHTML: { __html: x.html } });
-    return h('div', { className: 'dv-msg' }, h('p', null, t(k === 'docx' ? 'in_doc_empty' : 'in_doc_nopreview')), h(Btn, { variant: 'primary', onClick: dl }, t('in_doc_dl')));
+    return h('div', { className: 'dv-msg' }, h('p', null, t(canDl ? (k === 'docx' ? 'in_doc_empty' : 'in_doc_nopreview') : (k === 'docx' ? 'in_doc_empty_view' : 'in_doc_nopreview_view'))), dlBtn(true));
   }
   function docInline(d, x) { var k = docKind(d); return x.st === 'ok' && (k === 'pdf' ? pdfInline() : k === 'docx' && !!x.html); }
   /* просмотр документа поверх всего: шапка с названием, «Yuklab olish», «Yangi oynada» (PDF), «×» / Esc */
@@ -284,10 +288,10 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           h('span', { className: 'jf-ext' }, fileExt(d.name)),
           h('span', { className: 'dv-name' }, h('b', null, docTitle(d)), d.size ? h('small', null, fileSize(d.size)) : null),
           h('span', { className: 'dv-acts' },
-            k === 'pdf' && x.url ? h('a', { className: 'app-link', href: x.url, target: '_blank', rel: 'noopener' }, t('in_doc_tab')) : null,
-            h('button', { type: 'button', className: 'app-link', onClick: function () { docSave(d); } }, t('in_doc_dl'))),
+            k === 'pdf' && x.url ? h('a', { className: 'app-link', href: p.canDl ? x.url : pdfSrc(x.url), target: '_blank', rel: 'noopener' }, t('in_doc_tab')) : null,
+            p.canDl ? h('button', { type: 'button', className: 'app-link', onClick: function () { docSave(d); } }, t('in_doc_dl')) : null),
           h('button', { type: 'button', className: 'lor-modal-x', 'aria-label': t('close'), onClick: p.onClose }, '×')),
-        h('div', { className: cx('dv-body', 'is-' + k) }, docBody(t, d, x)))), document.body);
+        h('div', { className: cx('dv-body', 'is-' + k) }, docBody(t, d, x, null, p.canDl)))), document.body);
   }
   /* знакомство с документами — на весь экран: слева документ во всю высоту, справа его видео (docs[].video, иначе общее
      видео знакомства), текст, галочка и кнопки. Несколько документов — вкладки в шапке. Документ засчитывается открытым,
@@ -337,9 +341,9 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
             h('span', { className: 'jf-ext' }, fileExt(cur.name)),
             h('span', { className: 'ir-doc-name' }, h('b', null, docTitle(cur)), cur.size ? h('small', null, fileSize(cur.size)) : null),
             h('span', { className: 'dv-acts' },
-              kind === 'pdf' && x.url ? h('a', { className: 'app-link', href: x.url, target: '_blank', rel: 'noopener', onClick: seen }, t('in_doc_tab')) : null,
-              h('button', { type: 'button', className: 'app-link', onClick: function () { seen(); docSave(cur); } }, t('in_doc_dl')))),
-          h('div', { className: cx('dv-body', 'is-' + kind) }, docBody(t, cur, x, seen))) : null,
+              kind === 'pdf' && x.url ? h('a', { className: 'app-link', href: p.admin ? x.url : pdfSrc(x.url), target: '_blank', rel: 'noopener', onClick: seen }, t('in_doc_tab')) : null,
+              p.admin ? h('button', { type: 'button', className: 'app-link', onClick: function () { seen(); docSave(cur); } }, t('in_doc_dl')) : null)),
+          h('div', { className: cx('dv-body', 'is-' + kind) }, docBody(t, cur, x, seen, !!p.admin))) : null,
         showVid ? h('aside', { className: 'ir-side' },
           h('p', { className: 'lor-sm lor-muted ir-how' }, t('ir_how')),
           /* окно видео есть всегда: пока ссылки нет — заставка (у SOP-менеджера и CEO — где её вставить) */
@@ -7702,7 +7706,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         h('small', null, tpl(t('in_drop_hint'), { n: fileSize(DOC_MAX), m: DOCS_MAX }))) : null,
       h('input', { id: 'in-doc-input', type: 'file', multiple: true, className: 'jf-input', accept: '.pdf,.docx,.doc,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword', onChange: function (e) { var fl = e.target.files; add(fl); e.target.value = ''; } }),
       er[0] ? h('span', { className: 'lor-field-error' }, er[0]) : hasOld ? h('span', { className: 'lor-field-hint' }, t('in_doc_old')) : null,
-      view[0] ? h(DocViewer, { t: t, doc: view[0], onClose: function () { view[1](null); } }) : null);
+      view[0] ? h(DocViewer, { t: t, doc: view[0], canDl: true, onClose: function () { view[1](null); } }) : null);
   }
   function docSig(list) { return (list || []).map(function (d) { return d.id + ':' + String(d.title || '').trim() + ':' + docVid(d); }).join('|'); }
   function docVid(d) { return String((d.video && d.video.src) || '').trim(); }

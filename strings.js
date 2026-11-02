@@ -3379,3 +3379,8 @@ Object.assign(APP_T.zh, { qn_q_det: '详情', qn_q_why_h: '原因', qn_q_more: '
   qn_q_w_attn: '注意力检查出错：{m} 题中 {n}', qn_q_w_ok: '回答一致，速度正常', qn_q_w_ok2: '已检查项无可疑之处',
   qn_q_sd_s: '自我描述非常正面——请在面谈中核实',
   qn_q_na_line: '未检查回答质量：测试太短（少于 10 个回答），没有配对和注意力检查题。' });
+/* «Tanishuv»: сотрудник документ только смотрит — без «Yuklab olish» */
+Object.assign(APP_T.uz, { in_doc_err_view: 'Hujjatni ochib bo‘lmadi. Sahifani yangilab, qayta urinib ko‘ring yoki SOP menejeriga murojaat qiling.', in_doc_empty_view: 'Hujjatda matn topilmadi. SOP menejeriga murojaat qiling.', in_doc_nopreview_view: 'Bu formatni saytda ko‘rsatib bo‘lmaydi. SOP menejeri hujjatni PDF yoki DOCX ko‘rinishida yuklashi kerak.' });
+Object.assign(APP_T.ru, { in_doc_err_view: 'Не удалось открыть документ. Обновите страницу и попробуйте ещё раз или обратитесь к SOP-менеджеру.', in_doc_empty_view: 'В документе не найден текст. Обратитесь к SOP-менеджеру.', in_doc_nopreview_view: 'Этот формат нельзя показать на сайте. SOP-менеджеру нужно загрузить документ в PDF или DOCX.' });
+Object.assign(APP_T.en, { in_doc_err_view: 'Could not open the document. Refresh the page and try again, or contact the SOP manager.', in_doc_empty_view: 'No text found in the document. Contact the SOP manager.', in_doc_nopreview_view: 'This format cannot be shown on the site. The SOP manager needs to upload the document as PDF or DOCX.' });
+Object.assign(APP_T.zh, { in_doc_err_view: '无法打开文件。请刷新页面重试，或联系 SOP 经理。', in_doc_empty_view: '文件中未找到文字。请联系 SOP 经理。', in_doc_nopreview_view: '网站无法显示此格式。SOP 经理需要以 PDF 或 DOCX 格式上传文件。' });
