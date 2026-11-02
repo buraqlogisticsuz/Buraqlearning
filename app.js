@@ -7757,6 +7757,52 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     return { questions: out, title: meta.title, intro: meta.intro, first: meta.first, scales: scales, temper: Object.keys(map).length ? { mode: 'max', map: map } : null };
   }
   function qnFromText(s) { return qnParse(s).questions; }
+  /* ---------- редактор «Savolnoma» на 100+ вопросов: разделы сворачиваются, поле — по тексту, замена из файла, подсказка условия ---------- */
+  /* раздел каждого пункта (id ближайшего «§» выше; у самого раздела — null) и сколько в разделе вопросов (без пояснений) */
+  function qnSecs(list) {
+    var of = [], n = {}, cur = null;
+    (list || []).forEach(function (x) {
+      if (x.type === 'section') { cur = x.id; n[cur] = 0; of.push(null); return; }
+      of.push(cur);
+      if (cur && x.type !== 'note') n[cur]++;
+    });
+    return { of: of, n: n };
+  }
+  /* строк в поле вопроса — по длине и переносам (~56 знаков в строке), от 1 до 8; где есть field-sizing: content — по тексту */
+  function qnRows(s) { return Math.max(1, Math.min(8, String(s || '').split('\n').reduce(function (k, l) { return k + Math.max(1, Math.ceil(l.length / 56)); }, 0))); }
+  /* подсказка «Shart qo‘shish»: вопрос (q) недалеко после вопроса с одним выбором, где есть вариант opt (и не no), —
+     «показывать, только если выбран этот вариант». Общие шаблоны, без текстов анкеты компании */
+  var QN_MARRIED = /oilali|uylangan|turmush\s*qurgan|turmushga\s*chiqqan|женат|замужем|в\s*браке|married|已婚/i,
+    QN_NOT = /emas|qurmagan|chiqmagan|(^|[\s(])не\s|unmarried|not\s|未婚/i;
+  var QN_COND = [
+    { q: /farzand|bolalar|bolangiz|дет(и|ей|ям|ях|ьми)(?![а-яё])|ребён|ребен|children|孩子|子女/i, opt: QN_MARRIED, no: QN_NOT },
+    { q: /turmush\s*o[‘’'`ʻ]?rto|rafiqa|umr\s*yo[‘’'`ʻ]?ldosh|супруг|spouse|配偶/i, opt: QN_MARRIED, no: QN_NOT }];
+  function qnCondHint(list, i) {
+    var x = list[i];
+    if (!x || x.when || x.type === 'section' || x.type === 'note' || x.type === 'consent') return null;
+    var rule = QN_COND.filter(function (r) { return r.q.test(String(x.text || '')); })[0];
+    for (var j = i - 1; rule && j >= 0 && j >= i - 10; j--) {
+      var y = list[j]; if (y.type !== 'one' || !String(y.text || '').trim()) continue;
+      var any = (y.options || []).map(function (o) { return String(o).trim(); }).filter(function (o) { return o && rule.opt.test(o) && !rule.no.test(o); });
+      if (any.length) return { q: y.id, any: any };
+    }
+    return null;
+  }
+  /* из текста или файла: «Qo‘shish» — в конец (название, вступление, «avval anketa», шкалы и темперамент из текста — поверх);
+     «Almashtirish» — всё заново: вопросы, шкалы и темперамент из текста, название и вступление — из текста (нет в тексте — прежние),
+     «yoqilgan» — как было, «avval anketa» — из текста (@birinchi) или как было. Сохраняет только «Saqlash» */
+  function qnAppend(o, r) {
+    var n = Object.assign({}, o, { questions: o.questions.concat(r.questions) });
+    if (r.title) n.title = r.title; if (r.intro) n.intro = r.intro; if (r.first) n.first = true;
+    if ((r.scales || []).length) n.scales = o.scales.concat(r.scales);
+    if (r.temper) n.temper = o.temper && o.temper.mode === 'max' ? { mode: 'max', map: Object.assign({}, o.temper.map, r.temper.map) } : r.temper;
+    return n;
+  }
+  function qnReplace(o, r) {
+    return Object.assign({}, o, { questions: r.questions.slice(), scales: (r.scales || []).slice(), temper: r.temper || null, title: r.title || o.title, intro: r.intro || o.intro, first: r.first ? true : o.first });
+  }
+  /* свёрнутые разделы и скрытый «Xodim shunday ko‘radi» — в этом браузере */
+  function qnFoldRead() { try { var a = JSON.parse(localStorage.getItem('lor-qn-fold') || '[]'), o = {}; (Array.isArray(a) ? a : []).forEach(function (id) { o[String(id)] = 1; }); return o; } catch (e) { return {}; } }
   function docxQnText(doc) {
     return doc.blocks.map(function (b) {
       if (b.k === 'h') return '# ' + b.text;
@@ -8367,32 +8413,55 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     function init() { return { title: q0.title || '', intro: q0.intro || '', on: q0.on !== false, first: !!q0.first, questions: clone(q0.questions || []), scales: clone(q0.scales || []), temper: q0.temper ? clone(q0.temper) : null, testWarn: q0.testWarn === false ? false : q0.testWarn || '' }; }
     var f = useState(init), v = f[0], view = useState(qnStat(db).done.length ? 'res' : 'edit');
     var paste = useState(null), err = useState(''), who = useState(null), st = qnStat(db), busy = useState(false);
+    /* pend — файл прочитан, а вопросы уже есть: «Qo‘shish (oxiriga)» или «Almashtirish (hammasini)»;
+       fold — свёрнутые разделы ({ id: 1 }); prev — колонка «Xodim shunday ko‘radi» открыта */
+    var pend = useState(null), fold = useState(qnFoldRead), prev = useState(function () { try { return localStorage.getItem('lor-qn-prev') !== '0'; } catch (e) { return true; } });
+    useEffect(function () { try { localStorage.setItem('lor-qn-fold', JSON.stringify(Object.keys(fold[0]).slice(-300))); } catch (e) {} }, [fold[0]]);
+    function setFold(id, on) { fold[1](function (o) { if (!!o[id] === on) return o; var n = Object.assign({}, o); if (on) n[id] = 1; else delete n[id]; return n; }); }
+    function togPrev() { var on = !prev[0]; prev[1](on); try { localStorage.setItem('lor-qn-prev', on ? '1' : '0'); } catch (e) {} }
+    /* пункт не должен пропасть в свёрнутом разделе: новый (в конце), перенесённый и с ошибкой — раздел раскрывается */
+    function unfoldAt(list, i) { var s = qnSecs(list).of[i]; if (s) setFold(s, false); }
     function set(k, x) { f[1](function (o) { var n = Object.assign({}, o); n[k] = x; return n; }); err[1](''); }
     function setQs(fn) { f[1](function (o) { return Object.assign({}, o, { questions: fn(o.questions.slice()) }); }); err[1](''); }
     function setScs(fn) { f[1](function (o) { return Object.assign({}, o, { scales: fn(o.scales.slice()) }); }); err[1](''); }
     function setQ(i, k, x) { setQs(function (a) { a[i] = Object.assign({}, a[i]); a[i][k] = x; if (k === 'type' && (x === 'one' || x === 'many') && (a[i].options || []).length < 2) a[i].options = (a[i].options || []).concat(['', '']).slice(0, Math.max(2, (a[i].options || []).length)); if (k === 'type' && x === 'grid') { if (!(a[i].cols || []).length) a[i].cols = ['1', '2', '3']; if ((a[i].options || []).length < 1) a[i].options = ['']; } if (k === 'type' && x === 'section') { a[i].req = false; a[i].scale = ''; } if (k === 'type' && x === 'attn') { a[i].scale = ''; if (!a[i].expect) a[i].expect = 2; } return a; }); }
     function setOpt(i, k, fn) { setQs(function (a) { var x = Object.assign({}, a[i]); x.options = (x.options || []).slice(); x.pts = (x.options || []).map(function (_, z) { return (x.pts || [])[z] || 0; }); fn(x, k); a[i] = x; return a; }); }
-    function move(i, d) { setQs(function (a) { var j = i + d; if (j < 0 || j >= a.length) return a; var x = a[i]; a[i] = a[j]; a[j] = x; return a; }); }
-    function add(list) { setQs(function (a) { return a.concat(list); }); }
+    function move(i, d) {
+      var j = i + d; if (j < 0 || j >= v.questions.length) return;
+      var b = v.questions.slice(), x = b[i]; b[i] = b[j]; b[j] = x; unfoldAt(b, j);
+      setQs(function (a) { if (j < 0 || j >= a.length) return a; var y = a[i]; a[i] = a[j]; a[j] = y; return a; });
+    }
+    function add(list) { unfoldAt(v.questions.concat(list), v.questions.length); setQs(function (a) { return a.concat(list); }); }
     /* вопросы из текста или файла (.txt — с пометками типов, .docx — Word); @sarlavha / @kirish / @birinchi — в настройки */
     function addParsed(r) {
-      if (!r.questions.length) { err[1](t('qn_imp_none')); return; }
-      f[1](function (o) {
-        var n = Object.assign({}, o, { questions: o.questions.concat(r.questions) });
-        if (r.title) n.title = r.title; if (r.intro) n.intro = r.intro; if (r.first) n.first = true;
-        if ((r.scales || []).length) n.scales = o.scales.concat(r.scales);
-        if (r.temper) n.temper = o.temper && o.temper.mode === 'max' ? { mode: 'max', map: Object.assign({}, o.temper.map, r.temper.map) } : r.temper;
-        return n;
-      });
+      if (!r.questions.length) { err[1](t('qn_imp_none')); return false; }
+      unfoldAt(v.questions.concat(r.questions), v.questions.length);
+      f[1](function (o) { return qnAppend(o, r); });
       err[1]('');
-      p.say(tpl(t('qn_imp_ok'), { n: r.questions.filter(function (x) { return x.type !== 'section' && x.type !== 'note'; }).length }));
+      p.say(tpl(t('qn_imp_ok'), { n: qnAsk(r).length }));
+      return true;
+    }
+    /* «Almashtirish (hammasini)» — с подтверждением: сколько вопросов уйдёт и что ответы на них останутся без вопросов */
+    function replaceParsed(r) {
+      if (!r.questions.length) { err[1](t('qn_imp_none')); return false; }
+      var ids = {}; v.questions.forEach(function (x) { ids[x.id] = 1; });
+      var ppl = db.users.filter(function (u) { return u.role === 'employee' && u.qa && Object.keys(u.qa.answers || {}).some(function (k) { return ids[k]; }); }).length;
+      if (!window.confirm([tpl(t('qn_rep_q'), { n: qnAsk(v).length, m: qnAsk(r).length })].concat(ppl ? [tpl(t('qn_rep_q_ppl'), { k: ppl })] : [], [t('qn_rep_q_save')]).join('\n\n'))) return false;
+      f[1](function (o) { return qnReplace(o, r); });
+      err[1]('');
+      p.say(tpl(t('qn_rep_ok'), { n: qnAsk(r).length }));
+      return true;
     }
     function fromWord(e) {
-      var file = (e.target.files || [])[0]; e.target.value = '';
+      var file = (e.target.files || [])[0], has = v.questions.length > 0; e.target.value = '';
       if (!file) return;
-      busy[1](true);
+      busy[1](true); pend[1](null);
       (/\.(txt|md)$/i.test(file.name) ? file.text().then(qnParse) : file.arrayBuffer().then(parseDocx).then(function (doc) { return qnParse(docxQnText(doc)); }))
-        .then(function (r) { busy[1](false); addParsed(r); }, function () { busy[1](false); err[1](t('qn_imp_err')); });
+        .then(function (r) {
+          busy[1](false);
+          if (!r.questions.length) { err[1](t('qn_imp_none')); return; }
+          if (has) { paste[1](null); pend[1]({ name: file.name, r: r }); } else addParsed(r);
+        }, function () { busy[1](false); err[1](t('qn_imp_err')); });
     }
     function addTpl() {
       var x = qnTemperTpl(t);
@@ -8429,10 +8498,11 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         if (!y.scale) delete y.scale;
         return y;
       }).filter(function (x) { return x.text; });
+      var at = function (x) { unfoldAt(v.questions, v.questions.map(function (z) { return z.id; }).indexOf(x.id)); };
       var bad = qs.filter(function (x) { return (x.type === 'one' || x.type === 'many') && x.options.length < 2; })[0];
-      if (bad) { err[1](tpl(t('qn_err_opts'), { q: bad.text.slice(0, 60) })); view[1]('edit'); return; }
+      if (bad) { err[1](tpl(t('qn_err_opts'), { q: bad.text.slice(0, 60) })); view[1]('edit'); at(bad); return; }
       var badG = qs.filter(function (x) { return x.type === 'grid' && (!x.options.length || x.cols.length < 2); })[0];
-      if (badG) { err[1](tpl(t('qn_err_grid'), { q: badG.text.slice(0, 60) })); view[1]('edit'); return; }
+      if (badG) { err[1](tpl(t('qn_err_grid'), { q: badG.text.slice(0, 60) })); view[1]('edit'); at(badG); return; }
       var scs = v.scales.map(function (s) { return { id: s.id, name: String(s.name || '').trim().slice(0, 80) || t('qn_sc_l'), bands: (s.bands || []).map(function (b) { return { from: +b.from || 0, label: String(b.label || '').trim().slice(0, 160) }; }).filter(function (b) { return b.label; }).sort(function (a, b) { return a.from - b.from; }) }; });
       var tp = null;
       if (v.temper && v.temper.mode === 'max') { var mp = {}; Object.keys(v.temper.map || {}).forEach(function (k) { if (ids[k] && QN_TEMPERS.indexOf(v.temper.map[k]) >= 0) mp[k] = v.temper.map[k]; }); if (Object.keys(mp).length) tp = { mode: 'max', map: mp }; }
@@ -8455,7 +8525,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     v.questions.forEach(function (x) { if (x.type !== 'section' && x.type !== 'note' && x.type !== 'consent') qnum[x.id] = ++qn0; if (x.type === 'scale' || x.type === 'attn') qpos[x.id] = ++qp0; });
     var hasTest = v.scales.length > 0 || v.questions.some(qnQItem);
     var qSaved = (db.settings && db.settings.questionnaire) || v;
-    var editor = h('div', { className: 'in-cols' },
+    var secs = qnSecs(v.questions), secIds = v.questions.filter(function (x) { return x.type === 'section'; }).map(function (x) { return x.id; });
+    var editor = h('div', { className: cx('in-cols', !prev[0] && qnAsk(v).length && 'qn-wide') },
         h('div', { className: 'in-forms' },
           h('section', { className: 'box' },
             h('h2', { className: 'lor-h' }, t('qn_title')),
@@ -8470,23 +8541,48 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
               hasTest && v.testWarn !== false ? h(Field, { name: 'qn-warn', label: t('qn_warn_l'), multiline: true, rows: 3, value: v.testWarn || '', placeholder: t('qn_warn_def'), onChange: function (x) { set('testWarn', x); } }) : null)),
           h('section', { className: 'box qn-edit' },
             h('div', { className: 'qn-edit-head' },
-              h('h2', { className: 'lor-h' }, t('qn_qs'), h('span', { className: 'lor-count' }, qnAsk(v).length)),
+              h('div', { className: 'qn-edit-tl' },
+                h('h2', { className: 'lor-h' }, t('qn_qs'), h('span', { className: 'lor-count' }, qnAsk(v).length)),
+                secIds.length ? h('span', { className: 'qn-fold-all' },
+                  h('button', { type: 'button', className: 'qn-fold-b is-up', disabled: !secIds.some(function (id) { return !fold[0][id]; }), onClick: function () { var o = Object.assign({}, fold[0]); secIds.forEach(function (id) { o[id] = 1; }); fold[1](o); } }, h(Ico, { name: 'chev', size: 14, w: 2 }), t('qn_fold_all')),
+                  h('button', { type: 'button', className: 'qn-fold-b', disabled: !secIds.some(function (id) { return fold[0][id]; }), onClick: function () { var o = Object.assign({}, fold[0]); secIds.forEach(function (id) { delete o[id]; }); fold[1](o); } }, h(Ico, { name: 'chev', size: 14, w: 2 }), t('qn_unfold_all'))) : null),
               ro ? null : h('div', { className: 'qn-imp' },
                 h('label', { className: 'lor-btn lor-btn-outline lor-btn-sm', htmlFor: 'qn-docx' }, busy[0] ? t('clk_wait') : t('qn_imp_word')),
                 h('input', { id: 'qn-docx', type: 'file', className: 'jf-input', accept: '.docx,.txt,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain', onChange: fromWord }),
-                h(Btn, { variant: 'outline', size: 'sm', onClick: function () { paste[1](paste[0] == null ? '' : null); } }, t('qn_imp_text')))),
+                h(Btn, { variant: 'outline', size: 'sm', onClick: function () { pend[1](null); paste[1](paste[0] == null ? '' : null); } }, t('qn_imp_text')))),
+            /* текст или файл при уже заполненной анкете: «Qo‘shish (oxiriga)» — основное, «Almashtirish (hammasini)» — с подтверждением */
             paste[0] != null ? h('div', { className: 'qn-paste' },
               h(Field, { name: 'qn-paste', label: t('qn_paste_l'), multiline: true, rows: 7, value: paste[0], placeholder: t('qn_paste_ph'), hint: t('qn_paste_hint'), onChange: paste[1] }),
               h('div', { className: 'qn-paste-act' },
                 h(Btn, { variant: 'ghost', size: 'sm', onClick: function () { paste[1](null); } }, t('cancel')),
-                h(Btn, { variant: 'primary', size: 'sm', disabled: !paste[0].trim(), onClick: function () { addParsed(qnParse(paste[0])); paste[1](null); } }, t('qn_paste_add')))) : null,
+                v.questions.length ? h(Btn, { variant: 'outline', size: 'sm', className: 'qn-rep', disabled: !paste[0].trim(), onClick: function () { if (replaceParsed(qnParse(paste[0]))) paste[1](null); } }, t('qn_imp_rep')) : null,
+                h(Btn, { variant: 'primary', size: 'sm', disabled: !paste[0].trim(), onClick: function () { if (addParsed(qnParse(paste[0]))) paste[1](null); } }, t(v.questions.length ? 'qn_imp_add' : 'qn_paste_add')))) : null,
+            pend[0] ? h('div', { className: 'qn-paste qn-pend', role: 'group', 'aria-label': pend[0].name },
+              h('div', { className: 'qn-pend-file' },
+                h(Ico, { name: 'doc', size: 20 }),
+                h('span', { className: 'qn-pend-name' }, h('b', null, pend[0].name),
+                  h('span', { className: 'lor-sm lor-muted' }, [tpl(t('qn_pend_n'), { n: qnAsk(pend[0].r).length, s: pend[0].r.questions.filter(function (x) { return x.type === 'section'; }).length })].concat((pend[0].r.scales || []).length ? [tpl(t('qn_pend_sc'), { n: pend[0].r.scales.length })] : []).join(' · ')))),
+              h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, tpl(t('qn_pend_hint'), { n: qnAsk(v).length })),
+              h('div', { className: 'qn-paste-act' },
+                h(Btn, { variant: 'ghost', size: 'sm', onClick: function () { pend[1](null); } }, t('cancel')),
+                h(Btn, { variant: 'outline', size: 'sm', className: 'qn-rep', onClick: function () { if (replaceParsed(pend[0].r)) pend[1](null); } }, t('qn_imp_rep')),
+                h(Btn, { variant: 'primary', size: 'sm', className: 'qn-app', onClick: function () { if (addParsed(pend[0].r)) pend[1](null); } }, t('qn_imp_add')))) : null,
             v.questions.length ? null : h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('qn_empty')),
             h('ol', { className: 'qn-items' }, v.questions.map(function (x, i) {
               var sec = x.type === 'section' || x.type === 'note', choice = x.type === 'one' || x.type === 'many', grid = x.type === 'grid', scored = !!x.scale && (choice || x.type === 'scale'); if (!sec && x.type !== 'consent') n++;
-              return h('li', { key: x.id, className: cx('qn-item', sec && 'is-sec') },
+              /* свёрнутый раздел — одна строка «§ Название · 10 savol»; его вопросы и пояснения не показываются */
+              if (secs.of[i] && fold[0][secs.of[i]]) return null;
+              var isSec = x.type === 'section', folded = isSec && !!fold[0][x.id], stx = String(x.text || '').trim() || t('qn_sec_ph');
+              if (folded) return h('li', { key: x.id, className: 'qn-item is-sec is-fold' },
+                h('button', { type: 'button', className: 'qn-fold-row', 'aria-expanded': false, title: t('qn_unfold'), onClick: function () { setFold(x.id, false); } },
+                  h(Ico, { name: 'chev', size: 16, w: 2 }), h('span', { className: 'qn-fold-s', 'aria-hidden': true }, '§'),
+                  h('span', { className: 'qn-fold-tx' }, stx), h('span', { className: 'qn-fold-n' }, '· ' + tpl(t('qn_fold_n'), { n: secs.n[x.id] || 0 }))));
+              /* у раздела: щелчок по строке (мимо полей и кнопок) или по стрелке слева — свернуть */
+              return h('li', { key: x.id, className: cx('qn-item', sec && 'is-sec', isSec && 'is-sec-open'), onClick: isSec ? function (e) { if (!(e.target.closest && e.target.closest('textarea, input, select, button, label, a'))) setFold(x.id, true); } : undefined },
                 h('div', { className: 'qn-item-top' },
-                  h('span', { className: 'qn-item-n' }, x.type === 'note' ? '›' : sec ? '§' : n),
-                  h('textarea', { className: 'lor-input qn-item-text', rows: sec ? 1 : 2, value: x.text, readOnly: ro, placeholder: sec ? t('qn_sec_ph') : t('qn_q_ph'), 'aria-label': sec ? t('qn_t_section') : tpl(t('qn_q_n'), { n: n }), onChange: function (e) { setQ(i, 'text', e.target.value); } }),
+                  isSec ? h('button', { type: 'button', className: 'qn-item-n qn-fold-tg', 'aria-expanded': true, 'aria-label': t('qn_fold') + ': ' + stx, title: t('qn_fold'), onClick: function () { setFold(x.id, true); } }, h(Ico, { name: 'chev', size: 16, w: 2 }))
+                    : h('span', { className: 'qn-item-n' }, x.type === 'note' ? '›' : n),
+                  h('textarea', { className: 'lor-input qn-item-text', rows: qnRows(x.text), value: x.text, readOnly: ro, placeholder: sec ? t('qn_sec_ph') : t('qn_q_ph'), 'aria-label': sec ? t('qn_t_section') : tpl(t('qn_q_n'), { n: n }), onChange: function (e) { setQ(i, 'text', e.target.value); } }),
                   ro ? null : h('span', { className: 'qn-item-mv' },
                     h('button', { type: 'button', className: 'in-dl-mv', disabled: i === 0, 'aria-label': t('up'), title: t('up'), onClick: function () { move(i, -1); } }, '↑'),
                     h('button', { type: 'button', className: 'in-dl-mv', disabled: i === v.questions.length - 1, 'aria-label': t('down'), title: t('down'), onClick: function () { move(i, 1); } }, '↓'),
@@ -8513,10 +8609,14 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
                   var srcs = v.questions.slice(0, i).filter(function (z) { return (z.type === 'one' || z.type === 'many') && String(z.text || '').trim() && (z.options || []).some(function (o) { return String(o).trim(); }); });
                   if (!srcs.length && !x.when) return null;
                   var wq = x.when ? srcs.filter(function (z) { return z.id === x.when.q; })[0] : null, any = (x.when && x.when.any) || [];
+                  /* «Farzandlaringiz…» после «Oilaviy holatingiz: Oilali / …» без условия — условие одним щелчком */
+                  var hint = ro || wq ? null : qnCondHint(v.questions, i);
                   return h('div', { className: cx('qn-when', wq && 'is-on') },
                     h(Ico, { name: 'question', size: 15 }),
                     h('select', { className: 'lor-input slim qn-when-sel', value: wq ? wq.id : '', disabled: ro, 'aria-label': t('qn_when'), onChange: function (e) { var id = e.target.value; setQ(i, 'when', id ? { q: id, any: [] } : null); } },
                       [h('option', { key: '', value: '' }, t('qn_when_all'))].concat(srcs.map(function (z) { var tx = String(z.text).trim(); return h('option', { key: z.id, value: z.id }, tpl(t('qn_when_if'), { q: tx.length > 48 ? tx.slice(0, 47) + '…' : tx })); }))),
+                    hint ? h('button', { type: 'button', className: 'qn-sugg', title: t('qn_cond_sugg_t'), onClick: function () { setQ(i, 'when', { q: hint.q, any: hint.any }); } },
+                      h(Ico, { name: 'bulb', size: 15 }), tpl(t('qn_cond_sugg'), { o: hint.any.join(' / ') })) : null,
                     wq ? h('span', { className: 'qn-when-opts' }, (wq.options || []).filter(function (o) { return String(o).trim(); }).map(function (o) {
                       var on = any.indexOf(String(o).trim()) >= 0;
                       return h('label', { key: o, className: cx('qn-when-o', on && 'is-on') }, h('input', { type: 'checkbox', checked: on, disabled: ro, onChange: function () { var oo = String(o).trim(); setQ(i, 'when', { q: wq.id, any: on ? any.filter(function (z) { return z !== oo; }) : any.concat([oo]) }); } }), String(o).trim());
@@ -8603,11 +8703,14 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
             st.q ? h('b', { className: 'in-stat-n' }, st.done.length + ' / ' + st.emps.length) : null,
             st.q ? h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, tpl(t('qn_stat'), { n: st.done.length, m: st.emps.length })) : h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('qn_none')),
             st.q && st.done.length ? h(Btn, { variant: 'outline', size: 'sm', onClick: function () { view[1]('res'); } }, t('qn_tab_res') + ' →') : null),
-          qnAsk(v).length ? h('section', { className: 'box in-preview' },
-            h('span', { className: 'lor-eyebrow' }, t('in_preview')),
-            h('h3', { className: 'lor-h' }, v.title.trim() || t('qn_title')),
-            v.intro.trim() ? h('div', { className: 'intro-text' }, paras(v.intro)) : null,
-            h('div', { className: 'qn-list' }, qnFields(v, {}, null, null, t))) : null));
+          /* «Xodim shunday ko‘radi» сворачивается — редактор тогда шире */
+          qnAsk(v).length ? h('section', { className: cx('box in-preview qn-prev', !prev[0] && 'is-off') },
+            h('div', { className: 'qn-prev-head' },
+              h('span', { className: 'lor-eyebrow' }, t('in_preview')),
+              h('button', { type: 'button', className: cx('qn-fold-b qn-prev-tg', prev[0] && 'is-up'), 'aria-expanded': prev[0], onClick: togPrev }, h(Ico, { name: 'chev', size: 14, w: 2 }), t(prev[0] ? 'qn_prev_hide' : 'qn_prev_show'))),
+            prev[0] ? h('h3', { className: 'lor-h' }, v.title.trim() || t('qn_title')) : null,
+            prev[0] && v.intro.trim() ? h('div', { className: 'intro-text' }, paras(v.intro)) : null,
+            prev[0] ? h('div', { className: 'qn-list' }, qnFields(v, {}, null, null, t)) : null) : null));
     return h('div', { className: 'in-admin qn-admin' },
       h('div', { className: 'qn-views' },
         h('div', { className: 'seg', role: 'tablist' }, [['res', t('qn_tab_res')], ['edit', t('qn_tab_edit')]].map(function (x) { return h('button', { key: x[0], type: 'button', role: 'tab', 'aria-selected': view[0] === x[0], className: view[0] === x[0] ? 'is-on' : '', onClick: function () { view[1](x[0]); } }, x[1]); })),

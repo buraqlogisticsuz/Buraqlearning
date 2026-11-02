@@ -3263,3 +3263,41 @@ Object.assign(APP_T.en, { qn_cons_row: 'Consents', qn_cons_k_base: 'Data process
   qn_cons_k_true: 'Data is correct', qn_cons_k_proc: 'Consent to processing', qn_why_n: 'Answers ({n})' });
 Object.assign(APP_T.zh, { qn_cons_row: '同意事项', qn_cons_k_base: '数据处理', qn_cons_k_ai: 'AI 分析', qn_cons_k_sp: '敏感信息',
   qn_cons_k_true: '信息属实', qn_cons_k_proc: '同意数据处理', qn_why_n: '回答（{n}）' });
+/* редактор «Savolnoma» на 100+ вопросов: разделы сворачиваются, колонка «Xodim shunday ko‘radi» скрывается,
+   замена всей анкеты из файла или текста (с подтверждением), подсказка условия «faqat «Oilali» bo‘lsa» */
+Object.assign(APP_T.uz, { qn_fold_all: 'Hammasini yig‘ish', qn_unfold_all: 'Hammasini yoyish', qn_fold: 'Bo‘limni yig‘ish', qn_unfold: 'Bo‘limni yoyish', qn_fold_n: '{n} savol',
+  qn_prev_hide: 'Yashirish', qn_prev_show: 'Ko‘rsatish',
+  qn_imp_add: 'Qo‘shish (oxiriga)', qn_imp_rep: 'Almashtirish (hammasini)', qn_pend_n: '{n} ta savol, {s} ta bo‘lim', qn_pend_sc: '{n} ta shkala',
+  qn_pend_hint: '«Qo‘shish» — fayldagi savollar hozirgi {n} ta savol oxiriga qo‘shiladi. «Almashtirish» — savolnoma butunlay fayldagidek bo‘ladi: savollar, shkalalar va temperament sozlamasi.',
+  qn_rep_q: 'Savolnoma butunlay almashtiriladi: hozirgi {n} ta savol shkalalar va temperament sozlamasi bilan olib tashlanadi, o‘rniga {m} ta yangi savol qo‘yiladi.',
+  qn_rep_q_ppl: 'Bu savollarga {k} ta xodim javob bergan. Javoblari o‘chirilmaydi, lekin yangi savollarga bog‘lanmaydi — natijalarda ko‘rinmay qoladi, yangi savollarga esa xodimlar qaytadan javob beradi.',
+  qn_rep_q_save: '«Saqlash»ni bosmaguningizcha hech narsa saqlanmaydi. Davom etasizmi?',
+  qn_rep_ok: 'Savolnoma almashtirildi: {n} ta savol — tekshirib, «Saqlash»ni bosing',
+  qn_cond_sugg: 'Shart qo‘shish: faqat «{o}» bo‘lsa', qn_cond_sugg_t: 'Bu savol faqat shu javobni tanlaganlarga ko‘rsatiladi' });
+Object.assign(APP_T.ru, { qn_fold_all: 'Свернуть все', qn_unfold_all: 'Развернуть все', qn_fold: 'Свернуть раздел', qn_unfold: 'Развернуть раздел', qn_fold_n: 'вопросов: {n}',
+  qn_prev_hide: 'Скрыть', qn_prev_show: 'Показать',
+  qn_imp_add: 'Добавить (в конец)', qn_imp_rep: 'Заменить (всё)', qn_pend_n: 'вопросов: {n}, разделов: {s}', qn_pend_sc: 'шкал: {n}',
+  qn_pend_hint: '«Добавить» — вопросы из файла встанут после текущих ({n}). «Заменить» — опросник станет таким, как в файле: вопросы, шкалы и настройка темперамента.',
+  qn_rep_q: 'Опросник будет заменён целиком: текущие вопросы ({n}) уходят вместе со шкалами и настройкой темперамента, вместо них — новые ({m}).',
+  qn_rep_q_ppl: 'На эти вопросы уже ответили сотрудники: {k}. Их ответы не удаляются, но к новым вопросам не привязаны — в результатах их видно не будет, а на новые вопросы сотрудники ответят заново.',
+  qn_rep_q_save: 'Пока вы не нажмёте «Сохранить», ничего не сохранится. Продолжить?',
+  qn_rep_ok: 'Опросник заменён: вопросов — {n}. Проверьте и нажмите «Сохранить»',
+  qn_cond_sugg: 'Добавить условие: только если «{o}»', qn_cond_sugg_t: 'Вопрос увидят только те, кто выбрал этот ответ' });
+Object.assign(APP_T.en, { qn_fold_all: 'Collapse all', qn_unfold_all: 'Expand all', qn_fold: 'Collapse section', qn_unfold: 'Expand section', qn_fold_n: '{n} questions',
+  qn_prev_hide: 'Hide', qn_prev_show: 'Show',
+  qn_imp_add: 'Add (to the end)', qn_imp_rep: 'Replace (everything)', qn_pend_n: '{n} questions, {s} sections', qn_pend_sc: '{n} scales',
+  qn_pend_hint: '“Add” puts the questions from the file after the current {n}. “Replace” makes the questionnaire exactly as in the file: questions, scales and the temperament setting.',
+  qn_rep_q: 'The whole questionnaire will be replaced: the current {n} questions go together with the scales and the temperament setting, and {m} new questions take their place.',
+  qn_rep_q_ppl: '{k} employees have answered these questions. Their answers are not deleted, but they are not linked to the new questions — they will not show in the results, and employees will answer the new questions again.',
+  qn_rep_q_save: 'Nothing is saved until you press “Save”. Continue?',
+  qn_rep_ok: 'Questionnaire replaced: {n} questions — check them and press “Save”',
+  qn_cond_sugg: 'Add a condition: only if “{o}”', qn_cond_sugg_t: 'Only those who chose this answer will see the question' });
+Object.assign(APP_T.zh, { qn_fold_all: '全部折叠', qn_unfold_all: '全部展开', qn_fold: '折叠此部分', qn_unfold: '展开此部分', qn_fold_n: '{n} 个问题',
+  qn_prev_hide: '隐藏', qn_prev_show: '显示',
+  qn_imp_add: '添加（追加到末尾）', qn_imp_rep: '替换（全部）', qn_pend_n: '{n} 个问题，{s} 个部分', qn_pend_sc: '{n} 个量表',
+  qn_pend_hint: '“添加”——文件中的问题追加到现有 {n} 个问题之后。“替换”——问卷将完全按文件内容：问题、量表和气质设置。',
+  qn_rep_q: '整个问卷将被替换：现有 {n} 个问题连同量表和气质设置一并移除，由 {m} 个新问题代替。',
+  qn_rep_q_ppl: '已有 {k} 名员工回答过这些问题。他们的回答不会被删除，但不会关联到新问题——结果中将不再显示，员工需要重新回答新问题。',
+  qn_rep_q_save: '在点击“保存”之前不会保存任何内容。是否继续？',
+  qn_rep_ok: '问卷已替换：{n} 个问题——请检查后点击“保存”',
+  qn_cond_sugg: '添加条件：仅当选择“{o}”时', qn_cond_sugg_t: '只有选择了该答案的人才会看到此问题' });

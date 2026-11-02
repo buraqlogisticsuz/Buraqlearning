@@ -967,15 +967,80 @@ try {
   await A.reload({ waitUntil: 'networkidle' }); await watchSync(A);
   await nav(A, 'cms'); await A.locator('.lor-tab').filter({ hasText: 'Savolnoma' }).click(); await A.waitForTimeout(300);
   await A.locator('.qn-views .seg button').nth(1).click();
-  // вопросы из Word: заголовки — разделы, маркированный список — варианты к вопросу выше (не сохраняем — только проверка)
+  // редактор на 100+ вопросов: раздел сворачивается в строку «§ Tajriba · 1 savol» (и помнит это после перезагрузки),
+  // «Hammasini yig‘ish / yoyish»; поле вопроса — по тексту; колонка «Xodim shunday ko‘radi» скрывается
+  const qnItems = await A.locator('.qn-item').count(), qnOpenH = await A.locator('.qn-item:not(.is-sec) .qn-item-text').first().evaluate(e => e.getBoundingClientRect().height);
+  assert.ok(qnOpenH < 50, 'короткий вопрос — поле в одну строку, а не пустая «простыня»: ' + qnOpenH);
+  await A.locator('.qn-fold-tg').first().click();
+  assert.equal(await A.locator('.qn-item').count(), qnItems - 1, 'вопрос раздела скрыт');
+  assert.match(await A.locator('.qn-item.is-fold').innerText(), /^§\s*Tajriba\s*·\s*1 savol$/, 'свёрнутый раздел — одной строкой');
+  assert.equal(await A.locator('.qn-item.is-fold .qn-fold-row').getAttribute('aria-expanded'), 'false');
+  await A.reload({ waitUntil: 'networkidle' }); await watchSync(A);
+  await nav(A, 'cms'); await A.locator('.lor-tab').filter({ hasText: 'Savolnoma' }).click(); await A.waitForTimeout(300);
+  await A.locator('.qn-views .seg button').nth(1).click();
+  assert.equal(await A.locator('.qn-item.is-fold').count(), 1, 'после перезагрузки раздел всё ещё свёрнут (в этом браузере)');
+  await A.locator('.qn-fold-row').click();
+  assert.equal(await A.locator('.qn-item').count(), qnItems, 'щелчок по строке — раздел раскрыт');
+  await A.locator('.qn-item.is-sec-open').click({ position: { x: 6, y: 6 } });
+  assert.equal(await A.locator('.qn-item.is-fold').count(), 1, 'щелчок по строке раздела (мимо полей) — свёрнут');
+  await A.locator('.qn-fold-all .qn-fold-b').nth(1).click();
+  assert.equal(await A.locator('.qn-item.is-fold').count(), 0, '«Hammasini yoyish»');
+  assert.ok(await A.locator('.qn-fold-all .qn-fold-b').nth(1).isDisabled(), 'всё раскрыто — «yoyish» неактивна');
+  await A.locator('.qn-fold-all .qn-fold-b').first().click();
+  assert.equal(await A.locator('.qn-item.is-fold').count(), await A.locator('.qn-item.is-sec').count(), '«Hammasini yig‘ish» — все разделы');
+  await A.locator('.qn-fold-all .qn-fold-b').nth(1).click();
+  await A.locator('.qn-prev-tg').click();
+  assert.equal(await A.locator('.qn-prev .qn-list').count(), 0, 'предпросмотр скрыт');
+  assert.equal(await A.locator('.qn-admin .in-cols.qn-wide').count(), 1, '…редактор шире');
+  await A.reload({ waitUntil: 'networkidle' }); await watchSync(A);
+  await nav(A, 'cms'); await A.locator('.lor-tab').filter({ hasText: 'Savolnoma' }).click(); await A.waitForTimeout(300);
+  await A.locator('.qn-views .seg button').nth(1).click();
+  assert.equal(await A.locator('.qn-prev .qn-list').count(), 0, 'и после перезагрузки');
+  await A.locator('.qn-prev-tg').click();
+  assert.equal(await A.locator('.qn-prev .qn-list').count(), 1, '«Ko‘rsatish» — снова виден');
+  // вопросы из Word: заголовки — разделы, маркированный список — варианты к вопросу выше (не сохраняем — только проверка).
+  // Анкета не пустая — сначала выбор: «Qo‘shish (oxiriga)» или «Almashtirish (hammasini)»
   const qn0 = await A.locator('.qn-item').count();
   await A.setInputFiles('#qn-docx', { name: 'savollar.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', buffer: docx });
+  await A.locator('.qn-pend').waitFor({ timeout: 5000 });
+  assert.match(await A.locator('.qn-pend').innerText(), /savollar\.docx\n\d+ ta savol, \d+ ta bo‘lim[\s\S]*hozirgi 3 ta savol oxiriga/, 'файл: сколько в нём и что сделает каждая кнопка');
+  assert.equal(await A.locator('.qn-item').count(), qn0, 'до выбора ничего не добавлено');
+  await A.locator('.qn-pend .qn-app').click();
   await A.waitForFunction(n => document.querySelectorAll('.qn-item').length > n, qn0, { timeout: 5000 });
   assert.ok(await A.locator('.qn-item.is-sec').count() >= 2, 'заголовки Word — разделы');
   assert.ok(await A.locator('.qn-item-opt input[value="Birinchi band"]').count(), 'маркированный список — варианты');
   assert.ok(await A.locator('.in-dirty').count(), 'до «Saqlash» — «не сохранено»');
+  // «Almashtirish (hammasini)»: подтверждение — сколько вопросов уйдёт и что ответы на них останутся без вопросов; «нет» — ничего
+  const qnNow = +(await A.locator('.qn-edit:not(.qn-scales) .qn-edit-head .lor-count').innerText()), qnSaved = srv.g.state().settings.questionnaire.questions.length;
+  await A.locator('.qn-edit:not(.qn-scales) .qn-imp button').click();
+  await A.fill('#f-qn-paste', '@sarlavha: Yangi anketa\n# Shaxsiy\nIsmingiz [qisqa]\nOilaviy holatingiz [tanlov]\n- Oilali\n- Turmush qurmagan\nFarzandlaringiz soni [qisqa]');
+  let repMsg = '';
+  A.once('dialog', d => { repMsg = d.message(); d.dismiss(); });
+  await A.locator('.qn-paste .qn-rep').click(); await A.waitForTimeout(200);
+  assert.ok(repMsg.includes('hozirgi ' + qnNow + ' ta savol') && repMsg.includes('3 ta yangi savol'), 'в вопросе — сколько уйдёт и сколько придёт: ' + repMsg);
+  assert.match(repMsg, /1 ta xodim javob bergan[\s\S]*o‘chirilmaydi[\s\S]*natijalarda ko‘rinmay qoladi[\s\S]*«Saqlash»ni bosmaguningizcha/, 'ответившие — их ответы не удаляются, но не видны');
+  assert.equal(+(await A.locator('.qn-edit:not(.qn-scales) .qn-edit-head .lor-count').innerText()), qnNow, '«Bekor qilish» — анкета прежняя');
+  A.once('dialog', d => d.accept());
+  await A.locator('.qn-paste .qn-rep').click(); await A.waitForTimeout(200);
+  assert.equal(await A.locator('.qn-item').count(), 4, 'анкета заменена: раздел и три вопроса');
+  assert.equal(await A.locator('#f-qn-title').inputValue(), 'Yangi anketa', 'название — из текста');
+  assert.equal(srv.g.state().settings.questionnaire.questions.length, qnSaved, 'на сервере — прежняя, пока не «Saqlash»');
+  // подсказка условия: «Farzandlaringiz…» после «Oilali / …» — условие одним щелчком
+  assert.equal(await A.locator('.qn-sugg').count(), 1, 'подсказка — только у вопроса про детей');
+  assert.equal(await A.locator('.qn-sugg').innerText(), 'Shart qo‘shish: faqat «Oilali» bo‘lsa');
+  await A.locator('.qn-sugg').click();
+  assert.equal(await A.locator('.qn-when.is-on').count(), 1, 'условие поставлено');
+  assert.deepEqual(await A.locator('.qn-when.is-on .qn-when-o.is-on').allInnerTexts(), ['Oilali']);
+  assert.equal(await A.locator('.qn-sugg').count(), 0, 'с условием подсказки нет');
+  await shot(A, 'savolnoma-almashtirish');
+  // следом тест из файла — «Qo‘shish (oxiriga)»: дописывается в конец, со шкалой
+  await A.setInputFiles('#qn-docx', { name: 'test.txt', mimeType: 'text/plain', buffer: Buffer.from('# Muloqot [shkala: Muloqot]\nKo‘p gapiraman [baho]') });
+  await A.locator('.qn-pend').waitFor({ timeout: 5000 });
+  await A.locator('.qn-pend .qn-app').click(); await A.waitForTimeout(200);
+  assert.equal(await A.locator('.qn-item').count(), 6, 'анкета и тест после неё');
+  assert.equal(await A.locator('.qn-sc-card').count(), 1, 'шкала теста');
   await A.locator('.lor-tab').filter({ hasText: 'Darslar' }).click();
-  step('«Savolnoma»: SOP-менеджер добавил вопросы списком (варианты, раздел, оценка 1–5), сотрудник заполнил обязательные; результаты: шкалы, темперамент, вывод ИИ (сотруднику не виден); вопросы из Word');
+  step('«Savolnoma»: SOP-менеджер добавил вопросы списком (варианты, раздел, оценка 1–5), сотрудник заполнил обязательные; результаты: шкалы, темперамент, вывод ИИ (сотруднику не виден); вопросы из Word; редактор: разделы сворачиваются, предпросмотр скрывается, замена анкеты с подтверждением, подсказка условия');
 
   // ---------- «сначала анкета»: новые поля (согласие, таблица языков, дата) и пометки в тексте; сотрудник заполняет по шагам до всего остального ----------
   await nav(A, 'cms'); await A.locator('.lor-tab').filter({ hasText: 'Savolnoma' }).click(); await A.waitForTimeout(300);

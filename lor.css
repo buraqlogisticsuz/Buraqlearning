@@ -3461,8 +3461,10 @@ button.mc-cell.at-cell:hover { outline: 2px solid var(--blue-text); outline-offs
 .qn-item { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: var(--hairline) solid var(--line); border-radius: var(--radius-md); background: var(--surface-sunken); }
 .qn-item.is-sec { background: transparent; border-style: dashed; }
 .qn-item-top { display: flex; align-items: flex-start; gap: 10px; }
-.qn-item-n { flex: none; width: 24px; padding-top: 10px; text-align: right; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+.qn-item-n { flex: none; width: 24px; padding-top: 7px; line-height: 22px; text-align: right; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
 .qn-item-text { flex: 1; min-width: 0; resize: vertical; }
+/* поле вопроса — высотой по тексту (field-sizing; без него — rows по длине): короткий вопрос и раздел — одна строка */
+.qn-item textarea.qn-item-text { min-height: 36px; max-height: 240px; padding: 6px 12px; line-height: 22px; field-sizing: content; }
 .qn-item-mv { display: flex; gap: 4px; flex: none; padding-top: 4px; }
 .qn-del { color: var(--red-text); }
 .qn-item-meta { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; padding-left: 34px; }
@@ -3481,6 +3483,40 @@ button.mc-cell.at-cell:hover { outline: 2px solid var(--blue-text); outline-offs
 .qn-dl-row { display: flex; flex-direction: column; gap: 4px; padding-bottom: var(--space-3); border-bottom: var(--hairline) solid var(--line); }
 .qn-dl-row dt { font-size: 13px; line-height: 18px; color: var(--ink-muted); }
 .qn-dl-row dd { margin: 0; font-size: 15px; line-height: 22px; color: var(--ink); white-space: pre-line; }
+/* редактор на 100+ вопросов: раздел сворачивается в строку «§ Название · 10 savol» (стрелка слева или щелчок по строке),
+   «Hammasini yig‘ish / yoyish» у заголовка; файл при заполненной анкете — «Qo‘shish (oxiriga)» или «Almashtirish (hammasini)»;
+   подсказка условия; колонка «Xodim shunday ko‘radi» скрывается — редактор шире */
+.qn-edit-tl { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; min-width: 0; }
+.qn-fold-all { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.qn-fold-b { display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 10px 0 8px; border: var(--hairline) solid var(--line); border-radius: var(--radius-pill); background: transparent; color: var(--blue-text); font: inherit; font-size: 13px; line-height: 16px; cursor: pointer; white-space: nowrap; transition: background-color var(--t-sm) var(--ease), border-color var(--t-sm) var(--ease); }
+.qn-fold-b:hover:not(:disabled) { background: var(--blue-soft); border-color: var(--blue-text); }
+.qn-fold-b:disabled { color: var(--ink-muted); opacity: .55; cursor: default; }
+.qn-fold-b svg { flex: none; transition: transform var(--t-sm) var(--ease); }
+.qn-fold-b.is-up svg { transform: rotate(180deg); }
+.qn-item.is-sec-open { cursor: pointer; }
+.qn-item.is-sec-open .qn-item-text { cursor: text; }
+button.qn-fold-tg { height: 36px; padding: 0; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--ink-muted); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; transition: background-color var(--t-sm) var(--ease), color var(--t-sm) var(--ease); }
+button.qn-fold-tg:hover { background: var(--surface-sunken); color: var(--blue-text); }
+.qn-item.is-fold { padding: 0; gap: 0; }
+.qn-fold-row { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 46px; padding: 8px 14px 8px 16px; border: 0; border-radius: inherit; background: transparent; color: var(--ink); font: inherit; font-size: 15px; line-height: 22px; text-align: left; cursor: pointer; transition: background-color var(--t-sm) var(--ease); }
+.qn-fold-row:hover { background: var(--surface-sunken); }
+.qn-fold-row svg { flex: none; margin-right: 6px; color: var(--ink-muted); transform: rotate(-90deg); }
+.qn-fold-row:hover svg { color: var(--blue-text); }
+.qn-fold-s { flex: none; color: var(--ink-muted); }
+.qn-fold-tx { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qn-fold-n { flex: none; color: var(--ink-muted); font-size: 13px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.qn-paste-act { flex-wrap: wrap; }
+.qn-pend-file { display: flex; align-items: center; gap: 10px; color: var(--ink); }
+.qn-pend-file svg { flex: none; color: var(--blue-text); }
+.qn-pend-name { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.qn-pend-name b { font-weight: 500; overflow-wrap: anywhere; }
+.qn-sugg { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 4px 12px 4px 10px; border: var(--hairline) dashed var(--blue-text); border-radius: var(--radius-pill); background: transparent; color: var(--blue-text); font: inherit; font-size: 13px; line-height: 18px; text-align: left; cursor: pointer; transition: background-color var(--t-sm) var(--ease); }
+.qn-sugg:hover { background: var(--blue-soft); border-style: solid; }
+.qn-sugg svg { flex: none; }
+.qn-prev-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.in-admin .in-cols.qn-wide { grid-template-columns: minmax(0, 1fr) minmax(0, 280px); }
+.in-admin .in-cols.qn-wide .in-side { position: sticky; top: calc(var(--hdr-h, 64px) + var(--space-4)); }   /* «Ko‘rsatish» — всегда под рукой */
+@media (max-width: 900px) { .in-admin .in-cols.qn-wide { grid-template-columns: 1fr; } .in-admin .in-cols.qn-wide .in-side { position: static; } }
 @media (max-width: 640px) {
   .qn-item-meta, .qn-item-opts { padding-left: 0; }
   .qn-item-n { width: 18px; }
