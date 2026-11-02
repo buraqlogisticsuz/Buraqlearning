@@ -430,7 +430,7 @@ try {
   assert.ok(sheetRows(xf['xl/worksheets/sheet2.xml'].toString('utf8')).some(r => r[0] === String(emp.id) && r[3] === 'O‘tdi'), 'итоги уроков — на листе «Natijalar»');
   rowOf(sher.id)[3] = 'Ombor mudiri'; rowOf(sher.id)[5] = '+998 90 111 22 33';
   rowOf(emp.id)[2] = 'm.ergasheva';                                  // чужой логин — отказ в этой строке
-  xr.push(['', 'Jasur Toshmatov', '', 'Omborchi', 'Ombor (Yiwu)']);   // без ID — новый сотрудник
+  xr.push(['', 'Bekzod Yusupov', '', 'Omborchi', 'Ombor (Yiwu)']);   // без ID — новый сотрудник
   const xs = sheetXml(xr);
   const xback = zip({ ...Object.fromEntries(Object.entries(xf).filter(([k]) => k !== 'xl/worksheets/sheet1.xml')), 'xl/worksheets/sheet1.xml': xs.sheet, 'xl/sharedStrings.xml': xs.shared });
   await A.setInputFiles('#staff-import', { name: 'buraq-xodimlar.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', buffer: xback });
@@ -441,7 +441,7 @@ try {
   await shot(A, '15-import-update');
   await click(A, 'Saqlash: 1 ta yangi, 1 ta yangilanadi', { wait: 400 });
   await settle(A);
-  const sher2 = srv.g.state().users.find(u => u.id === sher.id), jas = srv.g.state().users.find(u => u.name === 'Jasur Toshmatov');
+  const sher2 = srv.g.state().users.find(u => u.id === sher.id), jas = srv.g.state().users.find(u => u.name === 'Bekzod Yusupov');
   assert.equal(sher2.position, 'Ombor mudiri'); assert.equal(sher2.profile.phone, '+998 90 111 22 33');
   assert.equal(sher2.login, 's.aliev', 'пустой пароль и тот же логин — вход как был');
   assert.equal(srv.g.state().users.find(u => u.id === emp.id).login, 'dilnoza.k', 'строка с отказом не применилась');
@@ -960,6 +960,53 @@ try {
   assert.equal(await A.locator('#org-new-positions').count(), 0, 'у SOP-менеджера список только для просмотра');
   await A.keyboard.press('Escape');
   step('«Lavozim va bo‘limlar»: CEO добавил должность и отдел; у SOP-менеджера они в форме сотрудника, список — только просмотр');
+
+  // ---------- порядок входа нового сотрудника: анкета → тест → приветствие и условия → профиль → «Tanishuv» последним ----------
+  const jid = Math.max(...srv.g.state().users.map(u => u.id)) + 1000;
+  { const tk = srv.g.post({ action: 'login', login: srv.admin.login, password: srv.admin.password }).token;
+    assert.deepEqual(srv.g.post({ token: tk, action: 'patch', ops: [{ op: 'set', path: ['users', { id: jid }], value: { id: jid, role: 'employee', login: 'new.xodim', password: 'xodim-12345', name: 'Bekzod Yusupov', position: 'Omborchi', status: 'probation' } }] }).rejected, []); }
+  const J = await device('новый сотрудник');
+  await signIn(J, 'new.xodim', 'xodim-12345');
+  await J.locator('.qn-page .qn-wiz').waitFor({ timeout: 8000 });
+  assert.equal(await J.locator('.welcome, .ir, .app-body').count(), 0, 'первым делом — анкета: ни приветствия, ни знакомства');
+  { const st = await J.locator('.qn-stp').allInnerTexts(), at = re => st.findIndex(x => re.test(x));
+    assert.ok(at(/Tillar/i) >= 0 && at(/Temperament/i) > at(/Tillar/i), 'в анкете сначала вопросы, потом тест темперамента: ' + st.join(' | ')); }
+  // анкету и тест по шагам уже проверили выше — здесь ответы те же, что у первого сотрудника
+  const jt = srv.g.post({ action: 'login', login: 'new.xodim', password: 'xodim-12345' }).token;
+  const jpatch = ops => assert.deepEqual(srv.g.post({ token: jt, action: 'patch', ops }).rejected, []);
+  jpatch([{ op: 'set', path: ['users', { id: jid }, 'qa'], value: { answers: srv.g.state().users.find(u => u.id === emp.id).qa.answers, at: Date.now() } }]);
+  await J.reload({ waitUntil: 'networkidle' }); await watchSync(J);
+  await J.locator('.welcome').waitFor({ timeout: 8000 });
+  assert.equal(await J.locator('.welcome-steps li').count(), 4, 'в приветствии знакомства нет: приветствие, как устроено, помощь, условия');
+  assert.equal(await J.locator('.ir').count(), 0);
+  for (let i = 0; i < 3; i++) await click(J, 'Keyingi');
+  await J.check('#agree1'); await J.check('#agree2');
+  await click(J, 'Qabul qilaman va boshlash', { wait: 800 }); await settle(J);
+  await J.locator('#f-lastName').waitFor({ timeout: 5000 });
+  assert.equal(await J.locator('.ir').count(), 0, 'пока профиль не заполнен — знакомства нет');
+  // профиль по шагам тоже проверен выше
+  jpatch([{ op: 'set', path: ['users', { id: jid }, 'profile'], value: { lastName: 'Yusupov', firstName: 'Bekzod' } }, { op: 'set', path: ['users', { id: jid }, 'profileComplete'], value: true }, { op: 'set', path: ['users', { id: jid }, 'assetsDeclaredAt'], value: Date.now() }]);
+  setClock(true);
+  await J.reload({ waitUntil: 'networkidle' }); await watchSync(J);
+  await J.locator('.ir').waitFor({ timeout: 8000 });
+  assert.match(await J.locator('.ir-step').innerText(), /oxirgi qadam/i, 'знакомство — последний шаг');
+  assert.equal(await J.locator('.ir-x').count(), 0, 'крестика нет');
+  assert.deepEqual(await J.locator('.ir-actions button').allInnerTexts().then(a => a.map(x => x.replace(/[^\p{L} ]/gu, '').trim().toLowerCase())), ['chiqish', 'tasdiqlash'], 'отложить нельзя — только выйти из аккаунта или подтвердить');
+  await J.keyboard.press('Escape'); await J.waitForTimeout(200);
+  assert.equal(await J.locator('.ir').count(), 1, 'Escape не закрывает');
+  assert.equal(await J.getByRole('button', { name: 'O‘tkazib yuborish' }).count(), 0, 'знакомство по программе — после, не поверх');
+  await J.locator('.ir .dv-doc').waitFor({ timeout: 8000 });
+  await J.locator('.ir-tab').nth(1).click();
+  await J.locator('.ir iframe.dv-pdf[src^="blob:"], .ir a.dv-open[href^="blob:"]').waitFor({ timeout: 8000 });
+  if (await J.locator('.ir a.dv-open').count()) { const [tab] = await Promise.all([J.context().waitForEvent('page'), J.locator('.ir a.dv-open').click()]); await tab.close(); }
+  await shot(J, 'tanishuv-oxirgi-qadam');
+  await J.check('#in-seen'); await J.locator('.ir-actions button:has-text("Tasdiqlash")').click(); await settle(J);
+  assert.ok(srv.g.state().users.find(u => u.id === jid).introSeenAt, 'знакомство подтверждено — на сервере');
+  await J.locator('.clock-modal').waitFor({ timeout: 5000 });
+  assert.equal(await J.locator('.ir').count(), 0);
+  setClock(false);
+  assert.deepEqual(await rejected(J), [], 'сервер принял всё от нового сотрудника');
+  step('порядок входа: анкета → тест темперамента → приветствие и условия → профиль → «Tanishuv» последним (отложить нельзя) → отметка прихода');
 
   // ---------- демо больше нет: ?demo=1 — тот же вход на сервер; без адреса сервера — «Server ulanmagan» ----------
   const D = await device('бывшее демо', '?demo=1');

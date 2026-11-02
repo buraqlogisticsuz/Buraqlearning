@@ -680,30 +680,35 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       h('div', { className: 'cb-body' }, h('b', null, t('qn_banner_t')), h('span', null, tpl(t('qn_banner_sub'), { n: qnAsk(q).length }))),
       h(Btn, { variant: 'primary', arrow: true, onClick: p.openQn }, t('qn_open')));
   }
-  /* знакомство поверх программы: обязательное (ещё не подтверждено) — с галочкой и «Tasdiqlash»; уже подтверждено — просто посмотреть */
+  /* знакомство поверх программы: обязательное (ещё не подтверждено) — с галочкой и «Tasdiqlash»; уже подтверждено — просто посмотреть.
+     Новый сотрудник (принял условия уже при этой версии знакомства) проходит его последним шагом входа — после анкеты,
+     теста, приветствия и профиля — и отложить не может: ни «Keyinroq», ни крестика, ни Escape (выйти из аккаунта можно).
+     Работающим — когда знакомство добавили или изменили — оно приходит окном, которое можно отложить */
+  function introMust(db, u) { var w = introOf(db); return !!(w && introDue(db, u) && (u.termsAcceptedAt || 0) >= (w.at || 0)); }
   function IntroModal(p) {
-    var t = p.t, u = p.user, w = introOf(p.db) || {}, due = introDue(p.db, u), ok = useState(false), tick = useState(0);
-    useEffect(function () { function k(e) { if (e.key === 'Escape') p.onClose(); } window.addEventListener('keydown', k); return function () { window.removeEventListener('keydown', k); }; }, []);
+    var t = p.t, u = p.user, w = introOf(p.db) || {}, due = introDue(p.db, u), must = introMust(p.db, u), ok = useState(false), tick = useState(0);
+    var close = must ? null : function () { p.onClose(); }, out = must && p.logout ? { label: t('logout'), on: p.logout } : null;
+    useEffect(function () { function k(e) { if (e.key === 'Escape' && close) close(); } window.addEventListener('keydown', k); return function () { window.removeEventListener('keydown', k); }; }, [must]);
     function confirm() {
       var at = Date.now();
       p.update(function (d) { patchUser(d, u.id, function (x) { x.introSeenAt = at; }); d.audit.unshift({ id: nextId(d), userId: u.id, key: 'intro-seen', at: at }); });
       SAY('in_confirmed'); p.onClose();
     }
     /* с документами — на весь экран: документ слева, его видео справа */
-    if ((w.docs || []).length) return h(IntroReader, { t: t, w: w, confirm: due, onX: function () { p.onClose(); },
-      back: due ? { label: t('clk_later'), on: function () { p.onClose(); } } : null,
+    if ((w.docs || []).length) return h(IntroReader, { t: t, w: w, confirm: due, onX: close, step: must ? t('in_last') : null,
+      back: must ? out : due ? { label: t('clk_later'), on: close } : null,
       next: due ? { label: t('in_confirm'), on: confirm } : { label: t('close'), on: function () { p.onClose(); } },
       note: !due && u.introSeenAt ? '✓ ' + tpl(t('in_seen_on'), { d: fmt(u.introSeenAt, t) }) : null });
-    return h('div', { className: 'lor-scrim', onMouseDown: function (e) { if (e.target === e.currentTarget) p.onClose(); } },
+    return h('div', { className: 'lor-scrim', onMouseDown: function (e) { if (e.target === e.currentTarget && close) close(); } },
       h('div', { className: 'lor-modal intro-modal', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'in-h' },
-        h('button', { type: 'button', className: 'lor-modal-x', 'aria-label': t('close'), onClick: function () { p.onClose(); } }, '×'),
-        h('span', { className: 'lor-eyebrow' }, due ? t('in_banner_t') : t('in_tab')),
+        close ? h('button', { type: 'button', className: 'lor-modal-x', 'aria-label': t('close'), onClick: close }, '×') : null,
+        h('span', { className: 'lor-eyebrow' }, must ? t('in_last') + ' · ' + t('in_banner_t') : due ? t('in_banner_t') : t('in_tab')),
         h('h2', { className: 'lor-h', id: 'in-h' }, w.introTitle || t('in_title')),
         h(IntroBody, { t: t, w: w, onOpen: function () { tick[1](function (n) { return n + 1; }); } }),
         due ? h(IntroCheck, { t: t, w: w, checked: ok[0], onChange: ok[1] })
           : u.introSeenAt ? h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, '✓ ' + tpl(t('in_seen_on'), { d: fmt(u.introSeenAt, t) })) : null,
         h('div', { className: 'lor-modal-actions' },
-          due ? h(Btn, { variant: 'ghost', onClick: function () { p.onClose(); } }, t('clk_later')) : null,
+          must ? (out ? h(Btn, { variant: 'ghost', onClick: out.on }, out.label) : null) : due ? h(Btn, { variant: 'ghost', onClick: close }, t('clk_later')) : null,
           due ? h(Btn, { variant: 'primary', arrow: true, disabled: !ok[0] || docsOpened(w) < (w.docs || []).length, onClick: confirm }, t('in_confirm'))
             : h(Btn, { variant: 'primary', onClick: function () { p.onClose(); } }, t('close')))));
   }
@@ -717,25 +722,21 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       h(Btn, { variant: 'primary', arrow: true, onClick: p.openIntro }, t('in_open')));
   }
   function Welcome(p) {
-    var t = p.t, u = p.user, s = useState(0), step = s[0], a1 = useState(false), a2 = useState(false), seen = useState(false), tick = useState(0);
-    var w = welcomeOf(p.db), iw = introOf(p.db), iwOk = iw && seen[0] && docsOpened(iw) >= (iw.docs || []).length;
+    var t = p.t, u = p.user, s = useState(0), step = s[0], a1 = useState(false), a2 = useState(false);
+    var w = welcomeOf(p.db);
+    /* знакомство с компанией («Tanishuv») здесь не показываем: оно — последний шаг, после профиля (EmployeeApp → nextGate) */
     var slides = [
       { t: String(w.title || '').trim() || t('w1_t'), body: String(w.text || '').trim() ? h('div', { className: 'welcome-greet lor-sop' }, paras(w.text)) : h('p', { className: 'lor-sop', style: { margin: 0 } }, t('w1_p')) },
-      iw ? { intro: true, t: String(iw.introTitle || '').trim() || t('in_title'), need: !iwOk, body: h(F, null, h(IntroBody, { t: t, w: iw, onOpen: function () { tick[1](function (n) { return n + 1; }); } }),
-        h(IntroCheck, { t: t, w: iw, checked: seen[0], onChange: seen[1] })) } : null,
       { t: t('w2_t'), body: h('ol', { className: 'welcome-list' }, t('w2_list').split('|').map(function (x, i) { return h('li', { key: i }, x); })) },
       { t: t('w3_t'), body: h('ul', { className: 'welcome-list is-ul' }, t('w3_list').split('|').map(function (x, i) { var parts = x.split(' — '); return h('li', { key: i }, h('b', null, parts[0]), parts[1] ? ' — ' + parts[1] : ''); })) },
       { t: t('w4_t'), body: h(F, null, h('p', { className: 'lor-muted', style: { margin: 0 } }, t('terms_intro')), h('div', { className: 'terms-scroll' }, h(TermsList, { lang: p.lang })),
         h('label', { className: 'check big' }, h('input', { type: 'checkbox', id: 'agree1', checked: a1[0], onChange: function (e) { a1[1](e.target.checked); } }), t('agree1')),
-        h('label', { className: 'check big' }, h('input', { type: 'checkbox', id: 'agree2', checked: a2[0], onChange: function (e) { a2[1](e.target.checked); } }), t('agree2'))) }].filter(Boolean);
+        h('label', { className: 'check big' }, h('input', { type: 'checkbox', id: 'agree2', checked: a2[0], onChange: function (e) { a2[1](e.target.checked); } }), t('agree2'))) }];
     var cur = slides[step], last = step === slides.length - 1;
-    /* знакомство с документами — на весь экран, тем же шагом приветствия */
-    if (cur.intro && (iw.docs || []).length) return h(IntroReader, { t: t, w: iw, step: (step + 1) + ' / ' + slides.length, confirm: true, checked: seen[0], onCheck: seen[1],
-      back: { label: t('prev'), on: function () { s[1](step - 1); } }, next: { label: t('next'), on: function () { s[1](step + 1); } } });
     function accept() {
       var at = Date.now();
       p.update(function (d) {
-        d.users.forEach(function (x) { if (x.id === u.id) { x.termsAcceptedAt = at; x.termsVersion = '1.0'; if (iwOk) x.introSeenAt = at; } });
+        d.users.forEach(function (x) { if (x.id === u.id) { x.termsAcceptedAt = at; x.termsVersion = '1.0'; } });
         d.audit.unshift({ id: nextId(d), userId: u.id, key: 'terms-accepted', at: at });
       });
     }
@@ -8181,11 +8182,12 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var filled = !!(u.profileComplete && u.assetsDeclaredAt);
     var ready = !!(u.termsAcceptedAt && filled);
     /* при открытии программы — модальное окно отметки прихода, если сотрудник ещё не отметился сегодня (один раз за заход) */
-    /* сначала обязательное знакомство (если не подтверждено), потом анкета (если не отправлена), после них — отметка прихода */
+    /* порядок входа: анкета и тест («Savolnoma»; с «birinchi navbatda» — ещё до приветствия), приветствие и условия, профиль,
+       в самом конце — знакомство с компанией («Tanishuv»); после них — отметка прихода */
     function nextGate(from) {
       var d = dbRef.current;
-      if (from === 'start' && introDue(d, u)) intro[1]('auto');
-      else if (from !== 'qn' && qnDue(d, u)) qn[1]('auto');
+      if (from === 'start' && qnDue(d, u)) qn[1]('auto');
+      else if (from !== 'intro' && introDue(d, u)) intro[1]('auto');
       else if (clockDue(d, u)) gate[1](true);
     }
     useEffect(function () { if (gateInit.current || !ready) return; gateInit.current = true; nextGate('start'); }, [ready]);
@@ -8318,7 +8320,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       filled ? h(AIMentor, Object.assign({}, p, { open: ai[0], setOpen: ai[1], lessonId: route.name === 'lesson' ? route.id : null, openLesson: function (id) { go({ name: 'lesson', id: id }); } })) : null,
       hintOn && !tour[0] && u.tourDone ? h(HintLayer, { t: t }) : null,
       pal[0] ? h(Palette, Object.assign({}, q, { onClose: function () { pal[1](false); }, go: function (x) { go(x); } })) : null,
-      ready && (tour[0] || !u.tourDone) ? h(Tour, { t: t, user: u, go: forceGo, onClose: function () { tour[1](false); p.update(function (d) { d.users.forEach(function (x) { if (x.id === u.id) x.tourDone = true; }); }); } }) : null);
+      ready && !intro[0] && !qn[0] && (tour[0] || !u.tourDone) ? h(Tour, { t: t, user: u, go: forceGo, onClose: function () { tour[1](false); p.update(function (d) { d.users.forEach(function (x) { if (x.id === u.id) x.tourDone = true; }); }); } }) : null);
   }
 
   /* ---------------- admin: inbox ---------------- */
