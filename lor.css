@@ -4112,3 +4112,9 @@ select.lor-input.slim:not([multiple]) { background-position: right 10px center; 
 .qn-lk2-o.qn-sc { width: auto; height: auto; border-radius: var(--radius-md); font-size: inherit; }
 .qn-lk2-o.qn-sc.is-on { transform: none; background: var(--blue); border-color: var(--blue); color: var(--on-blue); }
 @media (max-width: 720px) { .qn-lk2-o.qn-sc { border-radius: var(--radius-pill); } }
+/* «Savolnoma» → ИИ: подпись «AI qoralamasi», основание пункта, нет согласия / мало людей для анализа коллектива */
+.qn-ai-draft { margin: 0; padding: 6px 12px; border-left: var(--arrow) solid var(--red); background: var(--surface-sunken); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; font-size: 13px; line-height: 18px; color: var(--ink-muted); }
+.qn-ai-ev { display: block; margin-top: 1px; font-size: 12px; line-height: 17px; color: var(--ink-muted); }
+.qn-ai-sec li + li { margin-top: 4px; }
+.qn-ai-nocons, .qn-team-min { padding: 8px 12px; border-radius: var(--radius-md); background: var(--surface-sunken); color: var(--ink-muted); }
+.qn-ai-off { color: var(--red-text); }

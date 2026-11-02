@@ -7505,109 +7505,228 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           res.length ? h('p', { className: 'lor-sm lor-muted qn-prof-hint' }, tpl(t('qn_bars_hint'), { d: qnNum(t, QN_SEM) })) : null)),
       h('p', { className: 'qn-foot' }, t('qn_foot')));
   }
-  /* AI-вывод по ответам: только для CEO, SOP-менеджера и руководителя (сервер не отдаёт users[].qaReport сотруднику) */
-  /* в ИИ — только должность, отдел и ответы; скрытые вопросы (паспорт, родители, здоровье — [maxfiy]) и согласия не уходят */
+  /* AI-вывод по ответам: только для CEO, SOP-менеджера и руководителя (сервер не отдаёт users[].qaReport сотруднику).
+     ИИ пересказывает измеренное, а не угадывает характер: баллы и склонность — как их посчитала программа (теста нет —
+     «test o‘lchanmagan», раздела о характере нет); у каждого пункта сильных сторон, рисков, развития и советов — evidence
+     (шкала и балл или вопрос и ответ): без неё пункт отбрасывается. Запрещены медицинские слова, возраст, пол, беременность,
+     семья, религия, национальность, прогнозы по темпераменту, сравнение людей, общие «барнумовские» фразы.
+     На экране — «AI qoralamasi…»; CEO и SOP-менеджер могут отклонить вывод («Rad etish»: текст удаляется, остаётся отметка).
+     QN_AI_V — версия запроса: хранится в выводе (users[].qaReport.v, users[].qaTeam.v); вывод прежней версии — «eskirgan».
+     Случайность генерации не снижаем: сервер (действие ai) параметра temperature не принимает */
+  var QN_AI_V = 2;
+  var QN_TEAM_MIN = 5;   /* анализ коллектива — от 5 ответивших с согласием на ИИ: меньше — по сводке легко узнать человека */
+  /* можно ли отправлять ответы человека в ИИ: согласие на ИИ-анализ — u.qa.consent.ai === true. Анкеты без поля согласий
+     (до шага согласий) — можно, как раньше. Без согласия вывод не готовится ни сам, ни кнопкой, человек не идёт в анализ коллектива */
+  function qnAiAllowed(u) { var c = u && u.qa && u.qa.consent; return !c || typeof c !== 'object' ? true : c.ai === true; }
+  /* что уходит в ИИ — минимум: без скрытых ([maxfiy]), согласий, пояснений, скрытых условием вопросов и вопросов-«полей
+     профиля» с именем, телефоном, Telegram, почтой, адресом, паспортом, контактом родных; дата рождения — возрастной группой;
+     из свободного текста убираются телефоны, почта, @-ники и ссылки на мессенджеры */
+  var QN_AI_PROF_SKIP = ['name', 'phone', 'telegram', 'email', 'address', 'passport', 'emg'];
+  function qnAiSkip(x) { return !!x.secret || x.type === 'consent' || x.type === 'note' || x.type === 'section' || QN_AI_PROF_SKIP.indexOf(x.prof) >= 0; }
+  function qnIsBirth(x) { return x.prof === 'birth' || (x.type === 'date' && /tug.?il|рожд|birth|出生/i.test(String(x.text || ''))); }
+  function qnAgeGroup(v, now) {
+    var s = String(v || ''), m = /(\d{4})-(\d{1,2})-(\d{1,2})/.exec(s), y, mo = 1, d = 1;
+    if (m) { y = +m[1]; mo = +m[2]; d = +m[3]; }
+    else if ((m = /(\d{1,2})[./](\d{1,2})[./](\d{4})/.exec(s))) { y = +m[3]; mo = +m[2]; d = +m[1]; }
+    else if ((m = /(^|\D)((19|20)\d\d)(\D|$)/.exec(s))) y = +m[2];
+    else return '';
+    var t = new Date(now || Date.now()), age = t.getFullYear() - y - (t.getMonth() + 1 < mo || (t.getMonth() + 1 === mo && t.getDate() < d) ? 1 : 0);
+    return age < 0 || age > 100 ? '' : age < 18 ? '18 dan kichik' : age < 25 ? '18–24' : age < 35 ? '25–34' : age < 45 ? '35–44' : age < 55 ? '45–54' : '55+';
+  }
+  function qnScrub(s) {
+    return String(s || '')
+      .replace(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g, '[email]')
+      .replace(/(https?:\/\/)?(t\.me|telegram\.me|wa\.me|instagram\.com|facebook\.com)\/[\w./?=-]+/gi, '[kontakt]')
+      .replace(/(^|[^\w])@[A-Za-z][\w]{3,}/g, '$1[kontakt]')
+      /* телефон — 9–15 цифр подряд с пробелами, скобками, дефисами; «2015 - 2020» и даты не трогаем */
+      .replace(/\+?\d[\d\s()-]{6,}\d/g, function (x) { var n = x.replace(/\D/g, '').length; return n >= 9 && n <= 15 && !/^(19|20)\d\d(\s*-\s*(19|20)\d\d)+$/.test(x.trim()) ? '[telefon]' : x; });
+  }
+  /* ответ для ИИ: дата рождения → «yosh guruhi: 25–34», остальное — текстом без контактов */
+  function qnAiAns(x, v, now) {
+    if (!qnHas(v)) return '';
+    if (qnIsBirth(x)) { var g = qnAgeGroup(v, now); return g ? 'yosh guruhi: ' + g : ''; }
+    return qnScrub(qnText(x, v));
+  }
   /* шкала для ИИ: «Muloqot: 3,4 / 5 (O‘rta)» или «kam javob (6 / 10) — talqin qilinmaydi» */
   function qnAiScale(r) { var T0 = T('uz'); return r.s.name + ': ' + (r.few ? T0('qn_few_n').replace('{n}', r.n).replace('{m}', r.total) : qnNum(T0, r.mean) + ' / 5' + (r.band ? ' (' + r.band + ')' : '')); }
-  function qnAiPrompt(q, u, res, ta, lang) {
-    var a = (u.qa && u.qa.answers) || {}, n = 0;
-    var qa = (q.questions || []).filter(function (x) { return !x.secret && x.type !== 'consent' && x.type !== 'note'; }).map(function (x) { if (x.type === 'section') return '\n## ' + x.text; n++; return n + '. ' + x.text + '\n   Javob: ' + (qnText(x, a[x.id]) || '—'); }).join('\n');
+  var QN_AI_RULES = 'Ehtiyotkor so‘zlar majburiy: «javoblar ko‘rsatadiki», «ehtimol», «suhbatda tekshirish kerak»; «u shunday odam», «u doim …» kabi qat’iy gaplar yozilmaydi. ' +
+    'Taqiqlanadi: tibbiy va psixiatrik so‘zlar va tashxislar (masalan «nevrotik», «beqaror», «depressiv»); yosh, jins, homiladorlik, oilaviy holat, farzandlar va oilaviy rejalar, din, millat, sog‘liq, siyosiy qarashlar haqida har qanday gap; ' +
+    'temperament yoki ballar asosida ish natijasi, ishda qancha qolishi, halollik yoki yetakchilik salohiyatini bashorat qilish; odamlarni bir-biri bilan solishtirish; deyarli hammaga to‘g‘ri keladigan umumiy gaplar (masalan «ba’zan o‘ziga ishonmaydi», «yaxshi munosabatlarni qadrlaydi»); ortiqcha maqtov. ' +
+    'Bu — AI qoralamasi: ishga olish, bo‘shatish yoki maosh uchun asos emas, qarorni inson qabul qiladi.';
+  /* o — { notes: ['test javoblari juda tez berilgan', …] — готовые пометки о качестве ответов (если есть), now — для возраста } */
+  function qnAiPrompt(q, u, res, ta, lang, o) {
+    o = o || {};
+    var a = (u.qa && u.qa.answers) || {}, n = 0, T0 = T('uz'), measured = !!ta || res.some(function (r) { return r.n; }), emp = u.role === 'employee' && u.status !== 'candidate';
+    var qa = (q.questions || []).filter(function (x) { return x.type === 'section' || (!qnAiSkip(x) && qnShowIf(x, a)); }).map(function (x) {
+      if (x.type === 'section') return '\n## ' + x.text;
+      n++; return n + '. ' + x.text + '\n   Javob: ' + (qnAiAns(x, a[x.id], o.now) || '—');
+    }).join('\n');
     var sc = res.filter(function (r) { return r.n; }).map(function (r) { return '- ' + qnAiScale(r); }).join('\n');
-    return 'Siz BURAQ Logistics kompaniyasida HR-psixolog yordamchisisiz. Xodim (yoki ishga kirayotgan nomzod) kompaniya anketasini to‘ldirdi. Rahbariyat (CEO va SOP menejeri) uchun uning qisqa profilini tuzing: temperament, kuchli tomonlari, e’tibor berish kerak bo‘lgan joylar, motivatsiya, rahbarga maslahatlar va suhbatda aniqlashtiradigan savollar.\n' +
-      'Qoidalar: faqat quyidagi javoblar va ballarga tayaning; dalil kam bo‘lsa, «ehtimol» deb yozing. Tibbiy yoki psixiatrik tashxis qo‘ymang. Din, millat, sog‘liq, siyosiy qarashlar, oilaviy holat, farzandlar haqida xulosa chiqarmang va ularni baholashda ishlatmang. «E’tibor berish kerak» bo‘limida faqat ishga oid kuzatuvlar bo‘lsin (masalan: ish joylarini tez-tez almashtirgan, javoblar juda qisqa, kutilgan maosh lavozimdan ancha yuqori, javoblar bir-biriga zid). Ohang — hurmatli va xolis; bu ishga olish yoki bo‘shatish uchun yagona asos emas. Javob tili: ' + (LANG_NAME[lang] || LANG_NAME.uz) + '.\n' +
-      'LAVOZIM: ' + [u.position, u.department].filter(Boolean).join(', ') + '\n' +
-      'TEST BO‘YICHA TEMPERAMENT: ' + (ta ? qnTmText(T('uz'), ta) + ' (o‘z-o‘zini baholash, shkalalar 1–5)' : 'hisoblanmagan — javoblardan ehtiyotkorlik bilan taxmin qiling') + '\n' +
+    var notes = (o.notes || []).filter(function (x) { return typeof x === 'string' && x.trim(); });
+    var ev = '{"text": "…", "evidence": "qaysi shkala va ball yoki qaysi savol (qisqa) va javob"}';
+    return 'Siz BURAQ Logistics kompaniyasida HR-psixolog yordamchisisiz. Xodim kompaniya anketasini' + (measured ? ' va o‘z-o‘zini baholash testini' : '') + ' to‘ldirdi. Rahbariyat (CEO va SOP menejeri) uchun O‘LCHANGAN narsani qisqa qayta aytib bering: test ballari va anketa javoblarida nima bor. Xarakterni taxmin qilmang va yangi xulosa to‘qimang.\n' +
+      'Qoidalar: faqat quyidagi javoblar va ballarga tayaning. «strengths», «risks», «growth», «management» bandlarining HAR BIRIGA «evidence» yozing — qaysi shkala va ball (masalan «Muloqot: 3,4 / 5») yoki qaysi savol va javob; dalil bo‘lmasa, bandni yozmang. ' +
+      '«risks» — faqat ishga oid kuzatuvlar (masalan: ish joylarini tez-tez almashtirgan, javoblar juda qisqa, javoblar bir-biriga zid). ' + QN_AI_RULES + ' Javob tili: ' + (LANG_NAME[lang] || LANG_NAME.uz) + '.\n' +
+      (measured ? 'TEST (o‘z-o‘zini baholash, shkalalar 1–5) — «profile»da faqat shuni qayta ayting, «aralash profil» va «kam javob» belgilarini saqlang, yangi xulosa qo‘shmang: ' + (ta ? qnTmText(T0, ta) : 'temperament moyilligi hisoblanmagan — faqat shkalalar') + '\n'
+        : 'TEST: o‘lchanmagan. «profile» bo‘sh qolsin; temperament, xarakter yoki shaxsiyat haqida hech narsa yozmang va javoblardan taxmin qilmang.\n') +
       (sc ? 'SHKALALAR:\n' + sc + '\n' : '') +
+      (notes.length ? 'JAVOBLAR SIFATI (tayyor izohlar; ulardan xarakter yoki halollik haqida xulosa chiqarmang, faqat ishonchni pasaytiring — masalan «natijaga ehtiyotkorlik bilan qarang»):\n' + notes.map(function (x) { return '- ' + x.trim(); }).join('\n') + '\n' : '') +
+      'LAVOZIM: ' + ([u.position, u.department].filter(Boolean).join(', ') || '—') + '\n' +
       'SAVOLLAR VA JAVOBLAR:\n' + qa.slice(0, 30000) + '\n\n' +
-      'Faqat JSON qaytaring, izohsiz: {"temperament": "1 jumla: temperament va nima uchun", "summary": "2–3 jumla", "strengths": ["3–5 ta"], "risks": ["e’tibor berish kerak: 0–4 ta, ishga oid"], "growth": ["2–3 ta rivojlantirish nuqtasi"], "motivation": "1–2 jumla", "communication": "1–2 jumla", "management": ["rahbarga 2–4 amaliy maslahat"], "roles": "qaysi vazifalarda o‘zini yaxshi ko‘rsatadi, 1–2 jumla", "fit": "hozirgi (yoki so‘ralgan) lavozimga mosligi: kuchli va zaif tomonlari, 2–3 jumla", "plan": ["sinov muddati / birinchi oy uchun 3 ta aniq tavsiya rahbarga"], "interview": ["suhbatda aniqlashtirish uchun 2–4 savol"]}';
+      'Faqat JSON qaytaring, izohsiz: {"profile": "' + (measured ? 'test natijasini qayta aytish, 1–2 jumla' : '') + '", "summary": "anketada nima aytilgani, 2–3 jumla", "strengths": [' + ev + ' — 2–4 ta], "risks": [' + ev + ' — 0–3 ta, ishga oid], "growth": [' + ev + ' — 1–3 ta], ' +
+      '"motivation": "javoblarga ko‘ra nima ruhlantirishi mumkin, 1–2 jumla", "communication": "1–2 jumla", "management": [' + ev + ' — rahbarga 2–3 amaliy maslahat], ' +
+      '"roles": "kuchli tomonlarini qaysi vazifalarda tekshirib ko‘rish mumkin — anketa javoblariga tayanib, 1–2 jumla", "verify": ["tuzilgan suhbatda yoki ishda nimani tekshirish kerak, 2–4 ta"], ' +
+      (emp ? '"plan": ["adaptatsiyada nima yordam berishi mumkin, 2–3 ta"], ' : '') + '"interview": ["suhbatda aniqlashtirish uchun 2–4 savol"]}';
   }
-  function qnAiClean(r) {
+  /* после генерации: предложения с медицинскими словами и пункты без evidence отбрасываются (dropped — сколько) */
+  var QN_AI_BAN = /depress|депресс|nevroti|невроти|\bneurotic\b|psixiatr|психиатр|psychiatr|tashxis|диагноз|diagnos|homilador|беремен|pregnan|怀孕|抑郁症|精神病/i;
+  function qnAiStrip(s, cnt) {
+    var ps = String(s || '').match(/[^.!?。！？]+[.!?。！？]*\s*/g) || [], ok = ps.filter(function (x) { return !QN_AI_BAN.test(x); });
+    if (cnt) cnt.n += ps.length - ok.length;
+    return ok.join('').trim();
+  }
+  /* o — { measured: false — теста нет, «profile» пустой; emp: false — не сотрудник, без «plan» } */
+  function qnAiClean(r, o) {
     if (!r || typeof r !== 'object' || typeof r.summary !== 'string') return null;
-    var str = function (x, n) { return typeof x === 'string' ? x.trim().slice(0, n) : ''; }, arr = function (x) { return Array.isArray(x) ? x.filter(function (y) { return typeof y === 'string' && y.trim(); }).slice(0, 6).map(function (y) { return y.trim().slice(0, 300); }) : []; };
-    return { temperament: str(r.temperament, 400), summary: str(r.summary, 1200), strengths: arr(r.strengths), risks: arr(r.risks), growth: arr(r.growth), motivation: str(r.motivation, 600), communication: str(r.communication, 600), management: arr(r.management), roles: str(r.roles, 600), fit: str(r.fit, 800), plan: arr(r.plan), interview: arr(r.interview) };
+    o = o || {};
+    var cnt = { n: 0 };
+    var str = function (x, k) { return typeof x === 'string' ? qnAiStrip(x.trim(), cnt).slice(0, k) : ''; };
+    var arr = function (x) { return (Array.isArray(x) ? x : []).filter(function (y) { return typeof y === 'string' && y.trim(); }).map(function (y) { return qnAiStrip(y.trim(), cnt); }).filter(Boolean).slice(0, 6).map(function (y) { return y.slice(0, 300); }); };
+    var ev = function (x) {
+      return (Array.isArray(x) ? x : []).map(function (y) {
+        if (typeof y === 'string') { if (y.trim()) cnt.n++; return null; }
+        var tx = y && typeof y.text === 'string' ? y.text.trim() : '', e = y && typeof y.evidence === 'string' ? y.evidence.trim() : '';
+        if (!tx) return null;
+        if (e.replace(/[\s.,;:!?—–-]/g, '').length < 3 || /^(yo.?q|нет|none|n\/a|无|—)$/i.test(e) || QN_AI_BAN.test(tx)) { cnt.n++; return null; }
+        return { text: tx.slice(0, 300), evidence: e.slice(0, 200) };
+      }).filter(Boolean).slice(0, 6);
+    };
+    var x = { profile: o.measured === false ? '' : str(r.profile, 600), summary: str(r.summary, 1200), strengths: ev(r.strengths), risks: ev(r.risks), growth: ev(r.growth),
+      motivation: str(r.motivation, 600), communication: str(r.communication, 600), management: ev(r.management), roles: str(r.roles, 600), verify: arr(r.verify),
+      plan: o.emp === false ? [] : arr(r.plan), interview: arr(r.interview) };
+    x.dropped = cnt.n;
+    return x;
   }
-  /* вывод ИИ по одному человеку → users[].qaReport (сервер не отдаёт его сотруднику). Устарел — если ответы новее вывода */
+  /* вывод ИИ по одному человеку → users[].qaReport = { at, by, v, auto, lang, scores, data } (сервер не отдаёт его сотруднику).
+     Отклонённый — { off, offBy, at, by, v } без текста. Устарел — ответы новее вывода или вывод прежней версии запроса;
+     отклонённый готовится заново сам только после новых ответов */
   var QN_AI_TRIED = {};
-  function qnAiStale(u) { var r = u.qaReport; return !r || !r.data || !!(u.qa && u.qa.at && r.at < u.qa.at); }
+  function qnAiStale(u) {
+    var r = u.qaReport, qa = u.qa && u.qa.at;
+    if (r && r.off) return !!(qa && r.off < qa);
+    return !r || !r.data || r.v !== QN_AI_V || !!(qa && r.at < qa);
+  }
   function qnAiRun(o) {
-    var res = qnScore(o.q, o.u), ta = qnTemperAll(o.q, res);
-    return o.sampler.json(qnAiPrompt(o.q, o.u, res, ta, o.lang), { signal: o.signal }).then(function (r) {
-      var x = qnAiClean(r); if (!x) { var e = new Error('bad json'); e.code = 'invalid_json'; throw e; }
-      var at = Date.now();
-      o.update(function (db) { patchUser(db, o.u.id, function (z) { z.qaReport = { at: at, by: o.by, lang: o.lang, data: x }; }); });
+    if (!qnAiAllowed(o.u)) { var e0 = new Error('no consent'); e0.code = 'no_consent'; return Promise.reject(e0); }
+    var res = qnScore(o.q, o.u), ta = qnTemperAll(o.q, res), measured = !!ta || res.some(function (r) { return r.n; });
+    return o.sampler.json(qnAiPrompt(o.q, o.u, res, ta, o.lang, { notes: o.notes }), { signal: o.signal }).then(function (r) {
+      var x = qnAiClean(r, { measured: measured, emp: o.u.role === 'employee' && o.u.status !== 'candidate' }); if (!x) { var e = new Error('bad json'); e.code = 'invalid_json'; throw e; }
+      var at = Date.now(), scores = res.filter(function (z) { return z.n; }).map(function (z) { return { s: z.s.id, m: z.few ? null : Math.round(z.mean * 100) / 100, n: z.n }; });
+      o.update(function (db) { patchUser(db, o.u.id, function (z) { z.qaReport = { at: at, by: o.by, v: QN_AI_V, auto: !!o.auto, lang: o.lang, scores: scores, data: x }; }); });
       return x;
     });
   }
-  function QnAi(p) {
-    var t = p.t, u = p.u, rep = u.qaReport, d = rep && rep.data, busy = useState(false), er = useState(''), ctl = useRef(null), sampler = p.sampler, stale = !!d && qnAiStale(u);
-    useEffect(function () { return function () { if (ctl.current) ctl.current.abort(); }; }, []);
-    function make() {
-      if (!sampler || busy[0]) return;
-      var c = new AbortController(); ctl.current = c; busy[1](true); er[1]('');
-      qnAiRun({ sampler: sampler, q: p.q, u: u, lang: p.lang, by: p.user.id, update: p.update, signal: c.signal })
-        .catch(function (e) { if (e && e.code === 'cancelled') return; er[1](e && e.code === 'invalid_json' ? t('ai_bad_json') : aiErr(e, t)); })
-        .then(function () { busy[1](false); });
-    }
-    /* сам: открыли карточку, а вывода нет или он старее ответов — готовим (один раз за заход) */
-    useEffect(function () {
-      var key = u.id + ':' + ((u.qa && u.qa.at) || 0);
-      if (p.ro || !sampler || !u.qa || !u.qa.at || !qnAiStale(u) || QN_AI_TRIED[key]) return;
-      QN_AI_TRIED[key] = 1; make();
-    }, [sampler]);
-    var list = function (k, items) { return items && items.length ? h('div', { className: 'qn-ai-sec' }, h('b', null, t(k)), h('ul', null, items.map(function (x, i) { return h('li', { key: i }, x); }))) : null; };
-    var one = function (k, x) { return x ? h('div', { className: 'qn-ai-sec' }, h('b', null, t(k)), h('p', null, x)) : null; };
-    return h('section', { className: cx('qn-ai', busy[0] && 'is-busy') },
-      h('div', { className: 'qn-ai-head' },
-        h('span', { className: 'lor-eyebrow' }, h(Ico, { name: 'spark', size: 14 }), ' ', t('qn_ai_t')),
-        stale ? h('span', { className: 'qn-ai-stale' }, t('qn_ai_stale')) : null,
-        p.ro ? null : h(Btn, { variant: d ? 'ghost' : 'primary', size: 'sm', arrow: !d, disabled: !sampler || busy[0], onClick: make }, busy[0] ? t('qn_ai_busy') : d ? t('qn_ai_again') : t('qn_ai_make'))),
-      sampler === null ? h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('srv_ai_unavail'), ' ', h('span', { className: 'qn-ai-key' }, t('qn_ai_key_hint'))) : null,
-      er[0] ? h('p', { className: 'lor-field-error', style: { margin: 0 } }, er[0]) : null,
-      busy[0] ? h('div', { className: 'qn-ai-wait' }, h('span', { className: 'dv-spin', 'aria-hidden': true }), h('span', null, t('qn_ai_busy_long'))) : null,
-      d ? h('div', { className: 'qn-ai-body' },
-        one('qn_ai_temper', d.temperament), one('qn_ai_summary', d.summary), one('qn_ai_fit', d.fit), list('qn_ai_strengths', d.strengths), list('qn_ai_risks', d.risks), list('qn_ai_growth', d.growth),
-        one('qn_ai_motivation', d.motivation), one('qn_ai_comm', d.communication), list('qn_ai_mgmt', d.management), list('qn_ai_plan', d.plan), one('qn_ai_roles', d.roles), list('qn_ai_interview', d.interview),
-        h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, tpl(t('qn_ai_made'), { d: fmt(rep.at, t) }) + ' · ' + t('qn_ai_hidden'))) :
-        !busy[0] ? h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('qn_ai_none')) : null);
-  }
-  /* анализ коллектива ИИ: люди — номерами (#1 — должность, отдел, темперамент, шкалы, главные ответы без скрытых, вывод ИИ),
-     имён в запросе нет; результат — в карточке того, кто готовил (users[].qaTeam: сотрудникам чужие карточки не уходят) */
-  function qnTeamPrompt(q, rows, lang) {
-    var keys = qnKeys(q).filter(function (x) { return !x.secret; });
+  /* анализ коллектива: люди — номерами (#1 — должность, отдел, шкалы, главные ответы без скрытых и контактов), имён в запросе
+     нет; прежние выводы ИИ по каждому на вход НЕ идут (ошибки одного текста не накладываются на другой); состав «по
+     темпераментам» и «кого нанять» не спрашиваем — «как люди описывают себя» и «пробелы в навыках и ролях для обсуждения» */
+  function qnTeamPrompt(q, rows, lang, now) {
+    var keys = qnKeys(q).filter(function (x) { return !qnAiSkip(x); });
     var list = rows.map(function (r, i) {
-      var a = r.u.qa.answers || {}, rep = r.u.qaReport && r.u.qaReport.data;
+      var a = r.u.qa.answers || {};
       var sc = r.res.filter(function (x) { return x.n; }).map(qnAiScale).join('; ');
-      var ka = keys.map(function (x) { return qnShort(x) + ': ' + String(qnText(x, a[x.id]) || '—').slice(0, 120); }).join('; ');
-      return '#' + (i + 1) + ' — ' + [r.u.position, r.u.department].filter(Boolean).join(', ') +
-        (r.ta ? ' | temperament: ' + qnTmText(T('uz'), r.ta) : '') + (sc ? ' | ' + sc : '') + (ka ? ' | ' + ka : '') +
-        (rep && rep.summary ? ' | AI xulosasi: ' + rep.summary.slice(0, 300) : '');
+      var ka = keys.filter(function (x) { return qnShowIf(x, a); }).map(function (x) { return qnShort(x) + ': ' + String(qnAiAns(x, a[x.id], now) || '—').slice(0, 120); }).join('; ');
+      return '#' + (i + 1) + ' — ' + ([r.u.position, r.u.department].filter(Boolean).join(', ') || '—') + (sc ? ' | ' + sc : '') + (ka ? ' | ' + ka : '');
     });
-    return 'Siz BURAQ Logistics kompaniyasida HR-tahlilchi yordamchisisiz. Quyida xodimlarning anketa va temperament testi natijalari (ism o‘rniga raqam). Rahbariyat (CEO va SOP menejeri) uchun JAMOA tahlilini tuzing: jamoa tarkibi va muvozanati, kuchli tomonlar, bo‘shliqlar, kim qaysi vazifada kuchliroq, xavflar va amaliy tavsiyalar, keyingi ishga olishda kim kerak.\n' +
-      'Qoidalar: faqat berilgan ma’lumotlarga tayaning; xodimlarni raqami bilan atang (#1, #2); tibbiy tashxis qo‘ymang; din, millat, sog‘liq, oilaviy holat haqida xulosa chiqarmang; hurmatli va xolis yozing; bu ishdan bo‘shatish uchun asos emas. Javob tili: ' + (LANG_NAME[lang] || LANG_NAME.uz) + '.\n' +
+    return 'Siz BURAQ Logistics kompaniyasida HR-tahlilchi yordamchisisiz. Quyida xodimlarning anketa va o‘z-o‘zini baholash testi natijalari (ism o‘rniga raqam). Rahbariyat (CEO va SOP menejeri) uchun JAMOA haqida qisqa qoralama tuzing: xodimlar o‘zlarini qanday tasvirlaydi (umumlashtirib), jamoaning kuchli tomonlari, muhokama uchun ko‘nikma va rollardagi bo‘shliqlar, ishga oid xavflar va amaliy qadamlar.\n' +
+      'Qoidalar: faqat berilgan ma’lumotlarga tayaning va umumlashtirib yozing (masalan «8 kishidan 5 tasi … deb yozgan»); xodimni faqat raqami bilan ating (#1, #2). Taqiqlanadi: temperament yoki moyilliklar bo‘yicha jamoa tarkibi va «muvozanati» haqida xulosa; kimni ishga olish kerakligi haqida tavsiya; xodimlarni reytinglash. ' + QN_AI_RULES + ' Javob tili: ' + (LANG_NAME[lang] || LANG_NAME.uz) + '.\n' +
       'XODIMLAR (' + rows.length + '):\n' + list.join('\n').slice(0, 40000) + '\n\n' +
-      'Faqat JSON qaytaring, izohsiz: {"summary": "jamoa haqida 3–4 jumla", "composition": "temperamentlar muvozanati, 1–2 jumla", "strengths": ["3–5 ta"], "gaps": ["jamoada nima yetishmaydi, 2–4 ta"], "people": [{"n": 1, "note": "bu xodim qayerda kuchli / nimaga e’tibor berish kerak, 1 jumla"}], "risks": ["2–4 ta"], "actions": ["rahbarga 3–5 ta amaliy tavsiya"], "hiring": "keyingi ishga olishda qanday odam kerak, 1–2 jumla"}';
+      'Faqat JSON qaytaring, izohsiz: {"summary": "xodimlar o‘zlarini qanday tasvirlaydi — umumlashtirib, 3–4 jumla", "strengths": ["jamoaning kuchli tomonlari (javoblarga ko‘ra), 2–4 ta"], "gaps": ["muhokama uchun: qaysi ko‘nikma yoki rollar yetishmasligi mumkin, 2–4 ta"], "people": [{"n": 1, "note": "o‘z javoblariga ko‘ra kuchli tomonini qaysi vazifada tekshirib ko‘rish mumkin, 1 jumla, boshqalar bilan solishtirmasdan"}], "risks": ["ishga oid xavflar, 0–3 ta"], "actions": ["rahbarga 2–4 amaliy qadam"]}';
   }
   function qnTeamClean(r, n) {
     if (!r || typeof r !== 'object' || typeof r.summary !== 'string') return null;
-    var str = function (x, k) { return typeof x === 'string' ? x.trim().slice(0, k) : ''; }, arr = function (x) { return Array.isArray(x) ? x.filter(function (y) { return typeof y === 'string' && y.trim(); }).slice(0, 8).map(function (y) { return y.trim().slice(0, 400); }) : []; };
-    var people = Array.isArray(r.people) ? r.people.filter(function (y) { return y && +y.n >= 1 && +y.n <= n && typeof y.note === 'string'; }).slice(0, 60).map(function (y) { return { n: +y.n, note: y.note.trim().slice(0, 400) }; }) : [];
-    return { summary: str(r.summary, 1500), composition: str(r.composition, 600), strengths: arr(r.strengths), gaps: arr(r.gaps), people: people, risks: arr(r.risks), actions: arr(r.actions), hiring: str(r.hiring, 600) };
+    var cnt = { n: 0 };
+    var str = function (x, k) { return typeof x === 'string' ? qnAiStrip(x.trim(), cnt).slice(0, k) : ''; };
+    var arr = function (x) { return (Array.isArray(x) ? x : []).filter(function (y) { return typeof y === 'string' && y.trim(); }).map(function (y) { return qnAiStrip(y.trim(), cnt); }).filter(Boolean).slice(0, 8).map(function (y) { return y.slice(0, 400); }); };
+    var people = (Array.isArray(r.people) ? r.people : []).filter(function (y) { return y && +y.n >= 1 && +y.n <= n && typeof y.note === 'string'; }).map(function (y) { return { n: +y.n, note: qnAiStrip(y.note.trim(), cnt).slice(0, 400) }; }).filter(function (y) { return y.note; }).slice(0, 60);
+    return { summary: str(r.summary, 1500), strengths: arr(r.strengths), gaps: arr(r.gaps), people: people, risks: arr(r.risks), actions: arr(r.actions), dropped: cnt.n };
+  }
+  /* пункт вывода: строка (вывод прежней версии) или { text, evidence } — evidence мелко под текстом */
+  function qnAiList(t, k, items) {
+    return items && items.length ? h('div', { className: 'qn-ai-sec' }, h('b', null, t(k)), h('ul', null, items.map(function (x, i) {
+      var o = x && typeof x === 'object';
+      return h('li', { key: i }, o ? x.text : x, o && x.evidence ? h('small', { className: 'qn-ai-ev' }, t('qn_ai_ev') + ': ' + x.evidence) : null);
+    }))) : null;
+  }
+  function qnAiOne(t, k, x) { return x ? h('div', { className: 'qn-ai-sec' }, h('b', null, t(k)), h('p', null, x)) : null; }
+  function QnAi(p) {
+    var t = p.t, u = p.u, rep = u.qaReport, d = rep && rep.data, busy = useState(false), er = useState(''), ctl = useRef(null), sampler = p.sampler;
+    var ok = qnAiAllowed(u), stale = !!d && qnAiStale(u), old = !!d && rep.v !== QN_AI_V;
+    useEffect(function () { return function () { if (ctl.current) ctl.current.abort(); }; }, []);
+    function make(auto) {
+      if (!sampler || busy[0] || !ok) return;
+      var c = new AbortController(); ctl.current = c; busy[1](true); er[1]('');
+      qnAiRun({ sampler: sampler, q: p.q, u: u, lang: p.lang, by: p.user.id, auto: auto === true, update: p.update, signal: c.signal })
+        .catch(function (e) { if (e && e.code === 'cancelled') return; er[1](e && e.code === 'invalid_json' ? t('ai_bad_json') : aiErr(e, t)); })
+        .then(function () { busy[1](false); });
+    }
+    /* «Rad etish»: текст вывода удаляется, остаётся отметка — кто готовил, кто и когда отклонил */
+    function dismiss() {
+      if (!rep || !rep.data || !window.confirm(t('qn_ai_dismiss_q'))) return;
+      var at = Date.now(), me = p.user.id;
+      p.update(function (db) { patchUser(db, u.id, function (z) { var r = z.qaReport || {}; z.qaReport = { off: at, offBy: me, at: r.at || null, by: r.by != null ? r.by : null, v: r.v || 1 }; }); });
+      if (p.say) p.say(t('qn_ai_dismissed'));
+    }
+    /* сам: открыли карточку, а вывода нет или он устарел — готовим (один раз за заход), только с согласием на ИИ */
+    useEffect(function () {
+      var key = u.id + ':' + ((u.qa && u.qa.at) || 0);
+      if (p.ro || !sampler || !ok || !u.qa || !u.qa.at || !qnAiStale(u) || QN_AI_TRIED[key]) return;
+      QN_AI_TRIED[key] = 1; make(true);
+    }, [sampler]);
+    var muted = function (x) { return h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, x); };
+    return h('section', { className: cx('qn-ai', busy[0] && 'is-busy') },
+      h('div', { className: 'qn-ai-head' },
+        h('span', { className: 'lor-eyebrow' }, h(Ico, { name: 'spark', size: 14 }), ' ', t('qn_ai_t')),
+        stale ? h('span', { className: 'qn-ai-stale' }, t(old ? 'qn_ai_old' : 'qn_ai_stale')) : null,
+        p.ro ? null : h('span', { className: 'qn-ai-acts qn-noprint' },
+          d ? h(Btn, { variant: 'ghost', size: 'sm', className: 'qn-ai-off', disabled: busy[0], onClick: dismiss }, t('qn_ai_dismiss')) : null,
+          h(Btn, { variant: d ? 'ghost' : 'primary', size: 'sm', arrow: !d, disabled: !sampler || busy[0] || !ok, onClick: make }, busy[0] ? t('qn_ai_busy') : d ? t('qn_ai_again') : t('qn_ai_make')))),
+      sampler === null ? h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('srv_ai_unavail'), ' ', h('span', { className: 'qn-ai-key' }, t('qn_ai_key_hint'))) : null,
+      ok ? null : h('p', { className: 'lor-sm qn-ai-nocons', style: { margin: 0 } }, t('qn_ai_noconsent')),
+      er[0] ? h('p', { className: 'lor-field-error', style: { margin: 0 } }, er[0]) : null,
+      busy[0] ? h('div', { className: 'qn-ai-wait' }, h('span', { className: 'dv-spin', 'aria-hidden': true }), h('span', null, t('qn_ai_busy_long'))) : null,
+      d ? h('div', { className: 'qn-ai-body' },
+        h('p', { className: 'qn-ai-draft' }, t('qn_ai_draft')),
+        qnAiOne(t, 'qn_ai_profile', d.profile), qnAiOne(t, 'qn_ai_summary', d.summary), qnAiList(t, 'qn_ai_strengths', d.strengths), qnAiList(t, 'qn_ai_risks', d.risks), qnAiList(t, 'qn_ai_growth', d.growth),
+        qnAiOne(t, 'qn_ai_motivation', d.motivation), qnAiOne(t, 'qn_ai_comm', d.communication), qnAiList(t, 'qn_ai_mgmt', d.management), qnAiOne(t, 'qn_ai_roles', d.roles),
+        qnAiList(t, 'qn_ai_verify', d.verify), qnAiList(t, 'qn_ai_plan', d.plan), qnAiList(t, 'qn_ai_interview', d.interview),
+        d.dropped ? muted(tpl(t('qn_ai_dropped'), { n: d.dropped })) : null,
+        muted(tpl(t('qn_ai_made_by'), { d: fmt(rep.at, t), who: userOf(p.db, rep.by).name, v: rep.v || 1 }) + ' · ' + t('qn_ai_hidden'))) :
+        rep && rep.off && !busy[0] ? muted(tpl(t('qn_ai_off'), { who: userOf(p.db, rep.offBy).name, d: fmt(rep.off, t) }) + (ok ? ' ' + t('qn_ai_off_again') : '')) :
+        !busy[0] && ok ? muted(t('qn_ai_none')) : null);
   }
   function QnTeamAi(p) {
-    var t = p.t, db = p.db, rows = p.rows, sampler = p.sampler, busy = useState(false), er = useState(''), ctl = useRef(null), bat = useState(null);
-    var team = db.users.filter(function (u) { return u.role === 'admin' && u.qaTeam && u.qaTeam.data; }).map(function (u) { return u.qaTeam; }).sort(function (a, b) { return b.at - a.at; })[0];
-    var newer = team && rows.some(function (r) { return r.u.qa.at > team.at; }), todo = rows.filter(function (r) { return qnAiStale(r.u); });
+    var t = p.t, db = p.db, sampler = p.sampler, busy = useState(false), er = useState(''), ctl = useRef(null), bat = useState(null);
+    /* в ИИ — только те, кто согласен на ИИ-анализ; меньше QN_TEAM_MIN — анализа нет, подсказка */
+    var rows = p.rows.filter(function (r) { return qnAiAllowed(r.u); }), enough = rows.length >= QN_TEAM_MIN;
+    var own = db.users.filter(function (u) { return u.role === 'admin' && u.qaTeam && u.qaTeam.data; }).sort(function (a, b) { return b.qaTeam.at - a.qaTeam.at; })[0], team = own && own.qaTeam;
+    var old = !!team && team.v !== QN_AI_V, newer = team && rows.some(function (r) { return r.u.qa.at > team.at; }), todo = rows.filter(function (r) { return qnAiStale(r.u); });
     useEffect(function () { return function () { if (ctl.current) ctl.current.abort(); }; }, []);
     function make() {
-      if (!sampler || busy[0] || !rows.length) return;
+      if (!sampler || busy[0] || !enough) return;
       var list = rows.slice(0, 40), c = new AbortController(); ctl.current = c; busy[1](true); er[1]('');
       sampler.json(qnTeamPrompt(p.q, list, p.lang), { signal: c.signal }).then(function (r) {
         var x = qnTeamClean(r, list.length); if (!x) { er[1](t('ai_bad_json')); return; }
         var at = Date.now(), ids = list.map(function (z) { return z.u.id; });
-        p.update(function (d) { patchUser(d, p.user.id, function (z) { z.qaTeam = { at: at, by: p.user.id, lang: p.lang, ids: ids, data: x }; }); });
+        p.update(function (d) { patchUser(d, p.user.id, function (z) { z.qaTeam = { at: at, by: p.user.id, v: QN_AI_V, lang: p.lang, ids: ids, data: x }; }); });
       }).catch(function (e) { if (e && e.code === 'cancelled') return; er[1](e && e.code === 'invalid_json' ? t('ai_bad_json') : aiErr(e, t)); }).then(function () { busy[1](false); });
     }
-    /* вывод ИИ всем, у кого его нет или он устарел — по очереди */
+    function dismiss() {
+      if (!own || !window.confirm(t('qn_ai_dismiss_q'))) return;
+      var at = Date.now(), me = p.user.id, oid = own.id;
+      p.update(function (d) { patchUser(d, oid, function (z) { var r = z.qaTeam || {}; z.qaTeam = { off: at, offBy: me, at: r.at || null, by: r.by != null ? r.by : null, v: r.v || 1 }; }); });
+      if (p.say) p.say(t('qn_ai_dismissed'));
+    }
+    /* вывод ИИ всем, у кого его нет или он устарел (и есть согласие) — по очереди */
     function runAll() {
       if (!sampler || bat[0] || !todo.length) return;
       var list = todo.map(function (r) { return r.u; }), i = 0, ok = 0;
@@ -7619,26 +7738,28 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       })();
     }
     var d = team && team.data, nameOf = function (n) { var id = team && team.ids && team.ids[n - 1]; var u = id != null ? userOf(db, id) : null; return u && u.name ? u.name : '#' + n; };
-    var list = function (k, items) { return items && items.length ? h('div', { className: 'qn-ai-sec' }, h('b', null, t(k)), h('ul', null, items.map(function (x, i) { return h('li', { key: i }, x); }))) : null; };
-    var one = function (k, x) { return x ? h('div', { className: 'qn-ai-sec' }, h('b', null, t(k)), h('p', null, x)) : null; };
+    var muted = function (x) { return h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, x); };
     return h('section', { className: cx('box qn-ai qn-team-ai', busy[0] && 'is-busy') },
       h('div', { className: 'qn-ai-head' },
         h('span', { className: 'lor-eyebrow' }, h(Ico, { name: 'spark', size: 14 }), ' ', t('qn_team_t')),
-        newer ? h('span', { className: 'qn-ai-stale' }, t('qn_team_newer')) : null,
+        old ? h('span', { className: 'qn-ai-stale' }, t('qn_ai_old')) : newer ? h('span', { className: 'qn-ai-stale' }, t('qn_team_newer')) : null,
         p.ro ? null : h('span', { className: 'qn-ai-acts' },
           todo.length ? h(Btn, { variant: 'outline', size: 'sm', disabled: !sampler || !!bat[0], onClick: runAll }, bat[0] ? tpl(t('qn_ai_all_busy'), { n: bat[0].n, m: bat[0].m }) : tpl(t('qn_ai_all'), { n: todo.length })) : null,
-          h(Btn, { variant: d ? 'ghost' : 'primary', size: 'sm', arrow: !d, disabled: !sampler || busy[0] || !rows.length, onClick: make }, busy[0] ? t('qn_ai_busy') : d ? t('qn_ai_again') : t('qn_team_make')))),
+          d ? h(Btn, { variant: 'ghost', size: 'sm', className: 'qn-ai-off', disabled: busy[0], onClick: dismiss }, t('qn_ai_dismiss')) : null,
+          h(Btn, { variant: d ? 'ghost' : 'primary', size: 'sm', arrow: !d, className: 'qn-team-go', disabled: !sampler || busy[0] || !enough, onClick: make }, busy[0] ? t('qn_ai_busy') : d ? t('qn_ai_again') : t('qn_team_make')))),
       sampler === null ? h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('srv_ai_unavail'), ' ', h('span', { className: 'qn-ai-key' }, t('qn_ai_key_hint'))) : null,
+      enough ? null : h('p', { className: 'lor-sm qn-team-min', style: { margin: 0 } }, tpl(t('qn_team_min'), { n: QN_TEAM_MIN, m: rows.length })),
       er[0] ? h('p', { className: 'lor-field-error', style: { margin: 0 } }, er[0]) : null,
       busy[0] ? h('div', { className: 'qn-ai-wait' }, h('span', { className: 'dv-spin', 'aria-hidden': true }), h('span', null, t('qn_ai_busy_long'))) : null,
       d ? h('div', { className: 'qn-ai-body qn-team-body' },
-        one('qn_team_summary', d.summary), one('qn_team_comp', d.composition),
-        h('div', { className: 'qn-team-cols' }, list('qn_ai_strengths', d.strengths), list('qn_team_gaps', d.gaps)),
-        d.people.length ? h('div', { className: 'qn-ai-sec' }, h('b', null, t('qn_team_people')), h('ul', { className: 'qn-team-people' }, d.people.map(function (x, i) { return h('li', { key: i }, h('b', null, nameOf(x.n)), ' — ', x.note); }))) : null,
-        h('div', { className: 'qn-team-cols' }, list('qn_ai_risks', d.risks), list('qn_team_actions', d.actions)),
-        one('qn_team_hiring', d.hiring),
-        h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, tpl(t('qn_team_made'), { d: fmt(team.at, t), n: (team.ids || []).length }) + ' · ' + t('qn_ai_hidden_all'))) :
-        !busy[0] ? h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('qn_team_none')) : null);
+        h('p', { className: 'qn-ai-draft' }, t('qn_ai_draft')),
+        qnAiOne(t, 'qn_team_self', d.summary),
+        h('div', { className: 'qn-team-cols' }, qnAiList(t, 'qn_ai_strengths', d.strengths), qnAiList(t, 'qn_team_gaps', d.gaps)),
+        (d.people || []).length ? h('div', { className: 'qn-ai-sec' }, h('b', null, t('qn_team_people')), h('ul', { className: 'qn-team-people' }, d.people.map(function (x, i) { return h('li', { key: i }, h('b', null, nameOf(x.n)), ' — ', x.note); }))) : null,
+        h('div', { className: 'qn-team-cols' }, qnAiList(t, 'qn_ai_risks', d.risks), qnAiList(t, 'qn_team_actions', d.actions)),
+        d.dropped ? muted(tpl(t('qn_ai_dropped'), { n: d.dropped })) : null,
+        muted(tpl(t('qn_team_made'), { d: fmt(team.at, t), n: (team.ids || []).length }) + ' · ' + userOf(db, team.by).name + ' · v' + (team.v || 1) + ' · ' + t('qn_ai_hidden_all'))) :
+        !busy[0] && enough ? muted(t('qn_team_none')) : null);
   }
   /* ответ для CEO и SOP-менеджера: скрытый ([maxfiy]) — точками, пока не нажали «показать» */
   function qnShow(x, v, open) { var s = qnText(x, v); return x.secret && s && !open ? '••••••' : s; }
@@ -7724,7 +7845,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           }).map(function (r) {
             var a = r.u.qa.answers || {};
             return h('tr', { key: r.u.id, tabIndex: 0, onClick: function () { p.onOpen(r.u.id); }, onKeyDown: function (e) { if (e.key === 'Enter') p.onOpen(r.u.id); } },
-              h('th', { scope: 'row' }, h('span', { className: 'qn-tbl-who' }, h(Av, { name: r.u.name, src: r.u.avatar, size: 28 }), h('span', null, h('b', null, r.u.name), h('small', null, r.u.position || '')), r.u.qaReport ? h('span', { className: 'qn-ai-chip' }, 'AI') : null)),
+              h('th', { scope: 'row' }, h('span', { className: 'qn-tbl-who' }, h(Av, { name: r.u.name, src: r.u.avatar, size: 28 }), h('span', null, h('b', null, r.u.name), h('small', null, r.u.position || '')), r.u.qaReport && r.u.qaReport.data ? h('span', { className: 'qn-ai-chip' }, 'AI') : null)),
               qnHasTemper(q) ? h('td', null, tmCell(r)) : null,
               keys.map(function (x) { return h('td', { key: x.id }, qnShow(x, a[x.id], false) || '—'); }),
               h('td', { className: 'qn-tbl-date' }, fmtDate(r.u.qa.at)));
@@ -7736,7 +7857,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
             h('span', { className: 'qn-person-t' }, h('b', null, r.u.name), h('small', null, [r.u.position, fmtDate(r.u.qa.at)].filter(Boolean).join(' · '))),
             r.ta ? tmCell(r) : null),
           r.res.length ? h('span', { className: 'qn-person-sc' }, r.res.filter(function (x) { return x.n; }).map(function (x) { return h('span', { key: x.s.id }, h('i', null, x.s.name), ' ', x.few ? t('qn_few') + ' (' + x.n + '/' + x.total + ')' : qnNum(t, x.mean) + '/5', !x.few && x.band ? ' · ' + x.band : ''); })) : null,
-          h('span', { className: 'qn-person-go' }, r.u.qaReport ? h('span', { className: 'qn-ai-chip' }, 'AI ✓') : null, t('qn_res_open')));
+          h('span', { className: 'qn-person-go' }, r.u.qaReport && r.u.qaReport.data ? h('span', { className: 'qn-ai-chip' }, 'AI ✓') : null, t('qn_res_open')));
       })),
       wait.length ? h('section', { className: 'box' }, h('div', { className: 'in-wait', style: { marginTop: 0 } }, h('span', { className: 'lor-sm lor-muted' }, t('qn_wait')), wait.map(function (u) { return h(u.qa ? 'button' : 'span', { key: u.id, type: u.qa ? 'button' : undefined, className: cx('in-chip', u.qa && 'qn-who'), onClick: u.qa ? function () { p.onOpen(u.id); } : undefined }, u.name + (u.qa ? ' · ' + t('qn_draft') : '')); }))) : null);
   }

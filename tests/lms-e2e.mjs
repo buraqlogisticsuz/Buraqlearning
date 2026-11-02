@@ -22,9 +22,10 @@ const step = (s) => console.log('· ' + s);
 // Claude API на заглушке: ИИ-наставник отвечает по последнему вопросу
 const aiCalls = [];
 const srv = await startDevServer({ fetch: (url, body) => { aiCalls.push(body); const q = body.messages[body.messages.length - 1].content;
-  // вывод по анкете (HR-psixolog) — JSON, как просит страница
-  const text = /HR-tahlilchi/.test(q) ? JSON.stringify({ summary: 'Jamoa barqaror, tajribali', composition: 'Flegmatiklar ko‘p', strengths: ['Puxtalik'], gaps: ['Savdoda faol odam yo‘q'], people: [{ n: 1, note: 'Hujjatlar bilan ishlashda kuchli' }], risks: ['Sekin qaror'], actions: ['Savdoga sangvinik toping'], hiring: 'Faol savdo menejeri' })
-    : /HR-psixolog/.test(q) ? JSON.stringify({ temperament: 'Flegmatik — xotirjam va puxta', summary: 'Puxta, barqaror xodim', strengths: ['Barqarorlik'], growth: ['Tezlik'], motivation: 'Aniq maqsad', communication: 'Xotirjam', management: ['Vaqt bering'], roles: 'Hujjatlar bilan ishlash' }) : 'Javob: ' + q;
+  // вывод по анкете (HR-psixolog) и анализ коллектива (HR-tahlilchi) — JSON, как просит страница: у пунктов — evidence;
+  // пункт без неё («Hammaga yoqadi») страница отбрасывает
+  const text = /HR-tahlilchi/.test(q) ? JSON.stringify({ summary: 'Ko‘pchilik o‘zini puxta deb tasvirlaydi', composition: 'Flegmatiklar ko‘p', strengths: ['Puxtalik'], gaps: ['Savdo tajribasi kam — muhokama uchun'], people: [{ n: 1, note: 'Hujjatlar bilan ishlashda tekshirish mumkin' }], risks: ['Sekin qaror'], actions: ['Savdo ko‘nikmasini muhokama qiling'], hiring: 'Faol savdo menejeri' })
+    : /HR-psixolog/.test(q) ? JSON.stringify({ profile: 'Ko‘proq flegmatik uslubi (o‘z-o‘zini baholash)', summary: 'Puxta, barqaror xodim', strengths: [{ text: 'Barqarorlik', evidence: 'Neyrotizm: 4,0 / 5' }, { text: 'Hammaga yoqadi', evidence: '' }], growth: [{ text: 'Tezlik', evidence: '«Qaysi ish formati»: Masofadan' }], motivation: 'Aniq maqsad', communication: 'Xotirjam', management: [{ text: 'Vaqt bering', evidence: '«Tajriba»: 4 / 5' }], roles: 'Hujjatlar bilan ishlash', verify: ['Tig‘iz kunlarda qanday ishlaydi'], plan: ['Murabbiy biriktiring'] }) : 'Javob: ' + q;
   return { body: { model: body.model, stop_reason: 'end_turn', usage: { input_tokens: 10, output_tokens: 5 }, content: [{ type: 'text', text }] } }; } });
 const browser = await pw.chromium.launch();
 const errors = [];
@@ -799,14 +800,14 @@ try {
   await E.locator('.qn-modal').waitFor({ timeout: 5000 });
   await E.locator('.qn-modal .lor-modal-actions .lor-btn-primary').click();
   assert.equal(await E.locator('.qn-field.is-err').count(), 3, 'без ответов не отправить — три вопроса подсвечены');
-  await E.locator('.qn-field').nth(0).locator('textarea').fill('Kompaniya rivojlanmoqda');
+  await E.locator('.qn-field').nth(0).locator('textarea').fill('Kompaniya rivojlanmoqda. Tel: +998 90 123 45 67');
   await E.locator('.qn-field').nth(1).locator('.qn-tile').filter({ hasText: 'Masofadan' }).click();
   await E.locator('.qn-field').nth(2).locator('.qn-sc').nth(3).click();
   await shot(E, 'savolnoma-xodim');
   await E.locator('.qn-modal .lor-modal-actions .lor-btn-primary').click(); await settle(E);
   { const qa = srv.g.state().users.find(u => u.id === emp.id).qa, qs = srv.g.state().settings.questionnaire.questions;
     assert.ok(qa && qa.at, 'анкета отправлена — на сервере');
-    assert.deepEqual([qa.answers[qs[0].id], qa.answers[qs[1].id], qa.answers[qs[3].id]], ['Kompaniya rivojlanmoqda', 'Masofadan', 4]); }
+    assert.deepEqual([qa.answers[qs[0].id], qa.answers[qs[1].id], qa.answers[qs[3].id]], ['Kompaniya rivojlanmoqda. Tel: +998 90 123 45 67', 'Masofadan', 4]); }
   assert.equal(await E.locator('.qn-modal').count(), 0, 'окно закрылось');
   assert.equal(await E.locator('.qn-banner').count(), 0, 'напоминания больше нет');
   await A.reload({ waitUntil: 'networkidle' }); await watchSync(A);
@@ -821,26 +822,71 @@ try {
   const qnCard = await A.locator('.qn-ans').innerText();
   assert.ok(/Masofadan/.test(qnCard) && /ko‘proq flegmatik uslubi/.test(qnCard), 'SOP-менеджер видит ответы и склонность');
   assert.match(qnCard, /O‘z-o‘zini baholash so‘rovnomasi\. Moyilliklarni ko‘rsatadi/, 'под результатом — постоянная оговорка');
-  // вывод ИИ готовится сам, когда карточку открыли (кнопку нажимать не нужно)
+  // вывод ИИ готовится сам, когда карточку открыли (кнопку нажимать не нужно): подпись «AI qoralamasi», у пунктов — основание,
+  // пункт без основания отброшен, вместо «соответствия должности» — что проверить на собеседовании или в работе
+  const sopId = srv.g.state().users.find(u => u.login === srv.admin.login).id;
+  const lastPrompt = re => { const c = aiCalls.filter(x => re.test(x.messages.slice(-1)[0].content)).pop(); return c ? c.messages.slice(-1)[0].content : ''; };
   await A.locator('.qn-ans .qn-ai-body').waitFor({ timeout: 8000 });
-  assert.match(await A.locator('.qn-ans .qn-ai-body').innerText(), /Puxta, barqaror xodim/, 'вывод ИИ — в карточке, сам');
+  { const tx = await A.locator('.qn-ans .qn-ai-body').innerText();
+    assert.match(tx, /Puxta, barqaror xodim/, 'вывод ИИ — в карточке, сам');
+    assert.match(tx, /AI qoralamasi: o‘z-o‘zini baholash javoblari asosida, xato bo‘lishi mumkin/, 'подпись «AI qoralamasi»');
+    assert.match(tx, /Barqarorlik[\s\S]*Asos: Neyrotizm: 4,0 \/ 5/, 'у пункта — основание');
+    assert.ok(!/Hammaga yoqadi/.test(tx), 'пункт без основания отброшен');
+    assert.match(tx, /Suhbatda yoki ishda nimani tekshirish kerak[\s\S]*Tig‘iz kunlarda/, '«что проверить» вместо «соответствия должности»');
+    assert.match(tx, /Tayyorlagan: .+ · so‘rov v2/, 'кто готовил и версия запроса'); }
   await settle(A);
-  assert.equal(srv.g.state().users.find(u => u.id === emp.id).qaReport.data.roles, 'Hujjatlar bilan ishlash', 'вывод ИИ — на сервере');
+  { const rep = srv.g.state().users.find(u => u.id === emp.id).qaReport, pr = lastPrompt(/HR-psixolog/);
+    assert.equal(rep.data.roles, 'Hujjatlar bilan ishlash', 'вывод ИИ — на сервере');
+    assert.deepEqual([rep.v, rep.by, rep.auto, rep.data.dropped, 'fit' in rep.data], [2, sopId, true, 1, false], 'версия запроса (QN_AI_V), кто готовил, сам; отброшен 1 пункт');
+    assert.ok(/Kompaniya rivojlanmoqda\. Tel: \[telefon\]/.test(pr) && !/123 45 67|Dilnoza/.test(pr), 'в ИИ — без имени и телефона');
+    assert.ok(/TEST \(o‘z-o‘zini baholash/.test(pr) && !/taxmin qiling/.test(pr.replace(/taxmin qilmang/g, '')), 'ИИ пересказывает посчитанное, не угадывает'); }
   assert.equal(await E.evaluate(id => LmsClient.sync().then(() => (LmsClient.initial().users.find(u => u.id === id) || {}).qaReport), emp.id).catch(() => undefined), undefined, 'сотрудник вывода не видит');
   await A.waitForTimeout(450); await shot(A, 'savolnoma-javoblar');
+  // «Rad etish»: текст вывода удаляется, остаётся отметка (кто и когда); после обновления страницы сам заново не готовится
+  A.once('dialog', d => d.accept());
+  await A.locator('.qn-ans .qn-ai-off').click(); await settle(A);
+  { const rep = srv.g.state().users.find(u => u.id === emp.id).qaReport;
+    assert.ok(rep && !rep.data && rep.off && rep.offBy === sopId && rep.by === sopId && rep.v === 2, 'отклонён: текста нет, отметка есть'); }
+  assert.match(await A.locator('.qn-ans .qn-ai').innerText(), /AI xulosasini .+ rad etgan/, 'в карточке — кто отклонил');
   await A.locator('.qn-ans .lor-modal-x').click();
-  // анализ коллектива ИИ: люди — номерами (имён в запросе нет), на экране номера → имена; хранится в карточке SOP-менеджера
-  await A.locator('.qn-team-ai .qn-ai-acts .lor-btn').last().click();
+  await A.reload({ waitUntil: 'networkidle' }); await watchSync(A);
+  await nav(A, 'cms'); await A.locator('.lor-tab').filter({ hasText: 'Savolnoma' }).click(); await A.waitForTimeout(300);
+  { const n0 = aiCalls.length;
+    await A.locator('.qn-person').first().click(); await A.locator('.qn-ans .qn-ai').waitFor({ timeout: 5000 }); await A.waitForTimeout(1200);
+    assert.equal(aiCalls.length, n0, 'отклонённый вывод сам не готовится заново'); }
+  await A.locator('.qn-ans .lor-modal-x').click();
+  // анализ коллектива ИИ — от 5 ответивших с согласием на ИИ: пока ответил один — подсказка, кнопка выключена
+  assert.match(await A.locator('.qn-team-ai').innerText(), /kamida 5 kishi/, 'меньше 5 — подсказка');
+  assert.ok(await A.locator('.qn-team-ai .qn-team-go').isDisabled(), '…и анализ не запустить');
+  // ещё пятеро ответили (сервером, от SOP-менеджера); у последнего нет согласия на ИИ — в анализ он не идёт
+  const extra = [1, 2, 3, 4, 5].map(i => emp.id + 500 + i), sopTk = () => srv.g.post({ action: 'login', login: srv.admin.login, password: srv.admin.password }).token;
+  { const qs = srv.g.state().settings.questionnaire.questions, at0 = srv.g.state().users.find(u => u.id === emp.id).qa.at;
+    const ops = extra.map((id, i) => ({ op: 'set', path: ['users', { id }], value: { id, role: 'employee', login: 'qn.x' + i, password: 'xodim-12345', name: 'Xodim ' + (i + 1), position: 'Omborchi', status: 'probation',
+      qa: Object.assign({ at: at0 - 1000 * (i + 1), answers: { [qs[0].id]: 'Tajriba uchun', [qs[1].id]: i % 2 ? 'Ofisda' : 'Masofadan', [qs[3].id]: 2 + (i % 3) } }, i === 4 ? { consent: { ai: false } } : {}) } }));
+    assert.deepEqual(srv.g.post({ token: sopTk(), action: 'patch', ops }).rejected, []); }
+  await A.reload({ waitUntil: 'networkidle' }); await watchSync(A);
+  await nav(A, 'cms'); await A.locator('.lor-tab').filter({ hasText: 'Savolnoma' }).click(); await A.waitForTimeout(300);
+  // люди — номерами (имён в запросе нет), на экране номера → имена; хранится в карточке SOP-менеджера
+  await A.locator('.qn-team-ai .qn-team-go').click();
   await A.locator('.qn-team-body').waitFor({ timeout: 8000 });
   { const tx = await A.locator('.qn-team-body').innerText();
-    assert.ok(/Jamoa barqaror/.test(tx) && /Dilnoza Karimova-Aliyeva — Hujjatlar bilan/.test(tx), 'анализ коллектива на экране, #1 → имя'); }
+    assert.ok(/Ko‘pchilik o‘zini puxta/.test(tx) && /Dilnoza Karimova-Aliyeva — Hujjatlar bilan/.test(tx), 'анализ коллектива на экране, #1 → имя');
+    assert.match(tx, /AI qoralamasi/, 'подпись «AI qoralamasi»');
+    assert.match(tx, /Xodimlar o‘zlarini qanday tasvirlaydi[\s\S]*Muhokama uchun: ko‘nikma va rollardagi bo‘shliqlar/, '«как люди описывают себя» и пробелы для обсуждения');
+    assert.ok(!/Flegmatiklar ko‘p|Faol savdo menejeri/.test(tx), 'состава по темпераментам и «кого нанять» нет'); }
   await settle(A);
-  { const last = aiCalls[aiCalls.length - 1].messages.slice(-1)[0].content;
-    assert.ok(/HR-tahlilchi/.test(last) && !/Dilnoza/.test(last), 'имён в запросе к ИИ нет');
+  { const last = lastPrompt(/HR-tahlilchi/);
+    assert.ok(last && !/Dilnoza|Xodim \d/.test(last), 'имён в запросе к ИИ нет');
+    assert.ok(/XODIMLAR \(5\)/.test(last), 'без согласия на ИИ — не в анализе (5 из 6)');
+    assert.ok(!/Puxta, barqaror|AI xulosasi/.test(last) && !/123 45 67/.test(last), 'прежние выводы ИИ и контакты не идут');
     const sop = srv.g.state().users.find(u => u.login === srv.admin.login);
-    assert.ok(sop.qaTeam && sop.qaTeam.ids[0] === emp.id, 'анализ — в карточке SOP-менеджера'); }
+    assert.ok(sop.qaTeam && sop.qaTeam.ids[0] === emp.id && sop.qaTeam.v === 2 && !('hiring' in sop.qaTeam.data), 'анализ — в карточке SOP-менеджера'); }
   assert.equal(await E.evaluate(() => LmsClient.sync().then(() => LmsClient.initial().users.some(u => u.qaTeam))), false, 'сотрудник анализа коллектива не видит');
   await shot(A, 'savolnoma-jamoa-ai');
+  // временные сотрудники больше не нужны
+  assert.deepEqual(srv.g.post({ token: sopTk(), action: 'patch', ops: extra.map(id => ({ op: 'del', path: ['users', { id }] })) }).rejected, []);
+  await A.reload({ waitUntil: 'networkidle' }); await watchSync(A);
+  await nav(A, 'cms'); await A.locator('.lor-tab').filter({ hasText: 'Savolnoma' }).click(); await A.waitForTimeout(300);
   await A.locator('.qn-views .seg button').nth(1).click();
   // вопросы из Word: заголовки — разделы, маркированный список — варианты к вопросу выше (не сохраняем — только проверка)
   const qn0 = await A.locator('.qn-item').count();
@@ -896,6 +942,10 @@ try {
   await nav(A, 'cms'); await A.locator('.lor-tab').filter({ hasText: 'Savolnoma' }).click(); await A.waitForTimeout(300);
   assert.match(await A.locator('.qn-tbl').innerText(), /Rus tili: Yuqori/, 'в таблице — главный ответ (языки)');
   await A.locator('.qn-tbl tbody tr').first().click();
+  // ответы новее отклонённого вывода — ИИ готовит заново сам; в запросе — возрастная группа вместо даты рождения, паспорта нет
+  for (let i = 0; i < 50 && !/Tug‘ilgan/.test(lastPrompt(/HR-psixolog/)); i++) await A.waitForTimeout(200);
+  { const pr = lastPrompt(/HR-psixolog/);
+    assert.ok(/Tug‘ilgan sanangiz\n   Javob: yosh guruhi: \d/.test(pr) && !/1999|AA 1234567|Pasport/.test(pr), 'в ИИ — возрастная группа, без даты рождения и паспорта'); }
   assert.ok(!(await A.locator('.qn-ans').innerText()).includes('AA 1234567'), 'паспорт скрыт, пока не нажать «показать»');
   await A.getByRole('button', { name: 'Maxfiy ma’lumotlarni ko‘rsatish' }).click();
   assert.ok((await A.locator('.qn-ans').innerText()).includes('AA 1234567'), '…а после — виден');
