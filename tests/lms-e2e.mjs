@@ -754,6 +754,13 @@ try {
   assert.ok(await E.locator('.ir-side iframe[src*="abc123XYZ00"]').count(), 'справа — видео этого документа');
   assert.ok(await E.locator('#in-seen').isDisabled(), 'открыт один документ из двух — галочку не поставить');
   await E.waitForTimeout(400); await shot(E, 'tanishuv-ekran');
+  // окна скрываются: «Video» — только документ, «Hujjat» — меняются местами (оба скрыть нельзя), ещё раз — оба
+  await E.locator('.ir-lay').nth(1).click();
+  assert.deepEqual([await E.locator('.ir-doc').count(), await E.locator('.ir-side').count()], [1, 0], 'видео скрыто — документ на весь экран');
+  await E.locator('.ir-lay').nth(0).click();
+  assert.deepEqual([await E.locator('.ir-doc').count(), await E.locator('.ir-side').count()], [0, 1], 'теперь только видео');
+  await E.locator('.ir-lay').nth(0).click();
+  assert.deepEqual([await E.locator('.ir-doc').count(), await E.locator('.ir-side').count()], [1, 1], 'снова оба окна');
   await E.locator('.ir-tab').nth(1).click();
   // PDF: встроенный просмотр, а где браузер не умеет (headless, Android) — кнопка «Hujjatni ochish» с тем же файлом
   await E.locator('.ir iframe.dv-pdf[src^="blob:"], .ir a.dv-open[href^="blob:"]').waitFor({ timeout: 8000 });

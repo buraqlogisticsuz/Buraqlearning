@@ -2879,3 +2879,9 @@ Object.assign(APP_T.uz, { ir_vid_soon: 'Video tez orada qo‘shiladi', ir_vid_so
 Object.assign(APP_T.ru, { ir_vid_soon: 'Видео скоро появится', ir_vid_soon_sub: 'Пока прочитайте документ — видео к нему появится именно здесь.', ir_vid_add: 'Ссылка на видео ещё не добавлена: Kontent → Tanishuv → поле «Shu hujjat uchun video» под документом — ссылка YouTube или .mp4.' });
 Object.assign(APP_T.en, { ir_vid_soon: 'The video is coming soon', ir_vid_soon_sub: 'Read the document for now — its video will appear right here.', ir_vid_add: 'No video link yet: Kontent → Tanishuv → the “Shu hujjat uchun video” field under the document — a YouTube or .mp4 link.' });
 Object.assign(APP_T.zh, { ir_vid_soon: '视频即将上线', ir_vid_soon_sub: '请先阅读文件——对应视频将显示在这里。', ir_vid_add: '尚未添加视频链接：Kontent → Tanishuv → 文件下方的“Shu hujjat uchun video”栏——填入 YouTube 或 .mp4 链接。' });
+
+// «Tanishuv» на весь экран: показать / скрыть окна
+Object.assign(APP_T.uz, { ir_doc: 'Hujjat', ir_video: 'Video', ir_windows: 'Oynalar', ir_hide: 'Yashirish', ir_show: 'Ko‘rsatish', ir_doc_hidden: 'hujjat oynasi yashirilgan — «Hujjat» tugmasini bosing' });
+Object.assign(APP_T.ru, { ir_doc: 'Документ', ir_video: 'Видео', ir_windows: 'Окна', ir_hide: 'Скрыть', ir_show: 'Показать', ir_doc_hidden: 'окно документа скрыто — нажмите «Документ»' });
+Object.assign(APP_T.en, { ir_doc: 'Document', ir_video: 'Video', ir_windows: 'Windows', ir_hide: 'Hide', ir_show: 'Show', ir_doc_hidden: 'the document window is hidden — press “Document”' });
+Object.assign(APP_T.zh, { ir_doc: '文件', ir_video: '视频', ir_windows: '窗口', ir_hide: '隐藏', ir_show: '显示', ir_doc_hidden: '文件窗口已隐藏——请点击“文件”' });

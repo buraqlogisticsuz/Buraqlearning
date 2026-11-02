@@ -3849,3 +3849,25 @@ input.org-name:hover, input.org-name:focus { border-color: var(--line); backgrou
 .ir-video-empty small { max-width: 320px; font-size: 13px; line-height: 18px; opacity: .75; }
 .ir-play { width: 64px; height: 64px; border-radius: 50%; border: 1.5px solid rgba(255, 255, 255, .55); display: inline-flex; align-items: center; justify-content: center; padding-left: 4px; box-sizing: border-box; }
 @media (max-width: 900px) { .ir-video-empty { padding: var(--space-4); } }
+
+/* «Tanishuv» на весь экран: окна «Hujjat» и «Video» скрываются кнопками в шапке; галочка и кнопки — внизу на всю ширину */
+.ir-lays { display: flex; gap: 6px; flex: none; }
+.ir-lay { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: var(--radius-pill); border: var(--hairline) solid rgba(255, 255, 255, .4); background: transparent; color: var(--on-navy); font: inherit; font-size: 13px; cursor: pointer; transition: background-color var(--t-sm) var(--ease), color var(--t-sm) var(--ease); }
+.ir-lay:hover { border-color: var(--white); }
+.ir-lay.is-on { background: var(--white); border-color: var(--white); color: var(--navy); }
+.ir-lay .ir-eye { opacity: .7; }
+.ir-lay:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.ir-body.is-doc, .ir-body.is-video { grid-template-columns: minmax(0, 1fr); }
+.ir-body.is-doc .ir-doc { border-right: 0; }
+.ir-body.is-video .ir-side { align-items: center; }
+.ir-body.is-video .ir-side > * { width: 100%; max-width: 1080px; }
+.ir > .ir-foot { flex: none; margin: 0; flex-direction: row; align-items: center; justify-content: space-between; gap: var(--space-4); padding: 12px 24px; border-top: var(--hairline) solid var(--line); background: var(--glass-drawer); }
+.ir-foot-l { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.ir-foot-l .check { margin: 0; }
+.ir > .ir-foot .ir-actions { flex: none; gap: 8px; }
+@media (max-width: 900px) {
+  .ir-lays { order: 2; }
+  .ir-lay span { display: none; }
+  .ir > .ir-foot { flex-direction: column; align-items: stretch; gap: 10px; padding: 10px 14px; }
+  .ir > .ir-foot .ir-actions { justify-content: space-between; }
+}

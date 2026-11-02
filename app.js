@@ -296,6 +296,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   function IntroReader(p) {
     var t = p.t, w = p.w || {}, docs = w.docs || [], ix = useState(0), cur = docs[Math.min(ix[0], docs.length - 1)];
     var ok = useState(!!p.checked), tick = useState(0), x = useDoc(cur);
+    var lay = useState(function () { try { var v = localStorage.getItem('lor-ir-lay'); return v === 'doc' || v === 'video' ? v : 'both'; } catch (e) { return 'both'; } });
     function seen() { var k = docKey(cur); if (!DOC_OPENED[k]) { DOC_OPENED[k] = 1; tick[1](function (n) { return n + 1; }); if (p.onOpen) p.onOpen(); } }
     useEffect(function () { if (docInline(cur, x)) seen(); }, [x.st, docKey(cur)]);
     useEffect(function () {
@@ -306,25 +307,40 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     }, []);
     var vid = cur.video && cur.video.src ? cur.video : w.video && w.video.src ? w.video : null;
     var n = docs.length, got = docsOpened(w), need = p.confirm && got < n, can = !p.confirm || (ok[0] && !need), kind = docKind(cur);
+    /* какие окна видны: оба, только документ или только видео (скрыть оба нельзя); выбор помнит браузер */
+    var showDoc = lay[0] !== 'video', showVid = lay[0] !== 'doc';
+    function toggle(which) {
+      var next = which === 'doc' ? (showDoc ? 'video' : 'both') : (showVid ? 'doc' : 'both');
+      lay[1](next); try { localStorage.setItem('lor-ir-lay', next); } catch (e) {}
+    }
+    var pill = function (k, ico, label) {
+      var on = k === 'doc' ? showDoc : showVid;
+      return h('button', { type: 'button', className: cx('ir-lay', on && 'is-on'), 'aria-pressed': on, title: t(on ? 'ir_hide' : 'ir_show') + ': ' + label, onClick: function () { toggle(k); } },
+        h('svg', { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true }, h('path', { d: ico })),
+        h('span', null, label),
+        h('svg', { className: 'ir-eye', width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true },
+          h('path', { d: on ? 'M2.5 12s3.5-6.5 9.5-6.5S21.5 12 21.5 12s-3.5 6.5-9.5 6.5S2.5 12 2.5 12zM12 9.2a2.8 2.8 0 1 0 0 5.6a2.8 2.8 0 0 0 0-5.6' : 'M3 3l18 18M10.6 5.6c.5-.1.9-.1 1.4-.1 6 0 9.5 6.5 9.5 6.5a17 17 0 0 1-2.6 3.4M6.5 6.6C3.9 8.4 2.5 12 2.5 12s3.5 6.5 9.5 6.5c1.6 0 3-.4 4.2-1' })));
+    };
     return ReactDOM.createPortal(h('div', { className: 'ir', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'ir-h' },
       h('header', { className: 'ir-head' },
         h('img', { className: 'ir-logo', src: LOGO_W, alt: 'BURAQ logistics', width: 87, height: 30 }),
         h('div', { className: 'ir-title' }, p.step ? h('span', { className: 'ir-step' }, p.step) : null, h('h1', { id: 'ir-h' }, String(w.introTitle || '').trim() || t('in_title'))),
-        n > 1 ? h('div', { className: 'ir-tabs', role: 'tablist' }, docs.map(function (d, j) {
+        n > 1 && showDoc ? h('div', { className: 'ir-tabs', role: 'tablist' }, docs.map(function (d, j) {
           var on = d === cur, sn = DOC_OPENED[docKey(d)];
           return h('button', { key: d.id || j, type: 'button', role: 'tab', 'aria-selected': on, className: cx('ir-tab', on && 'is-on', sn && 'is-seen'), onClick: function () { ix[1](j); } }, (sn ? '✓ ' : (j + 1) + '. ') + docTitle(d));
         })) : null,
+        h('div', { className: 'ir-lays', role: 'group', 'aria-label': t('ir_windows') }, pill('doc', 'M6 3h8l4 4v14H6zM14 3v4h4M9 12.5h6M9 16.5h6', t('ir_doc')), pill('video', 'M4 5.5h16v13H4zM10 9v6l5-3z', t('ir_video'))),
         p.onX ? h('button', { type: 'button', className: 'lor-modal-x ir-x', 'aria-label': t('close'), onClick: p.onX }, '×') : null),
-      h('div', { className: 'ir-body' },
-        h('section', { className: cx('ir-doc', 'is-' + kind), 'aria-label': docTitle(cur) },
+      h('div', { className: cx('ir-body', !showDoc && 'is-video', !showVid && 'is-doc') },
+        showDoc ? h('section', { className: cx('ir-doc', 'is-' + kind), 'aria-label': docTitle(cur) },
           h('div', { className: 'ir-doc-bar' },
             h('span', { className: 'jf-ext' }, fileExt(cur.name)),
             h('span', { className: 'ir-doc-name' }, h('b', null, docTitle(cur)), cur.size ? h('small', null, fileSize(cur.size)) : null),
             h('span', { className: 'dv-acts' },
               kind === 'pdf' && x.url ? h('a', { className: 'app-link', href: x.url, target: '_blank', rel: 'noopener', onClick: seen }, t('in_doc_tab')) : null,
               h('button', { type: 'button', className: 'app-link', onClick: function () { seen(); docSave(cur); } }, t('in_doc_dl')))),
-          h('div', { className: cx('dv-body', 'is-' + kind) }, docBody(t, cur, x, seen))),
-        h('aside', { className: 'ir-side' },
+          h('div', { className: cx('dv-body', 'is-' + kind) }, docBody(t, cur, x, seen))) : null,
+        showVid ? h('aside', { className: 'ir-side' },
           h('p', { className: 'lor-sm lor-muted ir-how' }, t('ir_how')),
           /* окно видео есть всегда: пока ссылки нет — заставка (у SOP-менеджера и CEO — где её вставить) */
           h('div', { className: 'ir-video' }, vid ? h(IntroVideo, { t: t, video: { title: vid.title || docTitle(cur), duration: '', src: vid.src } })
@@ -332,14 +348,16 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
               h('span', { className: 'ir-play', 'aria-hidden': true }, h('svg', { width: 30, height: 30, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, strokeLinejoin: 'round' }, h('path', { d: 'M9 6.5v11l9-5.5z' }))),
               h('b', null, t('ir_vid_soon')),
               h('small', null, t(p.admin ? 'ir_vid_add' : 'ir_vid_soon_sub')))),
-          String(w.introText || '').trim() ? h('div', { className: 'intro-text ir-text' }, paras(w.introText)) : null,
-          h('div', { className: 'ir-foot' },
-            p.confirm ? h('label', { className: cx('check big', need && 'is-off') }, h('input', { type: 'checkbox', id: 'in-seen', disabled: need, checked: ok[0] && !need, onChange: function (e) { ok[1](e.target.checked); if (p.onCheck) p.onCheck(e.target.checked); } }), t('in_seen')) : null,
-            need ? h('p', { className: 'lor-sm lor-muted in-need' }, tpl(t(n > 1 ? 'in_docs_need' : 'ir_need_one'), { n: got, m: n })) : null,
-            p.note ? h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, p.note) : null,
-            h('div', { className: 'ir-actions' },
-              p.back ? h(Btn, { variant: 'ghost', onClick: p.back.on }, p.back.label) : h('span'),
-              h(Btn, { variant: 'primary', arrow: true, disabled: !can, onClick: p.next.on }, p.next.label)))))), document.body);
+          String(w.introText || '').trim() ? h('div', { className: 'intro-text ir-text' }, paras(w.introText)) : null) : null),
+      /* галочка и кнопки — внизу на всю ширину: на месте при любом выборе окон */
+      h('footer', { className: 'ir-foot' },
+        h('div', { className: 'ir-foot-l' },
+          p.confirm ? h('label', { className: cx('check big', need && 'is-off') }, h('input', { type: 'checkbox', id: 'in-seen', disabled: need, checked: ok[0] && !need, onChange: function (e) { ok[1](e.target.checked); if (p.onCheck) p.onCheck(e.target.checked); } }), t('in_seen')) : null,
+          need ? h('p', { className: 'lor-sm lor-muted in-need' }, tpl(t(n > 1 ? 'in_docs_need' : 'ir_need_one'), { n: got, m: n }) + (showDoc ? '' : ' · ' + t('ir_doc_hidden'))) : null,
+          p.note ? h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, p.note) : null),
+        h('div', { className: 'ir-actions' },
+          p.back ? h(Btn, { variant: 'ghost', onClick: p.back.on }, p.back.label) : null,
+          h(Btn, { variant: 'primary', arrow: true, disabled: !can, onClick: p.next.on }, p.next.label)))), document.body);
   }
   /* список документов в знакомстве: карточка → просмотр. opened — какие уже открыты (до подтверждения нужно открыть все) */
   function IntroDocs(p) {
