@@ -3349,3 +3349,33 @@ Object.assign(APP_T.zh, { qn_pc_t: '概况', qn_pc_sem: '大致误差 ±{d}', qn
   qn_tc_lo: '最低', qn_tc_hi: '最高', qn_tc_n: '人数', qn_tc_dist_t: '倾向分布', qn_tc_style: '倾向', qn_tc_ppl: '{n} 人',
   qn_tc_nolead: '无单一主导倾向',
   qn_tc_min: '至少 {n} 人完成测试后才显示团队图表，目前 {m} 人：人数太少时平均值说明不了什么，也容易认出具体的人。' });
+/* «Savolnoma» → «Javoblar sifati» одной строкой: уровень и главная причина коротко, «Batafsil» — причины, пропуски,
+   показатели и оговорка; «слишком хорошо» — коротко под строкой; ничего не посчитано — одна приглушённая строка */
+Object.assign(APP_T.uz, { qn_q_det: 'Batafsil', qn_q_why_h: 'Sabablar', qn_q_more: 'yana {n} ta', qn_q_prev_why: 'Birinchi urinish sabablari',
+  qn_q_w_speed: 'juda tez: bir fikrga {s} s', qn_q_w_fast: '1 soniyadan tez: {n} / {m}', qn_q_w_run: 'ketma-ket {n} ta bir xil javob',
+  qn_q_w_mid: '«3» — javoblarning {p}%', qn_q_w_gross: 'juftlarda ziddiyat: {n} / {m}', qn_q_w_meand: 'juftlar mos emas: o‘rtacha farq {d}',
+  qn_q_w_acq_yes: 'qarama-qarshi fikrlarning ikkalasiga rozi', qn_q_w_acq_no: 'qarama-qarshi fikrlarning ikkalasini rad etgan',
+  qn_q_w_attn: 'diqqat savollarida xato: {n} / {m}', qn_q_w_ok: 'javoblar izchil, temp odatiy', qn_q_w_ok2: 'tekshirilganida shubhali belgi yo‘q',
+  qn_q_sd_s: 'Juda ijobiy o‘z-o‘zini ta’riflash — suhbatda aniqlang',
+  qn_q_na_line: 'Javoblar sifati tekshirilmadi: test qisqa (10 tadan kam javob), juftlar va diqqat savollari yo‘q.' });
+Object.assign(APP_T.ru, { qn_q_det: 'Подробнее', qn_q_why_h: 'Причины', qn_q_more: 'ещё {n}', qn_q_prev_why: 'Причины в первой попытке',
+  qn_q_w_speed: 'слишком быстро: {s} с на ответ', qn_q_w_fast: 'быстрее 1 с: {n} из {m}', qn_q_w_run: '{n} одинаковых ответов подряд',
+  qn_q_w_mid: '«3» — {p}% ответов', qn_q_w_gross: 'противоречия в парах: {n} из {m}', qn_q_w_meand: 'пары не сходятся: в среднем на {d}',
+  qn_q_w_acq_yes: 'согласие с обоими противоположными', qn_q_w_acq_no: 'отказ от обоих противоположных',
+  qn_q_w_attn: 'ошибки внимательности: {n} из {m}', qn_q_w_ok: 'ответы согласованы, темп обычный', qn_q_w_ok2: 'в проверенном подозрительного нет',
+  qn_q_sd_s: 'Очень благоприятное самоописание — уточните на собеседовании',
+  qn_q_na_line: 'Качество ответов не проверялось: тест короткий (меньше 10 ответов), нет пар и вопросов на внимательность.' });
+Object.assign(APP_T.en, { qn_q_det: 'Details', qn_q_why_h: 'Reasons', qn_q_more: '+{n} more', qn_q_prev_why: 'First attempt: reasons',
+  qn_q_w_speed: 'very fast: {s} s per answer', qn_q_w_fast: 'under 1 s: {n} of {m}', qn_q_w_run: '{n} identical answers in a row',
+  qn_q_w_mid: '“3” in {p}% of answers', qn_q_w_gross: 'contradictions in pairs: {n} of {m}', qn_q_w_meand: 'pairs disagree: {d} on average',
+  qn_q_w_acq_yes: 'agrees with both opposite statements', qn_q_w_acq_no: 'rejects both opposite statements',
+  qn_q_w_attn: 'attention errors: {n} of {m}', qn_q_w_ok: 'consistent, normal pace', qn_q_w_ok2: 'nothing suspicious in what was checked',
+  qn_q_sd_s: 'Very favourable self-description — clarify in the interview',
+  qn_q_na_line: 'Answer quality not checked: the test is short (fewer than 10 answers), with no pairs or attention checks.' });
+Object.assign(APP_T.zh, { qn_q_det: '详情', qn_q_why_h: '原因', qn_q_more: '另 {n} 项', qn_q_prev_why: '第一次作答的原因',
+  qn_q_w_speed: '过快：每条 {s} 秒', qn_q_w_fast: '快于 1 秒：{m} 个中 {n} 个', qn_q_w_run: '连续 {n} 个相同回答',
+  qn_q_w_mid: '{p}% 的回答为“3”', qn_q_w_gross: '配对矛盾：{m} 对中 {n} 对', qn_q_w_meand: '配对不一致：平均相差 {d}',
+  qn_q_w_acq_yes: '相反陈述都同意', qn_q_w_acq_no: '相反陈述都否定',
+  qn_q_w_attn: '注意力检查出错：{m} 题中 {n}', qn_q_w_ok: '回答一致，速度正常', qn_q_w_ok2: '已检查项无可疑之处',
+  qn_q_sd_s: '自我描述非常正面——请在面谈中核实',
+  qn_q_na_line: '未检查回答质量：测试太短（少于 10 个回答），没有配对和注意力检查题。' });

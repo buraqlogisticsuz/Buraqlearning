@@ -767,6 +767,23 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     if (r.level === 'green') return [t(r.skip.indexOf('speed') < 0 && r.skip.indexOf('pairs') < 0 ? 'qn_q_ok' : 'qn_q_ok2')];
     return r.why.map(function (x) { return qnQReason(t, x); });
   }
+  /* та же причина в несколько слов — для строки «Javoblar sifati» в карточке («diqqat savollarida xato: 2 / 2») */
+  function qnQShort(t, x) {
+    var C = QN_Q, num = function (z, k) { return String(Math.round(z * (k || 10)) / (k || 10)).replace('.', t('qn_dec')); };
+    if (x.k === 'speed') return x.t < C.t[0] ? tpl(t('qn_q_w_speed'), { s: num(x.t, x.t < 1 ? 100 : 10) }) : tpl(t('qn_q_w_fast'), { n: x.fast, m: x.nt });
+    if (x.k === 'run') return tpl(t('qn_q_w_run'), { n: x.run });
+    if (x.k === 'mid') return tpl(t('qn_q_w_mid'), { p: Math.round(x.mid * 100) });
+    if (x.k === 'pairs') return x.gross >= C.gross[0] ? tpl(t('qn_q_w_gross'), { n: x.gross, m: x.np }) : tpl(t('qn_q_w_meand'), { d: num(x.meanD) });
+    if (x.k === 'acq') return t(x.acq > 0 ? 'qn_q_w_acq_yes' : 'qn_q_w_acq_no');
+    return tpl(t('qn_q_w_attn'), { n: num(x.err), m: x.na });
+  }
+  /* главное коротко: жёлтый и красный — самая важная причина (why[0]: красные раньше, затем по QN_Q_ORDER), зелёный —
+     «javoblar izchil» или, если скорость или пары не посчитаны, «tekshirilganida shubhali belgi yo‘q»; na — пусто */
+  function qnQTop(t, r) {
+    if (!r || r.level === 'na') return '';
+    if (r.level === 'green') return t(r.skip.indexOf('speed') < 0 && r.skip.indexOf('pairs') < 0 ? 'qn_q_w_ok' : 'qn_q_w_ok2');
+    return r.why.length ? qnQShort(t, r.why[0]) : '';
+  }
   /* готовые пометки для ИИ (по-узбекски): только чтобы снизить уверенность вывода; зелёный — без пометок */
   function qnQNotes(r) {
     var T0 = T('uz'), out = [];
@@ -8416,39 +8433,56 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       c.base === true ? null : chip('base', false, t('qn_cons_base_t')), chip('ai', c.ai === true, t('qn_cons_ai_t')), chip('sp', c.special === true, t('qn_cons_special_t')));
   }
   /* «Javoblar sifati» — рядом с результатом теста в карточке (CEO, SOP-менеджер, руководитель; не в списке и не для
-     сортировки): значок словами и 1–3 причины, что не посчитано и почему, «слишком хорошо» — отдельно; сырые значения —
-     в раскрывающейся панели. Красный — «Qayta topshirishni so‘rash» (один раз, не руководителю; обе попытки хранятся:
-     qa.prev); автоматического отказа нет никогда */
+     сортировки) — одной строкой: точка цвета, уровень словами и самая важная причина в несколько слов («+2» — сколько
+     ещё), справа «Batafsil»; под строкой — коротко «слишком хорошо», просьба пройти заново и первая попытка. «Batafsil»
+     раскрывает остальное: все причины (1–3), что не проверено списком, сырые значения и оговорку; в печати раскрыто
+     (сырые значения — нет). Ничего не посчитано (тест короткий, без времени, пар и проверок) — одна приглушённая строка.
+     Красный — «Qayta topshirishni so‘rash» (один раз, не руководителю; обе попытки хранятся: qa.prev); автоматического
+     отказа нет никогда */
   function QnQual(p) {
     var t = p.t, u = p.u, qa = u.qa || {}, r = qnQuality(p.q, qa.answers, qa.meta), prev = qa.prev && qa.prev.answers ? qa.prev : null;
-    var pr = prev ? qnQuality(p.q, prev.answers, prev.meta) : null;
+    var pr = prev ? qnQuality(p.q, prev.answers, prev.meta) : null, open = useState(false);
     if (!r && !pr && !qa.retake) return null;
+    var lv = r && r.level !== 'na' ? r.level : null, skip = r ? r.skip.map(function (k) { return t('qn_q_sk_' + k); }) : [];
+    if (!lv && !pr && !qa.retake) return h('p', { className: 'lor-sm qn-qual-na', title: skip.length ? t('qn_q_skip') + ': ' + skip.join('; ') : undefined },
+      h('i', { 'aria-hidden': true }), h('span', null, t('qn_q_na_line')));
     function retake() {
       if (!window.confirm(t('qn_q_retake_q'))) return;
       var at = Date.now(), me = p.user.id;
       p.update(function (d) { qnRetake(d, u.id, p.q, me, at); });
       if (p.say) p.say(t('qn_q_retake_ok'));
     }
-    var lv = function (x) { return h('span', { className: cx('qn-q-lv', 'is-' + x.level) }, h('i', { 'aria-hidden': true }), t('qn_q_lv_' + x.level)); };
     var num = function (z, k) { return z == null ? '—' : String(Math.round(z * (k || 10)) / (k || 10)).replace('.', t('qn_dec')); };
     var raw = r ? [['qn_q_r_n', r.v.n], ['qn_q_r_t', r.v.t == null ? '—' : num(r.v.t, 100) + ' s'], ['qn_q_r_fast', r.v.nt ? r.v.fast + ' / ' + r.v.nt : '—'], ['qn_q_r_run', r.v.run == null ? '—' : r.v.run],
       ['qn_q_r_mid', r.v.mid == null ? '—' : Math.round(r.v.mid * 100) + '%'], ['qn_q_r_pairs', r.v.np ? num(r.v.meanD, 100) + ' · ' + r.v.gross + ' / ' + r.v.np : '—'],
       ['qn_q_r_acq', r.v.np ? (r.v.acq > 0 ? '+' : '') + num(r.v.acq, 100) : '—'], ['qn_q_r_attn', r.v.na ? num(r.v.attn) + ' / ' + r.v.na : '—'],
       ['qn_q_r_sd', r.sd ? r.sd.n + ' / ' + r.sd.k : '—'], ['qn_q_r_ch', r.v.changes]] : [];
-    return h('section', { className: cx('qn-q', r && 'is-' + r.level) },
-      h('div', { className: 'qn-q-head' },
-        h('span', { className: 'lor-eyebrow' }, t('qn_q_t')),
-        r ? lv(r) : null,
-        !p.ro && r && r.level === 'red' && !prev && !qa.retake ? h(Btn, { variant: 'outline', size: 'sm', className: 'qn-q-retake qn-noprint', onClick: retake }, t('qn_q_retake')) : null),
-      r ? h('ul', { className: 'qn-q-why' }, qnQWhy(t, r).map(function (x, i) { return h('li', { key: i }, x); })) : null,
-      r && r.skip.length ? h('p', { className: 'lor-sm lor-muted qn-q-skip' }, t('qn_q_skip') + ': ' + r.skip.map(function (k) { return t('qn_q_sk_' + k); }).join('; ') + '.') : null,
-      r && r.sd && r.sd.flag ? h('p', { className: 'qn-q-sd' }, h(Ico, { name: 'question', size: 16 }), h('span', null, tpl(t('qn_q_sd'), { n: r.sd.n, m: r.sd.k }))) : null,
-      qa.retake ? h('p', { className: 'lor-sm qn-q-wait' }, tpl(t('qn_q_retake_on'), { d: fmt(qa.retake.at, t) })) : null,
-      pr ? h('p', { className: 'lor-sm lor-muted qn-q-prev' }, tpl(t('qn_q_prev'), { d: prev.at ? fmtDate(prev.at) : '—', lv: t('qn_q_lv_' + pr.level) }) + (qnQWhy(t, pr).length && pr.level !== 'green' ? ': ' + qnQWhy(t, pr).join('; ') : '')) : null,
-      r ? h('details', { className: 'qn-q-raw' }, h('summary', null, t('qn_q_raw')),
-        h('dl', null, raw.map(function (z) { return h('div', { key: z[0] }, h('dt', null, t(z[0])), h('dd', null, z[1])); })),
-        h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('qn_q_calib'))) : null,
-      h('p', { className: 'lor-sm lor-muted qn-q-foot' }, t('qn_q_foot')));
+    var why = lv ? qnQWhy(t, r) : [], top = qnQTop(t, r), more = lv && lv !== 'green' ? why.length - 1 : 0, sd = !!(r && r.sd && r.sd.flag);
+    var prTop = pr && pr.level !== 'green' ? qnQTop(t, pr) : '', did = 'qn-qual-more-' + u.id, on = open[0];
+    var hdr = function (k) { return h('span', { className: 'qn-qual-h' }, t(k)); };
+    return h('section', { className: cx('qn-qual', 'is-' + (lv || 'na'), on && 'is-open'), 'aria-label': t('qn_q_t') },
+      h('div', { className: 'qn-qual-row' },
+        h('span', { className: 'lor-eyebrow qn-qual-t' }, t('qn_q_t')),
+        lv ? h('span', { className: 'qn-qual-sum' },
+          h('span', { className: cx('qn-q-lv', 'is-' + lv) }, h('i', { 'aria-hidden': true }), t('qn_q_lv_' + lv), top ? h('span', { className: 'qn-qual-dot', 'aria-hidden': true }, '·') : null),
+          top ? h('span', { className: 'qn-qual-why' }, h('span', { className: 'qn-qual-top' }, top),
+            more > 0 ? h('span', { className: 'qn-qual-n' }, tpl(t('qn_q_more'), { n: more })) : null) : null)
+          : h('span', { className: cx('qn-qual-sum', qa.retake ? 'qn-q-wait' : 'lor-muted') }, qa.retake ? tpl(t('qn_q_retake_on'), { d: fmt(qa.retake.at, t) }) : t('qn_q_lv_na')),
+        !p.ro && lv === 'red' && !prev && !qa.retake ? h(Btn, { variant: 'outline', size: 'sm', className: 'qn-q-retake qn-noprint', onClick: retake }, t('qn_q_retake')) : null,
+        h('button', { type: 'button', className: 'qn-why-tg qn-qual-tg qn-noprint', 'aria-expanded': on, 'aria-controls': did, onClick: function () { open[1](!on); } },
+          t('qn_q_det'), h(Ico, { name: 'chev', size: 14, w: 2 }))),
+      sd ? h('p', { className: 'qn-qual-line qn-qual-sd' }, h(Ico, { name: 'question', size: 15 }), h('span', null, t('qn_q_sd_s'))) : null,
+      lv && qa.retake ? h('p', { className: 'qn-qual-line qn-q-wait' }, tpl(t('qn_q_retake_on'), { d: fmt(qa.retake.at, t) })) : null,
+      pr ? h('p', { className: 'qn-qual-line qn-q-prev' }, tpl(t('qn_q_prev'), { d: prev.at ? fmtDate(prev.at) : '—', lv: t('qn_q_lv_' + pr.level) }) + (prTop ? ' — ' + prTop : '')) : null,
+      h('div', { id: did, className: 'qn-qual-more', hidden: !on },
+        why.length ? h('div', { className: 'qn-qual-sec' }, hdr('qn_q_why_h'), h('ul', { className: 'qn-q-why' }, why.map(function (x, i) { return h('li', { key: i }, x); }))) : null,
+        sd ? h('p', { className: 'qn-qual-sec qn-qual-sdf' }, tpl(t('qn_q_sd'), { n: r.sd.n, m: r.sd.k })) : null,
+        prTop ? h('div', { className: 'qn-qual-sec' }, hdr('qn_q_prev_why'), h('ul', { className: 'qn-q-why' }, qnQWhy(t, pr).map(function (x, i) { return h('li', { key: i }, x); }))) : null,
+        skip.length ? h('div', { className: 'qn-qual-sec' }, hdr('qn_q_skip'), h('ul', { className: 'qn-qual-skip' }, skip.map(function (x, i) { return h('li', { key: i }, x); }))) : null,
+        r ? h('div', { className: 'qn-qual-sec qn-qual-raw' }, hdr('qn_q_raw'),
+          h('dl', null, raw.map(function (z) { return h('div', { key: z[0] }, h('dt', null, t(z[0])), h('dd', null, z[1])); })),
+          h('p', { className: 'qn-qual-calib' }, t('qn_q_calib'))) : null,
+        h('p', { className: 'qn-qual-foot' }, t('qn_q_foot'))));
   }
   /* согласия в карточке — одной строкой приглушённых плашек: шаг согласий («✓ Rozilik v1 · 31.10.2026», «✓ AI tahlili»,
      «✕ Maxfiy ma’lumotlar» — если в анкете есть [maxfiy] или согласие дано) и вопросы-согласия анкеты коротко

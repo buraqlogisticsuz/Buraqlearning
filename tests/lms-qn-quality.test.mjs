@@ -1,5 +1,5 @@
 // «Savolnoma» → «Javoblar sifati»: проверки качества ответов в тесте (app.js: QN_Q, qnQuality, qnQWhy, qnQNotes,
-// qnRetake, разбор пометок [diqqat: 2] [tekshiruv] [samimiylik] [juft: N] [shkala: …] в qnParse). Светофор по таблице
+// qnQShort, qnQTop — строка в карточке, qnRetake, разбор пометок [diqqat: 2] [tekshiruv] [samimiylik] [juft: N] [shkala: …] в qnParse). Светофор по таблице
 // отчёта: скорость (медиана), серия одинаковых, доля «3», обратные пары (meanD, gross), согласие со всем, внимательность;
 // красный — хоть один красный или три жёлтых; чего не посчитать — пропуск с причиной; «слишком хорошо» — отдельно.
 // Пометки уходят в ИИ готовым списком, сами пункты-проверки — нет. Функции берём из app.js как есть (куски без React).
@@ -20,7 +20,7 @@ vm.runInContext('function tpl(s, o) { return s.replace(/\\{(\\w+)\\}/g, function
   part('  var QN_TYPES', '  function qnYes(') + part('  var LANG_NAME', '  function stems(') +
   part('  /* AI-вывод по ответам', '  function QnAi(') +
   part('  function qnNew(', '  function qnFromText('), ctx);
-const { QN_Q, qnQuality, qnQWhy, qnQNotes, qnRetake, qnDone, qnScore, qnParse, qnAiRun, T } = ctx;
+const { QN_Q, qnQuality, qnQWhy, qnQShort, qnQTop, qnQNotes, qnRetake, qnDone, qnScore, qnParse, qnAiRun, T } = ctx;
 const uz = T('uz');
 const J = x => JSON.parse(JSON.stringify(x));
 
@@ -270,4 +270,31 @@ test('ИИ: пометки качества уходят готовым спис
   const ok = Object.assign({}, u, { qa: Object.assign({}, u.qa, { answers: Object.assign({ why: 'x' }, honest()), meta: calm }) });
   await qnAiRun({ sampler, q, u: ok, lang: 'uz', by: 3, update: fn => fn({ users: [ok] }) });
   assert.ok(!/JAVOBLAR SIFATI/.test(sent[1]), 'зелёный — без пометок');
+});
+
+test('карточка — одной строкой: главная причина коротко (qnQTop), остальное — за «Batafsil»', () => {
+  const red = qnQuality(Q, same(5), rtOf(() => 400));
+  assert.equal(qnQTop(uz, red), 'ketma-ket 50 ta bir xil javob', 'красный — первая причина в несколько слов');
+  assert.deepEqual(J(red.why.map(x => qnQShort(uz, x))), ['ketma-ket 50 ta bir xil javob', 'diqqat savollarida xato: 2 / 2', 'juftlarda ziddiyat: 10 / 10']);
+  assert.ok(red.why.every(x => qnQShort(uz, x).length <= qnQWhy(uz, { level: 'red', why: [x] })[0].length), 'не длиннее причины в «Batafsil»');
+  const slow = qnQuality(Q, honest(), rtOf(() => 1500));
+  assert.equal(qnQTop(uz, slow), 'juda tez: bir fikrga 1,5 s');
+  assert.equal(qnQTop(T('ru'), slow), 'слишком быстро: 1,5 с на ответ');
+  assert.equal(qnQTop(uz, qnQuality(Q, honest(), rtOf(i => i < 11 ? 600 : 3000))), '1 soniyadan tez: 11 / 49');
+  assert.equal(qnQTop(uz, qnQuality(Q, honest(), calm)), 'javoblar izchil, temp odatiy', 'зелёный — словами, без причины');
+  assert.equal(qnQTop(uz, qnQuality(Q, honest(), null)), 'tekshirilganida shubhali belgi yo‘q', 'скорость не посчитана — «в проверенном»');
+  const small = { questions: [1, 2, 3].map(i => ({ id: 's' + i, type: 'scale', scale: 'A', text: 'F' + i })), scales: [{ id: 'A', name: 'A', bands: [] }] };
+  const na = qnQuality(small, { s1: 5, s2: 5, s3: 5 }, null);
+  assert.equal(na.level, 'na'); assert.equal(qnQTop(uz, na), '', 'ничего не посчитано — одна приглушённая строка, без причины');
+  assert.deepEqual(J(na.skip).sort(), ['attn', 'pairs', 'pattern', 'speed'], 'na — всегда все четыре пропуска (о них — qn_q_na_line)');
+  // короткие причины и надписи строки — во всех четырёх языках
+  const keys = ['qn_q_det', 'qn_q_why_h', 'qn_q_more', 'qn_q_prev_why', 'qn_q_sd_s', 'qn_q_na_line', 'qn_q_w_ok', 'qn_q_w_ok2', 'qn_q_w_acq_yes', 'qn_q_w_acq_no',
+    'qn_q_w_speed', 'qn_q_w_fast', 'qn_q_w_run', 'qn_q_w_mid', 'qn_q_w_gross', 'qn_q_w_meand', 'qn_q_w_attn'];
+  for (const l of ['uz', 'ru', 'en', 'zh']) for (const k of keys) assert.ok(T(l)(k) && T(l)(k) !== k, l + ': ' + k);
+  const qual = app.slice(app.indexOf('  function QnQual('), app.indexOf('  function qnConsKind('));
+  assert.match(qual, /className: 'qn-qual-more', hidden: !on/, '«Batafsil» — скрытый блок под строкой');
+  assert.match(qual, /'aria-expanded': on, 'aria-controls': did/);
+  const css = readFileSync(new URL('../lor.css', import.meta.url), 'utf8');
+  assert.match(css, /body\.qn-printing \.qn-qual-more\[hidden\] \{ display: flex !important; \}/, 'в печати «Batafsil» раскрыт');
+  assert.ok(!/^\.qn-q \{[^}]*border/m.test(css), 'у .qn-q (подпись вопроса в анкете) нет рамки блока «Javoblar sifati»');
 });

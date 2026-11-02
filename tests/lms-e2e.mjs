@@ -1292,6 +1292,8 @@ try {
   await E.reload({ waitUntil: 'networkidle' }); await watchSync(E);
   await E.locator('.qn-wiz').waitFor({ timeout: 8000 });
   assert.match(await E.locator('.qn-step-head .lor-h').innerText(), /QO‘SHIMCHA TEST/i, 'новый тест — сразу его шаг');
+  assert.equal(await E.locator('.qn-step .qn-field .qn-q').first().evaluate(e => getComputedStyle(e).borderLeftWidth + ' ' + getComputedStyle(e).flexDirection), '0px row',
+    'подпись вопроса — номер рядом с текстом, без рамки блока «Javoblar sifati»');
   { const fs = E.locator('.qn-step .qn-field'), n = await fs.count();
     assert.equal(n, 13);
     for (let i = 0; i < n; i++) await fs.nth(i).locator('.qn-sc').nth(4).click();
@@ -1308,25 +1310,31 @@ try {
   await nav(A, 'cms'); await A.locator('.lor-tab').filter({ hasText: 'Savolnoma' }).click(); await A.waitForTimeout(300);
   assert.match(await A.locator('.qn-tbl tbody tr').first().locator('.qn-q-chip').innerText(), /Sifat: talqin qilinmaydi/, 'в таблице — плашка рядом с результатом');
   await A.locator('.qn-tbl tbody tr').first().click();
-  { const box = A.locator('.qn-ans .qn-q');
+  { const box = A.locator('.qn-ans .qn-qual');
     await box.waitFor({ timeout: 5000 });
-    const tx = await box.innerText();
-    assert.match(tx, /JAVOBLAR SIFATI[\s\S]*Profil talqin qilinmaydi/i, 'красный — «профиль не толкуется»');
+    // одной строкой: уровень, главная причина коротко, «yana N ta», «Batafsil»; остальное скрыто
+    const row = await box.locator('.qn-qual-row').innerText();
+    assert.match(row, /JAVOBLAR SIFATI[\s\S]*Profil talqin qilinmaydi/i, 'красный — «профиль не толкуется»');
+    assert.match(row, /diqqat savollarida xato: 2 \/ 2/, 'главная причина — коротко, в той же строке');
+    assert.match(row, /yana \d ta[\s\S]*Batafsil/, 'сколько ещё причин и «Batafsil»');
+    assert.ok(await box.locator('.qn-qual-more').isHidden(), 'причины, пропуски и показатели — за «Batafsil»');
+    assert.ok((await box.boundingBox()).height < 80, 'блок — одна строка: ' + (await box.boundingBox()).height);
+    await box.locator('.qn-qual-tg').click();
+    assert.equal(await box.locator('.qn-qual-tg').getAttribute('aria-expanded'), 'true');
+    const tx = await box.locator('.qn-qual-more').innerText();
     assert.match(tx, /Diqqat savollarida xato: 2 \(2 ta savoldan\)/, 'причины словами: ошибки во внимательности…');
     assert.match(tx, /Qarama-qarshi fikrlarning 3 juftidan 3 tasida ziddiyat/, '…противоречия в парах');
     assert.match(tx, /rad etish uchun asos emas/, 'не основание для отказа');
     assert.ok(await box.locator('.qn-q-why li').count() <= 3, 'не больше трёх причин');
-    await box.locator('.qn-q-raw summary').click();
-    const raw = await box.locator('.qn-q-raw').innerText();
-    assert.match(raw, /Javoblar orasidagi vaqt \(mediana\)\s*\d+(,\d+)? s/, 'сырые значения — в панели');
-    assert.match(raw, /Eng uzun bir xil javoblar seriyasi\s*13/, '13 одинаковых подряд'); }
+    assert.match(tx, /Javoblar orasidagi vaqt \(mediana\)\s*\d+(,\d+)? s/, 'сырые значения — в «Batafsil»');
+    assert.match(tx, /Eng uzun bir xil javoblar seriyasi\s*13/, '13 одинаковых подряд'); }
   await shot(A, 'savolnoma-javoblar-sifati');
   A.once('dialog', d => d.accept());
   await A.locator('.qn-ans .qn-q-retake').click(); await settle(A);
   { const qa = srv.g.state().users.find(u => u.id === emp.id).qa;
     assert.ok(qa.retake && qa.prev && qa.prev.answers[tq.at.id] === 5, 'первая попытка — в qa.prev');
     assert.ok(!(tq.at.id in qa.answers) && qa.answers[srv.g.state().settings.questionnaire.questions[0].id], 'ответов теста нет, анкета на месте'); }
-  assert.match(await A.locator('.qn-ans .qn-q').innerText(), /Testni qayta topshirish so‘ralgan/);
+  assert.match(await A.locator('.qn-ans .qn-qual').innerText(), /Testni qayta topshirish so‘ralgan/);
   assert.equal(await A.locator('.qn-ans .qn-q-retake').count(), 0, 'кнопки больше нет');
   await A.locator('.qn-ans .lor-modal-x').click();
   // сотрудник проходит тест заново: с первого раздела, где у теста нет ответа, с пояснением «Rahbariyat … so‘radi»
@@ -1350,7 +1358,7 @@ try {
   await A.reload({ waitUntil: 'networkidle' }); await watchSync(A);
   await nav(A, 'cms'); await A.locator('.lor-tab').filter({ hasText: 'Savolnoma' }).click(); await A.waitForTimeout(300);
   await A.locator('.qn-tbl tbody tr').first().click();
-  await A.locator('.qn-ans .qn-q').waitFor({ timeout: 5000 });
+  await A.locator('.qn-ans .qn-qual').waitFor({ timeout: 5000 });
   assert.match(await A.locator('.qn-ans .qn-q-prev').innerText(), /Birinchi urinish .*Profil talqin qilinmaydi/, 'первая попытка — строкой');
   assert.equal(await A.locator('.qn-ans .qn-q-retake').count(), 0, 'повтор — только один раз');
   await A.locator('.qn-ans .lor-modal-x').click();
