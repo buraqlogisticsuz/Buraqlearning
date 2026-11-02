@@ -23,7 +23,8 @@ const step = (s) => console.log('· ' + s);
 const aiCalls = [];
 const srv = await startDevServer({ fetch: (url, body) => { aiCalls.push(body); const q = body.messages[body.messages.length - 1].content;
   // вывод по анкете (HR-psixolog) — JSON, как просит страница
-  const text = /HR-psixolog/.test(q) ? JSON.stringify({ temperament: 'Flegmatik — xotirjam va puxta', summary: 'Puxta, barqaror xodim', strengths: ['Barqarorlik'], growth: ['Tezlik'], motivation: 'Aniq maqsad', communication: 'Xotirjam', management: ['Vaqt bering'], roles: 'Hujjatlar bilan ishlash' }) : 'Javob: ' + q;
+  const text = /HR-tahlilchi/.test(q) ? JSON.stringify({ summary: 'Jamoa barqaror, tajribali', composition: 'Flegmatiklar ko‘p', strengths: ['Puxtalik'], gaps: ['Savdoda faol odam yo‘q'], people: [{ n: 1, note: 'Hujjatlar bilan ishlashda kuchli' }], risks: ['Sekin qaror'], actions: ['Savdoga sangvinik toping'], hiring: 'Faol savdo menejeri' })
+    : /HR-psixolog/.test(q) ? JSON.stringify({ temperament: 'Flegmatik — xotirjam va puxta', summary: 'Puxta, barqaror xodim', strengths: ['Barqarorlik'], growth: ['Tezlik'], motivation: 'Aniq maqsad', communication: 'Xotirjam', management: ['Vaqt bering'], roles: 'Hujjatlar bilan ishlash' }) : 'Javob: ' + q;
   return { body: { model: body.model, stop_reason: 'end_turn', usage: { input_tokens: 10, output_tokens: 5 }, content: [{ type: 'text', text }] } }; } });
 const browser = await pw.chromium.launch();
 const errors = [];
@@ -817,14 +818,26 @@ try {
   await A.locator('.qn-person').first().click();
   const qnCard = await A.locator('.qn-ans').innerText();
   assert.ok(/Masofadan/.test(qnCard) && /Flegmatik/.test(qnCard), 'SOP-менеджер видит ответы и темперамент');
-  await A.locator('.qn-ai button').click();
-  await A.locator('.qn-ai-body').waitFor({ timeout: 8000 });
-  assert.match(await A.locator('.qn-ai-body').innerText(), /Puxta, barqaror xodim/, 'вывод ИИ — в карточке');
+  // вывод ИИ готовится сам, когда карточку открыли (кнопку нажимать не нужно)
+  await A.locator('.qn-ans .qn-ai-body').waitFor({ timeout: 8000 });
+  assert.match(await A.locator('.qn-ans .qn-ai-body').innerText(), /Puxta, barqaror xodim/, 'вывод ИИ — в карточке, сам');
   await settle(A);
   assert.equal(srv.g.state().users.find(u => u.id === emp.id).qaReport.data.roles, 'Hujjatlar bilan ishlash', 'вывод ИИ — на сервере');
   assert.equal(await E.evaluate(id => LmsClient.sync().then(() => (LmsClient.initial().users.find(u => u.id === id) || {}).qaReport), emp.id).catch(() => undefined), undefined, 'сотрудник вывода не видит');
   await A.waitForTimeout(450); await shot(A, 'savolnoma-javoblar');
   await A.locator('.qn-ans .lor-modal-x').click();
+  // анализ коллектива ИИ: люди — номерами (имён в запросе нет), на экране номера → имена; хранится в карточке SOP-менеджера
+  await A.locator('.qn-team-ai .qn-ai-acts .lor-btn').last().click();
+  await A.locator('.qn-team-body').waitFor({ timeout: 8000 });
+  { const tx = await A.locator('.qn-team-body').innerText();
+    assert.ok(/Jamoa barqaror/.test(tx) && /Dilnoza Karimova-Aliyeva — Hujjatlar bilan/.test(tx), 'анализ коллектива на экране, #1 → имя'); }
+  await settle(A);
+  { const last = aiCalls[aiCalls.length - 1].messages.slice(-1)[0].content;
+    assert.ok(/HR-tahlilchi/.test(last) && !/Dilnoza/.test(last), 'имён в запросе к ИИ нет');
+    const sop = srv.g.state().users.find(u => u.login === srv.admin.login);
+    assert.ok(sop.qaTeam && sop.qaTeam.ids[0] === emp.id, 'анализ — в карточке SOP-менеджера'); }
+  assert.equal(await E.evaluate(() => LmsClient.sync().then(() => LmsClient.initial().users.some(u => u.qaTeam))), false, 'сотрудник анализа коллектива не видит');
+  await shot(A, 'savolnoma-jamoa-ai');
   await A.locator('.qn-views .seg button').nth(1).click();
   // вопросы из Word: заголовки — разделы, маркированный список — варианты к вопросу выше (не сохраняем — только проверка)
   const qn0 = await A.locator('.qn-item').count();

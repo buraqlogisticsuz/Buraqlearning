@@ -3935,3 +3935,19 @@ input.org-name:hover, input.org-name:focus { border-color: var(--line); backgrou
   .qn-lk-cap { grid-row: 3; }
 }
 @media (prefers-reduced-motion: reduce) { .qn-lk-dots .qn-sc, .qn-lk-cap.is-set, .qn-lk-dots .qn-sc.is-on svg { animation: none; transition: none; } }
+
+/* «Savolnoma»: ИИ-анализ — по человеку и по коллективу */
+.qn-ai-head .lor-eyebrow { display: inline-flex; align-items: center; gap: 4px; color: var(--blue-text); }
+.qn-ai-acts { display: flex; gap: 8px; flex-wrap: wrap; margin-left: auto; }
+.qn-ai-head .lor-btn { margin-left: auto; }
+.qn-ai-acts .lor-btn { margin-left: 0; }
+.qn-ai-stale { padding: 2px 10px; border-radius: var(--radius-pill); background: var(--red-soft); color: var(--red-text); font-size: 12px; line-height: 18px; }
+.qn-ai-key { color: var(--ink); font-weight: 500; }
+.qn-ai-wait { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--ink-muted); }
+.qn-ai.is-busy { border-color: var(--blue-text); }
+.qn-team-ai { gap: var(--space-3); }
+.qn-team-cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
+.qn-team-people { list-style: none; padding: 0 !important; display: flex; flex-direction: column; gap: 6px; }
+.qn-team-people li { padding: 8px 12px; border-radius: var(--radius-md); background: var(--surface-sunken); }
+.qn-team-people b { font-weight: 500; display: inline; margin: 0; color: var(--ink); font-size: 14px; }
+@media (max-width: 760px) { .qn-team-cols { grid-template-columns: 1fr; } }
