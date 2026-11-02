@@ -1025,6 +1025,9 @@ try {
   assert.match(await E.locator('.qn-step-head .lor-h').innerText(), /TEMPERAMENT TESTI/i, 'кто анкету уже заполнил — сразу к тесту');
   assert.ok(await E.locator('.qn-note-box').count(), 'пояснение показано');
   await E.locator('.qn-page-foot .lor-btn-primary').click(); await E.waitForTimeout(250);
+  { const w = E.locator('.qn-step .qn-warn');
+    assert.equal(await w.count(), 1, 'перед первым вопросом шкал темперамента — честное предупреждение');
+    assert.match(await w.innerText(), /to‘g‘ri yoki noto‘g‘ri javob yo‘q[\s\S]*avtomatik tekshiriladi/, '…стандартным текстом из strings.js'); }
   await E.locator('.qn-sc').nth(1).click(); assert.match(await E.locator('.qn-lk-cap').innerText(), /Kam/, 'подпись выбранной оценки — под шкалой');
   await E.locator('.qn-sc').nth(4).click(); assert.match(await E.locator('.qn-lk-cap').innerText(), /To‘liq/, 'оценку можно поменять');
   await E.locator('.qn-page-foot .lor-btn-primary').click(); await E.waitForTimeout(250);
@@ -1058,7 +1061,7 @@ try {
   assert.equal(await E.locator('.qn-modal .qn-ai').count(), 0, 'вывода ИИ у сотрудника нет');
   await shot(E, 'savolnoma-xodim-profil');
   await E.locator('.qn-modal .lor-modal-x').click();
-  step('тест после анкеты: пояснение, оценки 1–5 с подписями; среднее по шкалам, равные шкалы — «aralash profil», надёжность отдельно, ответы под шкалой, оговорка; сотрудник видит свой профиль');
+  step('тест после анкеты: пояснение, честное предупреждение перед шкалами темперамента, оценки 1–5 с подписями; среднее по шкалам, равные шкалы — «aralash profil», надёжность отдельно, ответы под шкалой, оговорка; сотрудник видит свой профиль');
 
   // ---------- отзыв согласия: «Mening profilim» → «Rozilik» — ИИ-анализ и особые данные выключаются ----------
   await settle(A);
@@ -1095,6 +1098,101 @@ try {
   await A.locator('.qn-ans .lor-modal-x').click();
   await A.locator('.lor-tab').filter({ hasText: 'Darslar' }).click();
   step('отзыв согласия в «Mening profilim» → «Rozilik»: ИИ и особые данные выключены, ответ [maxfiy] стёрт, вывод ИИ удалён, ИИ не предлагается');
+
+  // ---------- «Javoblar sifati»: пункты-проверки в тексте; сотрудник жмёт «5» подряд и быстро — подсказка «shoshilmang»,
+  // у SOP-менеджера — «Profil talqin qilinmaydi» с причинами; «Qayta topshirishni so‘rash» — один раз, обе попытки хранятся ----------
+  await nav(A, 'cms'); await A.locator('.lor-tab').filter({ hasText: 'Savolnoma' }).click(); await A.waitForTimeout(300);
+  await A.locator('.qn-views .seg button').nth(1).click();
+  await A.locator('.qn-edit:not(.qn-scales) .qn-imp button').click();
+  await A.fill('#f-qn-paste', '# Qo‘shimcha test\n1. Ishni rejalashtirib boshlayman [baho] [shkala: Tartib]\n2. Hujjatlarni tartibda saqlayman [baho] [shkala: Tartib]\n' +
+    '3. Kun oxirida ish joyimni yig‘ishtiraman [baho] [shkala: Tartib]\n4. Bu savolda «2» ni belgilang [diqqat: 2]\n5. Vazifalarni ro‘yxat bilan bajaraman [baho] [shkala: Tartib]\n' +
+    '6. Men hech qachon ishga kechikmaganman [samimiylik]\n7. Muddatlarni oldindan belgilayman [baho] [shkala: Tartib]\n8. Men hech qachon mobil telefondan foydalanmaganman [tekshiruv]\n' +
+    '9. Ish stolim doim tartibda [baho] [shkala: Tartib]\n10. Yangi ishni darhol boshlayman [baho] [shkala: Tartib]\n11. Rejasiz ishlashni yoqtiraman [baho] [shkala: Tartib] [teskari] [juft: 1]\n' +
+    '12. Hujjatlarni qayerga qo‘yganimni tez-tez unutaman [baho] [shkala: Tartib] [teskari] [juft: 2]\n13. Ish joyim ko‘pincha tartibsiz qoladi [baho] [shkala: Tartib] [teskari] [juft: 3]');
+  await A.locator('.qn-paste-act .lor-btn-primary').click();
+  assert.equal(await A.locator('select.qn-exp-sel').count(), 1, 'в редакторе — пункт на внимательность с верным ответом');
+  assert.equal(await A.locator('select.qn-exp-sel').inputValue(), '2');
+  assert.equal(await A.locator('input.qn-infreq:checked').count(), 1, 'проверка отмечена');
+  assert.equal(await A.locator('input.qn-sd:checked').count(), 1, '«слишком хорошо» отмечено');
+  assert.ok(await A.locator('#qn-warn-on').isChecked(), 'предупреждение перед тестом включено');
+  await A.locator('.qn-admin .in-actions .lor-btn-primary').click(); await settle(A);
+  const tq = {};
+  { const q = srv.g.state().settings.questionnaire, by = s => q.questions.find(x => x.text.startsWith(s));
+    Object.assign(tq, { at: by('Bu savolda'), inf: by('Men hech qachon mobil'), sd: by('Men hech qachon ishga'), p1: by('Ishni rejalashtirib'), p11: by('Rejasiz') });
+    assert.deepEqual([tq.at.type, tq.at.expect, tq.at.scale], ['attn', 2, undefined], 'внимательность — не в шкале');
+    assert.deepEqual([tq.inf.infreq, tq.inf.scale, tq.sd.sd], [true, undefined, true]);
+    assert.deepEqual([tq.p11.pair, tq.p11.rev], [tq.p1.id, true], '[juft: 1] — пара к вопросу 1 этого текста');
+    assert.equal(q.testWarn, undefined, 'стандартный текст предупреждения — не хранится'); }
+  await A.locator('.lor-tab').filter({ hasText: 'Darslar' }).click();
+  await E.reload({ waitUntil: 'networkidle' }); await watchSync(E);
+  await E.locator('.qn-wiz').waitFor({ timeout: 8000 });
+  assert.match(await E.locator('.qn-step-head .lor-h').innerText(), /QO‘SHIMCHA TEST/i, 'новый тест — сразу его шаг');
+  { const fs = E.locator('.qn-step .qn-field'), n = await fs.count();
+    assert.equal(n, 13);
+    for (let i = 0; i < n; i++) await fs.nth(i).locator('.qn-sc').nth(4).click();
+    assert.equal(await E.locator('.qn-step .qn-fast').count(), 1, '5 ответов подряд быстрее секунды — мягкая подсказка');
+    assert.match(await E.locator('.qn-step .qn-fast').innerText(), /shoshilmang/); }
+  await shot(E, 'savolnoma-shoshilmang');
+  await E.locator('.qn-page-foot .lor-btn-primary').click();
+  await E.locator('.qn-done').waitFor({ timeout: 5000 }); await settle(E);
+  await E.locator('.qn-done .lor-btn-primary').click();
+  { const me = srv.g.state().users.find(u => u.id === emp.id), rt = Object.values(me.qa.meta.rt);
+    assert.ok(rt.length >= 12 && rt.every(x => Number.isInteger(x) && x > 0 && x <= 300000), 'время между ответами записано (мс): ' + rt.join(', '));
+    assert.equal(me.qa.answers[tq.at.id], 5); }
+  await A.reload({ waitUntil: 'networkidle' }); await watchSync(A);
+  await nav(A, 'cms'); await A.locator('.lor-tab').filter({ hasText: 'Savolnoma' }).click(); await A.waitForTimeout(300);
+  assert.match(await A.locator('.qn-tbl tbody tr').first().locator('.qn-q-chip').innerText(), /Sifat: talqin qilinmaydi/, 'в таблице — плашка рядом с результатом');
+  await A.locator('.qn-tbl tbody tr').first().click();
+  { const box = A.locator('.qn-ans .qn-q');
+    await box.waitFor({ timeout: 5000 });
+    const tx = await box.innerText();
+    assert.match(tx, /JAVOBLAR SIFATI[\s\S]*Profil talqin qilinmaydi/i, 'красный — «профиль не толкуется»');
+    assert.match(tx, /Diqqat savollarida xato: 2 \(2 ta savoldan\)/, 'причины словами: ошибки во внимательности…');
+    assert.match(tx, /Qarama-qarshi fikrlarning 3 juftidan 3 tasida ziddiyat/, '…противоречия в парах');
+    assert.match(tx, /rad etish uchun asos emas/, 'не основание для отказа');
+    assert.ok(await box.locator('.qn-q-why li').count() <= 3, 'не больше трёх причин');
+    await box.locator('.qn-q-raw summary').click();
+    const raw = await box.locator('.qn-q-raw').innerText();
+    assert.match(raw, /Javoblar orasidagi vaqt \(mediana\)\s*\d+(,\d+)? s/, 'сырые значения — в панели');
+    assert.match(raw, /Eng uzun bir xil javoblar seriyasi\s*13/, '13 одинаковых подряд'); }
+  await shot(A, 'savolnoma-javoblar-sifati');
+  A.once('dialog', d => d.accept());
+  await A.locator('.qn-ans .qn-q-retake').click(); await settle(A);
+  { const qa = srv.g.state().users.find(u => u.id === emp.id).qa;
+    assert.ok(qa.retake && qa.prev && qa.prev.answers[tq.at.id] === 5, 'первая попытка — в qa.prev');
+    assert.ok(!(tq.at.id in qa.answers) && qa.answers[srv.g.state().settings.questionnaire.questions[0].id], 'ответов теста нет, анкета на месте'); }
+  assert.match(await A.locator('.qn-ans .qn-q').innerText(), /Testni qayta topshirish so‘ralgan/);
+  assert.equal(await A.locator('.qn-ans .qn-q-retake').count(), 0, 'кнопки больше нет');
+  await A.locator('.qn-ans .lor-modal-x').click();
+  // сотрудник проходит тест заново: с первого раздела, где у теста нет ответа, с пояснением «Rahbariyat … so‘radi»
+  await E.reload({ waitUntil: 'networkidle' }); await watchSync(E);
+  await E.locator('.qn-wiz').waitFor({ timeout: 8000 });
+  assert.match(await E.locator('.qn-step .qn-retake').innerText(), /yana bir marta topshirishingizni so‘radi/);
+  for (let k = 0; k < 12 && !(await E.locator('.qn-done').count()); k++) {
+    const fs = E.locator('.qn-step .qn-field:not(.is-done)'), n = await fs.count();
+    // у теста — оценки 1–5 и вопрос с баллами шкалы (плитки «Ofisda / Masofadan» — тоже пункт теста)
+    for (let i = 0; i < n; i++) {
+      const f = fs.nth(0), sc = f.locator('.qn-sc'), tl = f.locator('.qn-tile');
+      if (await sc.count()) await sc.nth(k % 2 ? 1 : 3).click(); else if (await tl.count()) await tl.first().click(); else break;
+      await E.waitForTimeout(30);
+    }
+    await E.locator('.qn-page-foot .lor-btn-primary').click(); await E.waitForTimeout(250);
+  }
+  await E.locator('.qn-done').waitFor({ timeout: 5000 }); await settle(E);
+  await E.locator('.qn-done .lor-btn-primary').click();
+  { const qa = srv.g.state().users.find(u => u.id === emp.id).qa;
+    assert.ok(!qa.retake && qa.retakeAt && qa.prev && typeof qa.answers[tq.at.id] === 'number', 'отправил заново: обе попытки хранятся'); }
+  await A.reload({ waitUntil: 'networkidle' }); await watchSync(A);
+  await nav(A, 'cms'); await A.locator('.lor-tab').filter({ hasText: 'Savolnoma' }).click(); await A.waitForTimeout(300);
+  await A.locator('.qn-tbl tbody tr').first().click();
+  await A.locator('.qn-ans .qn-q').waitFor({ timeout: 5000 });
+  assert.match(await A.locator('.qn-ans .qn-q-prev').innerText(), /Birinchi urinish .*Profil talqin qilinmaydi/, 'первая попытка — строкой');
+  assert.equal(await A.locator('.qn-ans .qn-q-retake').count(), 0, 'повтор — только один раз');
+  await A.locator('.qn-ans .lor-modal-x').click();
+  await A.locator('.lor-tab').filter({ hasText: 'Darslar' }).click();
+  assert.deepEqual(await rejected(E), [], 'сервер принял ответы, время и повтор сотрудника');
+  assert.deepEqual(await rejected(A), [], 'сервер принял просьбу пройти тест заново');
+  step('«Javoblar sifati»: [diqqat] [tekshiruv] [samimiylik] [juft] из текста; «5» подряд и быстро — «shoshilmang», у SOP — «Profil talqin qilinmaydi» с причинами и показателями; повтор теста — один раз, обе попытки хранятся');
 
   // ---------- «Lavozim va bo‘limlar»: CEO добавляет должность и отдел; SOP-менеджер выбирает их у нового сотрудника, сам список не меняет ----------
   await C.reload({ waitUntil: 'networkidle' }); await watchSync(C);

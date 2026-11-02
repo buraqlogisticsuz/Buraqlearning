@@ -394,7 +394,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
      Ответы — в карточке сотрудника: users[].qa = { answers: { <id вопроса>: текст | [варианты] | 1…5 }, at — когда отправил }.
      Чужие карточки сотрудникам не уходят (сервер: PUBLIC_USER) — ответы видят сам сотрудник, CEO, SOP-менеджер и руководитель.
      Должен заполнить, пока не ответил на все обязательные вопросы: добавили новый обязательный — спросит снова, с прежними ответами */
-  var QN_TYPES = ['long', 'text', 'one', 'many', 'scale', 'date', 'grid', 'consent', 'note', 'section'];
+  /* attn — пункт на внимательность (оценка 1–5 с ожидаемым ответом x.expect, в шкалы не входит, см. «Javoblar sifati») */
+  var QN_TYPES = ['long', 'text', 'one', 'many', 'scale', 'attn', 'date', 'grid', 'consent', 'note', 'section'];
   /* ответ в карточку профиля (prof): анкета — первой, профиль потом подставит то, что уже написано */
   var QN_PROF = ['name', 'birth', 'phone', 'telegram', 'email', 'address', 'passport', 'emg'];
   function qnOf(db) { var q = db.settings && db.settings.questionnaire; return q && q.on !== false && qnAsk(q).length ? q : null; }
@@ -445,14 +446,15 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var v = (a || {})[w.q];
     return Array.isArray(v) ? v.some(function (o) { return w.any.indexOf(o) >= 0; }) : w.any.indexOf(v) >= 0;
   }
-  function qnDone(q, u) { var a = (u.qa && u.qa.answers) || {}, c = qnCons(u); return !!(u.qa && u.qa.at) && qnAsk(q).every(function (x) { return !x.req || !qnShowIf(x, a, c) || qnFilled(x, a[x.id]); }); }
+  /* qa.retake — CEO или SOP-менеджер попросил пройти тест ещё раз: пока не отправил снова — «к заполнению» */
+  function qnDone(q, u) { var a = (u.qa && u.qa.answers) || {}, c = qnCons(u); return !!(u.qa && u.qa.at) && !u.qa.retake && qnAsk(q).every(function (x) { return !x.req || !qnShowIf(x, a, c) || qnFilled(x, a[x.id]); }); }
   function qnDue(db, u) { var q = qnOf(db); return !!(q && u && u.role === 'employee' && !qnDone(q, u)); }
   /* «сначала анкета»: пока не отправлена — вместо программы страница анкеты */
   function qnGate(db, u) { var q = qnOf(db); return !!(q && q.first && qnDue(db, u)); }
   function qnDate(v) { var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(v || '')); return m ? m[3] + '.' + m[2] + '.' + m[1] : String(v || ''); }
   function qnText(x, v) {
     if (!qnHas(v)) return '';
-    if (x.type === 'scale') return v + ' / 5';
+    if (x.type === 'scale' || x.type === 'attn') return v + ' / 5';
     if (x.type === 'date') return qnDate(v);
     if (x.type === 'consent') return v === true ? '✓' : '';
     if (x.type === 'grid') return (x.options || []).filter(function (r) { return v[r]; }).map(function (r) { return r + ': ' + v[r]; }).join('; ');
@@ -486,7 +488,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   /* погрешность на экране (±, в баллах 1–5) — пока заглушка. Когда наберётся ~50 заполнений, по каждой шкале считать
      α Кронбаха и SEM = SD × √(1 − α), показывать её вместо 0,3, а QN_DELTA пересчитать: Δ = 1,28 × SEM × √2 */
   var QN_SEM = 0.3;
-  function qnScored(x) { return !!x.scale && (x.type === 'one' || x.type === 'many' || x.type === 'scale'); }
+  function qnScored(x) { return !!x.scale && !x.infreq && (x.type === 'one' || x.type === 'many' || x.type === 'scale'); }
   function qnPts(x, v) {
     if (!qnHas(v)) return null;
     if (x.type === 'scale') return x.rev ? 6 - v : v;
@@ -584,6 +586,122 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     };
   }
   function qnTmText(t, ta) { if (!ta) return ''; var x = qnTmParts(t, ta); return x.kind + (x.detail ? ': ' + x.detail : '') + (x.weak ? '; ' + x.weak : ''); }
+  /* ---------- «Javoblar sifati» — проверки качества ответов в тесте (не людей): светофор с причинами словами, без балла
+     0–100 и никогда не основание для отказа. Пункты теста 1–5 (qnQItem) в порядке показа: скорость — медиана времени между
+     ответами (u.qa.meta.rt, мс; пишет окно анкеты), самая длинная серия одинаковых, доля «3», обратные пары (x.pair:
+     d = |a − (6 − b)|, meanD, gross — пар с d ≥ 3), согласие со всем (acq = среднее (a + b) / 2 − 3), внимательность
+     (attn: ответ ≠ x.expect — ошибка; x.infreq: «4–5» — ошибка, «3» — пол-ошибки). Красный — хоть один красный или три
+     жёлтых. Что посчитать нельзя (у старых ответов нет времени, пар нет или мало, мало ответов) — пропускается, и об этом
+     сказано (skip). «Слишком хорошо» (x.sd) — отдельная пометка «suhbatda aniqlang», в светофор не входит, из баллов не
+     вычитается. Пункты attn и x.infreq в шкалы не входят */
+  /* пороги — СТАРТОВЫЕ, условные: после 100–200 заполненных тестов перенастроить по своим данным (жёлтый ≈ 95-й, красный ≈
+     99-й процентиль; meanD не ниже 1,2; «случайные» и «однокнопочные» наборы красный должен ловить на 80–90%) */
+  var QN_Q = {
+    gap: 300000,                  /* паузы длиннее 5 минут не считаем (время скрытой вкладки — тоже) */
+    minRt: 5,                     /* меньше замеров времени — скорость не считается */
+    t: [2, 1],                    /* медиана секунд между ответами: < 2 — жёлтый, < 1 — красный */
+    fastMs: 1000, fastShare: 0.2, /* ответов быстрее 1 с больше 20% (10 из 50) — жёлтый */
+    hint: 5,                      /* столько ответов подряд быстрее 1 с — мягкая подсказка «shoshilmang» */
+    minItems: 10,                 /* меньше ответов 1–5 — серия и доля «3» не считаются */
+    run: [10, 15], mid: [0.6, 0.9], meanD: [1.2, 1.5], gross: [3, 4], minPairs: 3, acq: [0.6, 1], attn: [0.5, 1.5],
+    ambers: 3,                    /* столько жёлтых сразу — красный */
+    sd: 4 / 6, sdMin: 3           /* «5» у 4 из 6 пунктов «слишком хорошо» (от 3 отвеченных) — пометка */
+  };
+  var QN_Q_ORDER = ['run', 'attn', 'pairs', 'speed', 'mid', 'acq'];
+  /* пункт теста 1–5: на внимательность или оценка, которая что-то измеряет (шкала, проверка, пара, «слишком хорошо»);
+     оценка без шкалы в анкете («оцените свой Excel») — не тест */
+  function qnQItem(x) { return x.type === 'attn' || (x.type === 'scale' && !!(x.scale || x.infreq || x.sd || x.pair)); }
+  /* ответы теста (уходят в qa.prev при повторе): пункты 1–5 и вопросы с баллами шкал */
+  function qnTestItem(x) { return qnQItem(x) || qnScored(x); }
+  /* обратные пары: [x, y] без повторов, оба — оценки 1–5 */
+  function qnQPairs(q) {
+    var by = {}, seen = {}, out = [];
+    qnAsk(q).forEach(function (x) { if (x.type === 'scale') by[x.id] = x; });
+    qnAsk(q).forEach(function (x) {
+      var y = x.type === 'scale' && x.pair ? by[x.pair] : null, k;
+      if (!y || y === x || seen[k = [x.id, y.id].sort().join('|')]) return;
+      seen[k] = 1; out.push([x, y]);
+    });
+    return out;
+  }
+  /* { level: green | amber | red | na, n, ix: [{ k, lv, … }], why: [до 3 сработавших], skip: [speed | pattern | pairs | attn],
+     sd: { n, k, flag } | null, v: сырые значения } или null — ответов 1–5 нет */
+  function qnQuality(q, ans, meta) {
+    var a = ans || {}, rt = (meta && meta.rt) || {}, C = QN_Q, E = 1e-9;
+    var got = qnAsk(q).filter(function (x) { return qnQItem(x) && qnShowIf(x, a) && typeof a[x.id] === 'number'; });
+    var vals = got.map(function (x) { return a[x.id]; }), n = vals.length;
+    if (!n) return null;
+    var v = { n: n, changes: meta && +meta.changes || 0 }, ix = [], skip = [];
+    var add = function (k, red, amber, o) { ix.push(Object.assign({ k: k, lv: red ? 'red' : amber ? 'amber' : 'green' }, o)); };
+    var ts = got.map(function (x) { return +rt[x.id]; }).filter(function (m) { return m > 0 && m <= C.gap; }).sort(function (x, y) { return x - y; });
+    if (ts.length >= C.minRt) {
+      var mi = ts.length >> 1, t = (ts.length % 2 ? ts[mi] : (ts[mi - 1] + ts[mi]) / 2) / 1000, fast = ts.filter(function (m) { return m < C.fastMs; }).length;
+      v.t = t; v.fast = fast; v.nt = ts.length;
+      add('speed', t < C.t[1], t < C.t[0] || fast > C.fastShare * ts.length + E, { t: t, fast: fast, nt: ts.length });
+    } else skip.push('speed');
+    if (n >= C.minItems) {
+      var run = 1, mx = 1;
+      for (var i = 1; i < n; i++) { run = vals[i] === vals[i - 1] ? run + 1 : 1; if (run > mx) mx = run; }
+      var mid = vals.filter(function (z) { return z === 3; }).length / n;
+      v.run = mx; v.mid = mid;
+      add('run', mx >= C.run[1], mx >= C.run[0], { run: mx });
+      add('mid', mid >= C.mid[1] - E, mid >= C.mid[0] - E, { mid: mid });
+    } else skip.push('pattern');
+    var ps = qnQPairs(q).filter(function (pr) { return got.indexOf(pr[0]) >= 0 && got.indexOf(pr[1]) >= 0; });
+    if (ps.length >= C.minPairs) {
+      var d = ps.map(function (pr) { return Math.abs(a[pr[0].id] - (6 - a[pr[1].id])); });
+      var meanD = d.reduce(function (s, z) { return s + z; }, 0) / d.length, gross = d.filter(function (z) { return z >= 3; }).length;
+      var acq = ps.reduce(function (s, pr) { return s + (a[pr[0].id] + a[pr[1].id]) / 2; }, 0) / ps.length - 3;
+      v.meanD = meanD; v.gross = gross; v.np = ps.length; v.acq = acq;
+      add('pairs', meanD >= C.meanD[1] - E || gross >= C.gross[1], meanD >= C.meanD[0] - E || gross >= C.gross[0], { meanD: meanD, gross: gross, np: ps.length });
+      add('acq', Math.abs(acq) >= C.acq[1] - E, Math.abs(acq) >= C.acq[0] - E, { acq: acq });
+    } else skip.push('pairs');
+    var ck = got.filter(function (x) { return x.type === 'attn' ? +x.expect >= 1 && +x.expect <= 5 : !!x.infreq; });
+    if (ck.length) {
+      var err = ck.reduce(function (s, x) { var z = a[x.id]; return s + (x.type === 'attn' ? (z !== +x.expect ? 1 : 0) : z >= 4 ? 1 : z === 3 ? 0.5 : 0); }, 0);
+      v.attn = err; v.na = ck.length;
+      add('attn', err >= C.attn[1] - E, err >= C.attn[0] - E, { err: err, na: ck.length });
+    } else skip.push('attn');
+    var sds = got.filter(function (x) { return x.type === 'scale' && x.sd; }), s5 = sds.filter(function (x) { return a[x.id] === 5; }).length;
+    var reds = ix.filter(function (x) { return x.lv === 'red'; }).length, ambers = ix.filter(function (x) { return x.lv === 'amber'; }).length;
+    var why = ix.filter(function (x) { return x.lv !== 'green'; }).sort(function (x, y) { return (x.lv === 'red' ? 0 : 1) - (y.lv === 'red' ? 0 : 1) || QN_Q_ORDER.indexOf(x.k) - QN_Q_ORDER.indexOf(y.k); }).slice(0, 3);
+    return { level: !ix.length ? 'na' : reds || ambers >= C.ambers ? 'red' : ambers ? 'amber' : 'green', n: n, ix: ix, why: why, skip: skip,
+      sd: sds.length >= C.sdMin ? { n: s5, k: sds.length, flag: s5 >= C.sd * sds.length - E } : null, v: v };
+  }
+  /* причины словами (1–3) — описывают ответы, а не человека; зелёный — «ответы согласованы…» */
+  function qnQReason(t, x) {
+    var C = QN_Q, num = function (z, k) { return String(Math.round(z * (k || 10)) / (k || 10)).replace('.', t('qn_dec')); };
+    if (x.k === 'speed') return x.t < C.t[0] ? tpl(t('qn_q_speed'), { s: num(x.t, x.t < 1 ? 100 : 10) }) : tpl(t('qn_q_fast'), { n: x.fast, m: x.nt });
+    if (x.k === 'run') return tpl(t('qn_q_run'), { n: x.run });
+    if (x.k === 'mid') return tpl(t('qn_q_mid'), { p: Math.round(x.mid * 100) });
+    if (x.k === 'pairs') return x.gross >= C.gross[0] ? tpl(t('qn_q_gross'), { n: x.gross, m: x.np }) : tpl(t('qn_q_meand'), { d: num(x.meanD), m: x.np });
+    if (x.k === 'acq') return t(x.acq > 0 ? 'qn_q_acq_yes' : 'qn_q_acq_no');
+    return tpl(t('qn_q_attn'), { n: num(x.err), m: x.na });
+  }
+  function qnQWhy(t, r) {
+    if (!r || r.level === 'na') return [];
+    if (r.level === 'green') return [t(r.skip.indexOf('speed') < 0 && r.skip.indexOf('pairs') < 0 ? 'qn_q_ok' : 'qn_q_ok2')];
+    return r.why.map(function (x) { return qnQReason(t, x); });
+  }
+  /* готовые пометки для ИИ (по-узбекски): только чтобы снизить уверенность вывода; зелёный — без пометок */
+  function qnQNotes(r) {
+    var T0 = T('uz'), out = [];
+    if (r && (r.level === 'amber' || r.level === 'red')) out.push(T0('qn_q_t') + ': ' + T0('qn_q_lv_' + r.level) + ' — ' + qnQWhy(T0, r).join('; '));
+    if (r && r.sd && r.sd.flag) out.push(tpl(T0('qn_q_sd'), { n: r.sd.n, m: r.sd.k }));
+    return out;
+  }
+  /* «пройти тест ещё раз» (один раз, решение CEO или SOP-менеджера): ответы теста и их время — в qa.prev, анкета остаётся;
+     qa.retake — пока не отправит снова, анкета «к заполнению» (qnDone). Обе попытки хранятся */
+  function qnRetake(d, uid, q, by, at) {
+    patchUser(d, uid, function (x) {
+      var qa = Object.assign({}, x.qa || {}), ans = Object.assign({}, qa.answers || {}), old = {};
+      qnAsk(q).forEach(function (y) { if (qnTestItem(y) && y.id in ans) { old[y.id] = ans[y.id]; delete ans[y.id]; } });
+      qa.prev = { at: qa.at || null, answers: old, meta: qa.meta || null, asked: at, by: by };
+      qa.answers = ans; qa.meta = { rt: {}, changes: 0 }; qa.retake = { at: at, by: by };
+      x.qa = qa;
+    });
+    if (d.audit) d.audit.unshift({ id: nextId(d), userId: uid, key: 'qn-retake', by: by, at: at });
+  }
   /* один вопрос анкеты. Варианты — плитки с буквами A, B, C (да / нет — крупные ✓ и ✕), несколько — те же плитки;
      таблица (языки) — ряд «таблеток»-уровней, заполненных до выбранного; оценка 1–5 — кружки; дата — календарь;
      согласие — карточка со щитом. Номер вопроса становится галочкой, когда ответ есть */
@@ -658,9 +776,16 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       input,
       p.err ? h('span', { className: 'lor-field-error' }, t('qn_req_err')) : null);
   }
-  function qnFields(q, a, set, errs, t, c) {
+  /* o — { before(x), after(x) }: заметки до и после вопроса (предупреждение перед тестом, «shoshilmang») */
+  function qnFields(q, a, set, errs, t, c, o) {
     var n = 0;
-    return (q.questions || []).map(function (x) { if (!qnShowIf(x, a, c)) return null; if (x.type !== 'section' && x.type !== 'consent' && x.type !== 'note') n++; return h(QnField, { key: x.id, t: t, q: x, n: n, value: a[x.id], err: errs && errs[x.id], onChange: set ? function (v) { set(x.id, v); } : null }); });
+    return (q.questions || []).map(function (x) {
+      if (!qnShowIf(x, a, c)) return null;
+      if (x.type !== 'section' && x.type !== 'consent' && x.type !== 'note') n++;
+      var f = h(QnField, { key: x.id, t: t, q: x, n: n, value: a[x.id], err: errs && errs[x.id], onChange: set ? function (v) { set(x.id, v); } : null });
+      var b = o && o.before ? o.before(x) : null, e = o && o.after ? o.after(x) : null;
+      return (b && b.length) || e ? h(F, { key: x.id }, b, f, e) : f;
+    });
   }
   /* анкета: окно поверх программы или (page — «сначала анкета») страница вместо программы.
      Обязательная — черновик сохраняется сам (через 1,5 с после правки) и по «Keyinroq»; «Yuborish» — когда все
@@ -703,8 +828,10 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     /* шаг согласий — перед первым разделом, когда анкету и так нужно заполнить, а согласия нет или оно старой версии */
     var needCons = due && !qnConsOk(u), cv = useState({ base: false, ai: false, special: false }), cErr = useState(false);
     var a = useState(function () { return Object.assign({}, prev); }), errs = useState({}), box = useRef(null), saved = useRef(JSON.stringify(prev)), draftAt = useState(0), stp = useState(function () {
-      /* начать с первого незаполненного раздела, а если перед ним раздел-пояснение (инструкция теста) — с пояснения */
+      /* начать с первого незаполненного раздела, а если перед ним раздел-пояснение (инструкция теста) — с пояснения;
+         попросили пройти тест ещё раз — с первого раздела, где у теста нет ответа */
       var st = qnVisSteps(q, prev, cons), i = st.map(function (x) { return x.items.every(function (y) { return !y.req || qnFilled(y, prev[y.id]); }); }).indexOf(false);
+      if (u.qa && u.qa.retake) { var ri = st.map(function (x) { return x.items.some(function (y) { return qnTestItem(y) && !qnFilled(y, prev[y.id]); }); }).indexOf(true); if (ri >= 0) i = ri; }
       if (i < 0) return 0;
       while (i > 0 && st[i - 1].items.every(function (y) { return y.type === 'note'; })) i--;
       return i;
@@ -713,7 +840,45 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var steps = qnVisSteps(q, a[0], cons), num = {}, nn = 0;
     (q.questions || []).forEach(function (x) { if (x.type !== 'section' && x.type !== 'consent' && x.type !== 'note' && vis(x)) num[x.id] = ++nn; });
     var all = qnAsk(q), ask = all.filter(vis), got = ask.filter(function (x) { return qnFilled(x, a[0][x.id]); }).length;
-    function set(id, v) { a[1](function (o) { var n = Object.assign({}, o); n[id] = v; return n; }); if (errs[0][id]) errs[1](function (e) { var n = Object.assign({}, e); delete n[id]; return n; }); }
+    /* «Javoblar sifati»: время между ответами на пункты теста 1–5 — только пока вкладка видна (скрытое время вычитается),
+       паузы длиннее 5 минут не в счёт, первый ответ захода — без времени; сколько раз меняли ответ. Пишется в
+       u.qa.meta = { rt: { id: мс }, changes } вместе с ответами (черновик и отправка). 5 ответов подряд быстрее 1 с —
+       мягкая подсказка под вопросом («shoshilmang»), ничего не блокирует */
+    var hasQ = all.some(qnQItem), pd = useRef(null), fastQ = useState(null), retake = !!(u.qa && u.qa.retake);
+    if (!pd.current) { var m0 = (u.qa && u.qa.meta) || {}; pd.current = { rt: Object.assign({}, m0.rt || {}), ch: +m0.changes || 0, last: 0, hid: 0, hidAt: 0, run: 0 }; }
+    useEffect(function () {
+      function vz() { var s = pd.current; if (document.hidden) s.hidAt = Date.now(); else if (s.hidAt) { s.hid += Date.now() - s.hidAt; s.hidAt = 0; } }
+      document.addEventListener('visibilitychange', vz);
+      return function () { document.removeEventListener('visibilitychange', vz); };
+    }, []);
+    function track(x, v) {
+      var old = a[0][x.id], s = pd.current;
+      if (!due || !qnQItem(x) || typeof v !== 'number' || v === old) return;
+      var now = Date.now(), gap = s.last ? now - s.last - s.hid - (s.hidAt ? now - s.hidAt : 0) : 0;
+      s.last = now; s.hid = 0; if (s.hidAt) s.hidAt = now;
+      if (typeof old === 'number') { s.ch++; return; }
+      if (gap <= 0) return;
+      if (gap <= QN_Q.gap) s.rt[x.id] = Math.round(gap);
+      s.run = gap < QN_Q.fastMs ? s.run + 1 : 0;
+      fastQ[1](s.run >= QN_Q.hint ? x.id : null);
+    }
+    function meta(ans) { var s = pd.current, rt = {}; Object.keys(s.rt).forEach(function (k) { if (k in ans) rt[k] = s.rt[k]; }); return { rt: rt, changes: s.ch }; }
+    var byId = {}; all.forEach(function (x) { byId[x.id] = x; });
+    function set(id, v) { if (byId[id]) track(byId[id], v); a[1](function (o) { var n = Object.assign({}, o); n[id] = v; return n; }); if (errs[0][id]) errs[1](function (e) { var n = Object.assign({}, e); delete n[id]; return n; }); }
+    /* честное предупреждение перед тестом (q.testWarn: свой текст, false — выключено, нет — стандартный на языке
+       сотрудника) — у первого вопроса шкал темперамента (или первого пункта теста 1–5); «пройдите ещё раз» — у первого
+       пункта теста без ответа. На странице по шагам — сверху шага, в окне — перед вопросом */
+    var tpm = q.temper, isTm = function (x) { return x.type === 'scale' && !!x.scale && qnHasTemper(q) && (tpm.mode === 'max' ? !!(tpm.map || {})[x.scale] : x.scale === tpm.e || x.scale === tpm.n); };
+    var vq = (q.questions || []).filter(vis), wq = vq.filter(isTm)[0] || vq.filter(qnQItem)[0];
+    var warnTxt = q.testWarn === false ? '' : String(q.testWarn || '').trim() || t('qn_warn_def');
+    var warnId = due && warnTxt && wq ? wq.id : null, rk = useRef(undefined);
+    if (rk.current === undefined) { var rq = retake ? vq.filter(function (x) { return qnTestItem(x) && !qnFilled(x, prev[x.id]); })[0] : null; rk.current = rq ? rq.id : null; }
+    var retakeId = retake ? rk.current : null;
+    var noteOf = function (id) {
+      return [id === retakeId ? h('div', { key: 'rt', className: 'qn-note-box qn-retake' }, h(Ico, { name: 'refresh', size: 20 }), h('div', null, h('p', null, t('qn_retake_note')))) : null,
+        id === warnId ? h('div', { key: 'w', className: 'qn-note-box qn-warn' }, h(Ico, { name: 'shieldok', size: 20 }), h('div', null, paras(warnTxt))) : null].filter(Boolean);
+    };
+    var fastNote = function (x) { return fastQ[0] === x.id ? h('p', { key: 'fast', className: 'qn-fast', role: 'status' }, h(Ico, { name: 'clock', size: 16 }), h('span', null, t('qn_fast'))) : null; };
     function answers() {
       var o = Object.assign({}, prev);
       all.forEach(function (x) { var v = a[0][x.id]; if (qnHas(v) && vis(x)) o[x.id] = typeof v === 'string' ? v.trim().slice(0, x.type === 'long' ? 4000 : 500) : v; else delete o[x.id]; });
@@ -723,7 +888,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       var ans = answers(), js = JSON.stringify(ans);
       if (!due || js === saved.current) return;
       saved.current = js;
-      p.update(function (d) { patchUser(d, u.id, function (x) { x.qa = Object.assign({}, x.qa || {}, { answers: ans }); }); });
+      p.update(function (d) { patchUser(d, u.id, function (x) { x.qa = Object.assign({}, x.qa || {}, { answers: ans }, hasQ ? { meta: meta(ans) } : {}); }); });
       draftAt[1](Date.now());
     }
     useEffect(function () { if (!due) return; var tm = setTimeout(draft, 1500); return function () { clearTimeout(tm); }; }, [a[0]]);
@@ -737,7 +902,11 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       }
       var at = Date.now(), ans = answers(), first = !(u.qa && u.qa.at);
       saved.current = JSON.stringify(ans);
-      p.update(function (d) { patchUser(d, u.id, function (x) { x.qa = Object.assign({}, x.qa || {}, { answers: ans, at: at }); }); if (first) d.audit.unshift({ id: nextId(d), userId: u.id, key: 'qn-done', at: at }); });
+      p.update(function (d) {
+        patchUser(d, u.id, function (x) { var was = x.qa && x.qa.retake; x.qa = Object.assign({}, x.qa || {}, { answers: ans, at: at }, hasQ ? { meta: meta(ans) } : {}); delete x.qa.retake; if (was) x.qa.retakeAt = at; });
+        if (first) d.audit.unshift({ id: nextId(d), userId: u.id, key: 'qn-done', at: at });
+        else if (retake) d.audit.unshift({ id: nextId(d), userId: u.id, key: 'qn-retake-done', at: at });
+      });
       if (p.page && p.onSent) { p.onSent(); return; }
       SAY(due ? 'qn_sent' : 'saved'); if (p.onClose) p.onClose();
     }
@@ -820,7 +989,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
               h('span', { className: 'qn-step-ico', 'aria-hidden': true }, h(Ico, { name: cs.sec ? qnSecIco(cs.sec.text) : 'user', size: 30 })),
               h('div', null, h('span', { className: 'lor-eyebrow' }, tpl(t('qn_step_n'), { n: si + 1, m: steps.length })), h('h2', { className: 'lor-h', id: 'qn-h' }, secName(cs)))),
             si === 0 ? h('div', { className: 'qn-step-intro' }, String(q.intro || '').trim() ? h('div', { className: 'intro-text qn-intro' }, paras(q.intro)) : null, h('p', { className: 'lor-sm lor-muted qn-note' }, t('qn_note_emp'))) : null,
-            h('div', { className: 'qn-list' }, cs.items.map(function (x) { return h(QnField, { key: x.id, t: t, q: x, n: num[x.id], value: a[0][x.id], err: errs[0][x.id], onChange: function (v) { set(x.id, v); } }); })),
+            [].concat.apply([], cs.items.map(function (x) { return noteOf(x.id); })),
+            h('div', { className: 'qn-list' }, cs.items.map(function (x) { var f = h(QnField, { key: x.id, t: t, q: x, n: num[x.id], value: a[0][x.id], err: errs[0][x.id], onChange: function (v) { set(x.id, v); } }), fn = fastNote(x); return fn ? h(F, { key: x.id }, f, fn) : f; })),
             h('div', { className: 'qn-page-foot' },
               si > 0 ? h(Btn, { variant: 'ghost', onClick: function () { draft(); go(si - 1); } }, t('prev')) : h('span'),
               h('span', { className: 'lor-sm lor-muted qn-saved' }, draftAt[0] ? '✓ ' + t('qn_draft_saved') : ''),
@@ -832,7 +1002,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         h('span', { className: 'lor-eyebrow' }, due ? t('qn_banner_t') : t('qn_tab')),
         head, prog,
         own ? h('section', { className: 'qn-own' }, h('span', { className: 'lor-eyebrow' }, t('qn_own_t')), h(QnProfile, { t: t, q: q, res: own, ta: qnTemperAll(q, own) })) : null,
-        h('div', { className: 'qn-list' }, qnFields(q, a[0], set, errs[0], t, cons)),
+        h('div', { className: 'qn-list' }, qnFields(q, a[0], set, errs[0], t, cons, { before: function (x) { return noteOf(x.id); }, after: fastNote })),
         !due && u.qa && u.qa.at ? h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, '✓ ' + tpl(t('qn_sent_on'), { d: fmt(u.qa.at, t) })) : null,
         h('div', { className: 'lor-modal-actions' },
           h(Btn, { variant: 'ghost', onClick: later }, due ? t('clk_later') : t('close')),
@@ -7456,7 +7626,9 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       if (m) l = m[1];
       var marks = [];
       l = l.replace(/\s*\[([^\]]+)\]/g, function (_, x) { marks.push(x.trim()); return ''; }).trim();
+      var num = /^(\d+)\s*[.)]/.exec(l);
       cur = qnNew('long', l.replace(/^\d+\s*[.)]\s*/, '').slice(0, 500));
+      if (num) cur._num = +num[1];
       marks.forEach(function (mk) {
         var low = mk.toLowerCase(), base = low.split(':')[0].trim(), rest = mk.indexOf(':') > 0 ? mk.slice(mk.indexOf(':') + 1).trim() : '';
         if (QN_MARK[base]) {
@@ -7470,8 +7642,20 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         else if (/^(teskari|reverse|обратн)/.test(low)) cur.rev = true;
         else if (/^(profil|profile|профиль)$/.test(base) && QN_PROF.indexOf(rest) >= 0) cur.prof = rest;
         else if (/^(agar|если|if)$/.test(base) && rest) cur._when = rest.split('|').map(function (c) { return c.trim().toLowerCase(); }).filter(Boolean);
+        /* «Javoblar sifati»: [diqqat: 2] — пункт на внимательность, [tekshiruv] — «почти никто не скажет 4–5»,
+           [samimiylik] — «слишком хорошо», [juft: N] — обратная пара к вопросу N, [shkala: Nomi] — шкала у самого вопроса */
+        else if (/^(diqqat|внимание|attention)$/.test(base) && /^[1-5]$/.test(rest)) { cur.type = 'attn'; cur.typed = true; cur.expect = +rest; }
+        else if (/^(tekshiruv|проверка|infrequency)$/.test(base)) cur.infreq = true;
+        else if (/^(samimiylik|искренность|candor)$/.test(base)) cur.sd = true;
+        else if (/^(juft|пара|pair)$/.test(base) && /^\d+$/.test(rest)) cur._pair = +rest;
+        else if (/^(shkala|шкала)$/.test(base) && rest) cur._sc = rest;
       });
-      if (cur.type === 'scale') { if (!cur.labels && labels && labels.length === 5) cur.labels = labels.slice(); if (sec && sec._scale) cur.scale = sec._scale; }
+      if (cur.type === 'attn') { delete cur.infreq; delete cur.sd; delete cur._pair; delete cur._sc; }
+      else if (cur.infreq || cur.sd || cur._pair) cur.type = 'scale';
+      if (cur.type === 'scale' || cur.type === 'attn') { if (!cur.labels && labels && labels.length === 5) cur.labels = labels.slice(); }
+      /* шкала — своя ([shkala: …]) или раздела; у проверки — никакой, у «слишком хорошо» — только своя */
+      var sid = cur._sc ? scaleOf(cur._sc).id : !cur.sd && sec && sec._scale ? sec._scale : null;
+      if (cur.type === 'scale' && !cur.infreq && sid) cur.scale = sid;
       if (!cur.scale) delete cur.rev;
       out.push(cur);
     });
@@ -7485,7 +7669,16 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       }
       delete x._when;
     });
-    out.forEach(function (x) { delete x.typed; delete x._scale; if (x.type === 'grid' && !(x.cols || []).length) x.cols = ['1', '2', '3', '4', '5']; });
+    /* [juft: N] — вопрос с номером «N.» в тексте (ближайший, если номера повторяются), а без такого номера — N-й вопрос
+       текста (разделы, пояснения и согласия не считаются); пара — только с оценкой 1–5 */
+    var qs = out.filter(function (x) { return x.type !== 'section' && x.type !== 'note' && x.type !== 'consent'; });
+    out.forEach(function (x) {
+      if (x._pair == null) return;
+      var i = out.indexOf(x), c = qs.filter(function (y) { return y._num === x._pair && y !== x && y.type === 'scale'; }).sort(function (a, b) { return Math.abs(out.indexOf(a) - i) - Math.abs(out.indexOf(b) - i); });
+      var y = c.length ? c[0] : qs[x._pair - 1];
+      if (y && y !== x && y.type === 'scale') x.pair = y.id;
+    });
+    out.forEach(function (x) { delete x.typed; delete x._scale; delete x._num; delete x._pair; delete x._sc; if (x.type === 'grid' && !(x.cols || []).length) x.cols = ['1', '2', '3', '4', '5']; });
     return { questions: out, title: meta.title, intro: meta.intro, first: meta.first, scales: scales, temper: Object.keys(map).length ? { mode: 'max', map: map } : null };
   }
   function qnFromText(s) { return qnParse(s).questions; }
@@ -7508,10 +7701,12 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     /* склонность — словами («Yetakchi moyillik: …»), шкала — среднее 1–5 по отвеченным или «kam javob (n / m)» */
     /* согласие — словами: «AI: ha · Maxfiy: yo‘q · v1, 02.11.2026» или «rozilik so‘ralmagan» */
     var cons = function (u) { var c = qnCons(u); return !c ? T0('qn_cons_none') : ['base', 'ai', 'sp'].map(function (k) { var on = c[k === 'sp' ? 'special' : k] === true; return T0('qn_cons_c_' + k) + ': ' + T0(on ? 'qn_cons_yes' : 'qn_cons_no'); }).join(' · ') + ' · v' + (c.v || 1) + (c.at ? ', ' + fmtDate(c.at) : ''); };
-    var rows = [['ID', 'Xodim', 'Lavozim', 'Bo‘lim', 'Yuborilgan', T0('qn_cons_box_t')].concat(tm ? [T0('qn_tm_card')] : [], scs.map(function (s) { return s.name + ' (1–5)'; }), scs.map(function (s) { return s.name; }), ask.map(function (x) { return x.text; }))];
+    /* «Javoblar sifati» — словами и с причинами (для перенастройки порогов нужны все показатели — они в карточке) */
+    var hq = ask.some(qnQItem), qual = function (u) { var r = qnQuality(q, u.qa.answers, u.qa.meta); return !r ? '' : T0('qn_q_lv_' + r.level) + (qnQWhy(T0, r).length ? ': ' + qnQWhy(T0, r).join('; ') : '') + (r.sd && r.sd.flag ? '; ' + tpl(T0('qn_q_sd'), { n: r.sd.n, m: r.sd.k }) : ''); };
+    var rows = [['ID', 'Xodim', 'Lavozim', 'Bo‘lim', 'Yuborilgan', T0('qn_cons_box_t')].concat(tm ? [T0('qn_tm_card')] : [], hq ? [T0('qn_q_t')] : [], scs.map(function (s) { return s.name + ' (1–5)'; }), scs.map(function (s) { return s.name; }), ask.map(function (x) { return x.text; }))];
     db.users.filter(function (u) { return u.role === 'employee' && u.qa; }).forEach(function (u) {
       var a = u.qa.answers || {}, res = qnScore(q, u), ta = qnTemperAll(q, res);
-      rows.push([u.id, u.name, u.position || '', u.department || '', u.qa.at ? fmtDate(u.qa.at) : '—', cons(u)].concat(tm ? [qnTmText(T0, ta)] : [], res.map(function (r) { return !r.n ? '' : r.few ? T0('qn_few') + ' (' + r.n + ' / ' + r.total + ')' : qnNum(T0, r.mean); }), res.map(function (r) { return r.n && !r.few ? r.band : ''; }), ask.map(function (x) { return qnText(x, a[x.id]); })));
+      rows.push([u.id, u.name, u.position || '', u.department || '', u.qa.at ? fmtDate(u.qa.at) : '—', cons(u)].concat(tm ? [qnTmText(T0, ta)] : [], hq ? [qual(u)] : [], res.map(function (r) { return !r.n ? '' : r.few ? T0('qn_few') + ' (' + r.n + ' / ' + r.total + ')' : qnNum(T0, r.mean); }), res.map(function (r) { return r.n && !r.few ? r.band : ''; }), ask.map(function (x) { return qnText(x, a[x.id]); })));
     });
     return '﻿' + rows.map(function (r) { return r.map(cell).join(';'); }).join('\r\n');
   }
@@ -7593,7 +7788,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
      профиля» с именем, телефоном, Telegram, почтой, адресом, паспортом, контактом родных; дата рождения — возрастной группой;
      из свободного текста убираются телефоны, почта, @-ники и ссылки на мессенджеры */
   var QN_AI_PROF_SKIP = ['name', 'phone', 'telegram', 'email', 'address', 'passport', 'emg'];
-  function qnAiSkip(x) { return !!x.secret || x.type === 'consent' || x.type === 'note' || x.type === 'section' || QN_AI_PROF_SKIP.indexOf(x.prof) >= 0; }
+  /* пункты на внимательность и проверки ([diqqat], [tekshiruv]) — тоже нет: о них в ИИ уходят только готовые пометки качества */
+  function qnAiSkip(x) { return !!x.secret || x.type === 'consent' || x.type === 'note' || x.type === 'section' || x.type === 'attn' || !!x.infreq || QN_AI_PROF_SKIP.indexOf(x.prof) >= 0; }
   function qnIsBirth(x) { return x.prof === 'birth' || (x.type === 'date' && /tug.?il|рожд|birth|出生/i.test(String(x.text || ''))); }
   function qnAgeGroup(v, now) {
     var s = String(v || ''), m = /(\d{4})-(\d{1,2})-(\d{1,2})/.exec(s), y, mo = 1, d = 1;
@@ -7690,7 +7886,9 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   function qnAiRun(o) {
     if (!qnAiAllowed(o.u)) { var e0 = new Error('no consent'); e0.code = 'no_consent'; return Promise.reject(e0); }
     var res = qnScore(o.q, o.u), ta = qnTemperAll(o.q, res), measured = !!ta || res.some(function (r) { return r.n; });
-    return o.sampler.json(qnAiPrompt(o.q, o.u, res, ta, o.lang, { notes: o.notes }), { signal: o.signal }).then(function (r) {
+    /* пометки «Javoblar sifati» (жёлтый / красный, «слишком хорошо») — готовым списком, только чтобы снизить уверенность */
+    var notes = o.notes || qnQNotes(qnQuality(o.q, o.u.qa && o.u.qa.answers, o.u.qa && o.u.qa.meta));
+    return o.sampler.json(qnAiPrompt(o.q, o.u, res, ta, o.lang, { notes: notes }), { signal: o.signal }).then(function (r) {
       var x = qnAiClean(r, { measured: measured, emp: o.u.role === 'employee' && o.u.status !== 'candidate' }); if (!x) { var e = new Error('bad json'); e.code = 'invalid_json'; throw e; }
       var at = Date.now(), scores = res.filter(function (z) { return z.n; }).map(function (z) { return { s: z.s.id, m: z.few ? null : Math.round(z.mean * 100) / 100, n: z.n }; });
       o.update(function (db) { patchUser(db, o.u.id, function (z) { z.qaReport = { at: at, by: o.by, v: QN_AI_V, auto: !!o.auto, lang: o.lang, scores: scores, data: x }; }); });
@@ -7850,6 +8048,41 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     return h('span', { className: 'qn-cons-chips', title: tpl(t('qn_cons_c_title'), { v: c.v || 1, d: c.at ? fmtDate(c.at) : '—' }) },
       c.base === true ? null : chip('base', false, t('qn_cons_base_t')), chip('ai', c.ai === true, t('qn_cons_ai_t')), chip('sp', c.special === true, t('qn_cons_special_t')));
   }
+  /* «Javoblar sifati» — рядом с результатом теста в карточке (CEO, SOP-менеджер, руководитель; не в списке и не для
+     сортировки): значок словами и 1–3 причины, что не посчитано и почему, «слишком хорошо» — отдельно; сырые значения —
+     в раскрывающейся панели. Красный — «Qayta topshirishni so‘rash» (один раз, не руководителю; обе попытки хранятся:
+     qa.prev); автоматического отказа нет никогда */
+  function QnQual(p) {
+    var t = p.t, u = p.u, qa = u.qa || {}, r = qnQuality(p.q, qa.answers, qa.meta), prev = qa.prev && qa.prev.answers ? qa.prev : null;
+    var pr = prev ? qnQuality(p.q, prev.answers, prev.meta) : null;
+    if (!r && !pr && !qa.retake) return null;
+    function retake() {
+      if (!window.confirm(t('qn_q_retake_q'))) return;
+      var at = Date.now(), me = p.user.id;
+      p.update(function (d) { qnRetake(d, u.id, p.q, me, at); });
+      if (p.say) p.say(t('qn_q_retake_ok'));
+    }
+    var lv = function (x) { return h('span', { className: cx('qn-q-lv', 'is-' + x.level) }, h('i', { 'aria-hidden': true }), t('qn_q_lv_' + x.level)); };
+    var num = function (z, k) { return z == null ? '—' : String(Math.round(z * (k || 10)) / (k || 10)).replace('.', t('qn_dec')); };
+    var raw = r ? [['qn_q_r_n', r.v.n], ['qn_q_r_t', r.v.t == null ? '—' : num(r.v.t, 100) + ' s'], ['qn_q_r_fast', r.v.nt ? r.v.fast + ' / ' + r.v.nt : '—'], ['qn_q_r_run', r.v.run == null ? '—' : r.v.run],
+      ['qn_q_r_mid', r.v.mid == null ? '—' : Math.round(r.v.mid * 100) + '%'], ['qn_q_r_pairs', r.v.np ? num(r.v.meanD, 100) + ' · ' + r.v.gross + ' / ' + r.v.np : '—'],
+      ['qn_q_r_acq', r.v.np ? (r.v.acq > 0 ? '+' : '') + num(r.v.acq, 100) : '—'], ['qn_q_r_attn', r.v.na ? num(r.v.attn) + ' / ' + r.v.na : '—'],
+      ['qn_q_r_sd', r.sd ? r.sd.n + ' / ' + r.sd.k : '—'], ['qn_q_r_ch', r.v.changes]] : [];
+    return h('section', { className: cx('qn-q', r && 'is-' + r.level) },
+      h('div', { className: 'qn-q-head' },
+        h('span', { className: 'lor-eyebrow' }, t('qn_q_t')),
+        r ? lv(r) : null,
+        !p.ro && r && r.level === 'red' && !prev && !qa.retake ? h(Btn, { variant: 'outline', size: 'sm', className: 'qn-q-retake qn-noprint', onClick: retake }, t('qn_q_retake')) : null),
+      r ? h('ul', { className: 'qn-q-why' }, qnQWhy(t, r).map(function (x, i) { return h('li', { key: i }, x); })) : null,
+      r && r.skip.length ? h('p', { className: 'lor-sm lor-muted qn-q-skip' }, t('qn_q_skip') + ': ' + r.skip.map(function (k) { return t('qn_q_sk_' + k); }).join('; ') + '.') : null,
+      r && r.sd && r.sd.flag ? h('p', { className: 'qn-q-sd' }, h(Ico, { name: 'question', size: 16 }), h('span', null, tpl(t('qn_q_sd'), { n: r.sd.n, m: r.sd.k }))) : null,
+      qa.retake ? h('p', { className: 'lor-sm qn-q-wait' }, tpl(t('qn_q_retake_on'), { d: fmt(qa.retake.at, t) })) : null,
+      pr ? h('p', { className: 'lor-sm lor-muted qn-q-prev' }, tpl(t('qn_q_prev'), { d: prev.at ? fmtDate(prev.at) : '—', lv: t('qn_q_lv_' + pr.level) }) + (qnQWhy(t, pr).length && pr.level !== 'green' ? ': ' + qnQWhy(t, pr).join('; ') : '')) : null,
+      r ? h('details', { className: 'qn-q-raw' }, h('summary', null, t('qn_q_raw')),
+        h('dl', null, raw.map(function (z) { return h('div', { key: z[0] }, h('dt', null, t(z[0])), h('dd', null, z[1])); })),
+        h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('qn_q_calib'))) : null,
+      h('p', { className: 'lor-sm lor-muted qn-q-foot' }, t('qn_q_foot')));
+  }
   /* карточка одного сотрудника — CEO, SOP-менеджер, руководитель: главное, согласия, темперамент и шкалы, вывод ИИ,
      все ответы по разделам; скрытые ответы — по кнопке; «Chop etish» — печать или PDF */
   function QnPerson(p) {
@@ -7887,6 +8120,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
             var ok = a[x.id] === true;
             return h('p', { key: x.id, className: cx('lor-sm', ok ? 'is-ok' : 'is-no') }, (ok ? '✓ ' : '— ') + x.text + (ok && u.qa && u.qa.at ? ' · ' + fmtDate(u.qa.at) + (u.login ? ' · ' + u.login : '') : ''));
           })),
+        h(QnQual, { t: t, q: q, u: u, user: p.user, ro: p.ro, update: p.update, say: p.say }),
         prof ? h(QnProfile, { t: t, q: q, res: res, ta: ta, why: true }) : null,
         h(QnAi, Object.assign({}, p, { q: q, u: u })),
         prof ? null : h('p', { className: 'lor-sm lor-muted qn-disc' }, t('qn_res_hint')),
@@ -7904,13 +8138,18 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var t = p.t, db = p.db, q = p.q, emps = db.users.filter(function (u) { return u.role === 'employee'; }), qs = useState(''), keys = qnKeys(q);
     var sent = emps.filter(function (u) { return u.qa && u.qa.at; }).sort(function (a, b) { return b.qa.at - a.qa.at; }), wait = emps.filter(function (u) { return !(u.qa && u.qa.at); });
     var needle = qs[0].trim().toLowerCase();
-    var rows = sent.map(function (u) { var res = qnScore(q, u); return { u: u, res: res, ta: qnTemperAll(q, res) }; });
+    var rows = sent.map(function (u) { var res = qnScore(q, u); return { u: u, res: res, ta: qnTemperAll(q, res), qq: qnQuality(q, u.qa.answers, u.qa.meta) }; });
     /* по коллективу: у скольких ведущая склонность каждого стиля, у скольких профиль смешанный / без явного лидера / мало ответов */
     var tm = {}; rows.forEach(function (r) { var k = r.ta ? (r.ta.kind === 'lead' ? r.ta.main : r.ta.kind) : ''; if (k) tm[k] = (tm[k] || 0) + 1; });
     var tmCells = QN_TEMPERS.map(function (k) { return { k: k, n: tm[k] || 0, l: tpl(t('qn_tmd_lead'), { t: t('qn_tma_' + k) }) }; })
       .concat(['mixed', 'none', 'between', 'few'].filter(function (k) { return k === 'mixed' || tm[k]; }).map(function (k) { return { k: k, n: tm[k] || 0, l: t('qn_tmk_' + k) }; }));
     var scs = (q.scales || []).map(function (sc, i) { var xs = rows.map(function (r) { return r.res[i]; }).filter(function (r) { return r && r.n && !r.few; }); return { s: sc, avg: xs.length ? xs.reduce(function (s, r) { return s + r.mean; }, 0) / xs.length : null }; });
-    var tmCell = function (r) { if (!r.ta) return '—'; var x = qnTmParts(t, r.ta); return h('span', { className: 'qn-tm-kind' }, h('b', null, x.kind), x.detail ? h('small', null, x.detail) : null); };
+    /* «Javoblar sifati» — маленькой плашкой рядом с результатом (жёлтый / красный, «просили пройти ещё раз»); не сортирует */
+    var qChip = function (r) {
+      var lv = r.qq && (r.qq.level === 'amber' || r.qq.level === 'red') ? r.qq.level : null, w = r.u.qa.retake;
+      return lv || w ? h('span', { className: cx('qn-q-chip', 'is-' + (w ? 'wait' : lv)), title: t('qn_q_t') }, t(w ? 'qn_q_s_wait' : 'qn_q_s_' + lv)) : null;
+    };
+    var tmCell = function (r) { if (!r.ta) return qChip(r) || '—'; var x = qnTmParts(t, r.ta); return h('span', { className: 'qn-tm-kind' }, h('b', null, x.kind), x.detail ? h('small', null, x.detail) : null, qChip(r)); };
     if (!sent.length) return h('section', { className: 'box' }, h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('qn_res_none')), wait.length ? h('div', { className: 'in-wait' }, h('span', { className: 'lor-sm lor-muted' }, t('qn_wait')), wait.map(function (u) { return h('span', { key: u.id, className: 'in-chip' }, u.name); })) : null);
     return h('div', { className: 'qn-res' },
       h('section', { className: 'box qn-team' },
@@ -7939,14 +8178,14 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
               h('th', { scope: 'row' }, h('span', { className: 'qn-tbl-who' }, h(Av, { name: r.u.name, src: r.u.avatar, size: 28 }), h('span', null, h('b', null, r.u.name), h('small', null, r.u.position || ''), h(QnConsChips, { t: t, u: r.u })), r.u.qaReport && r.u.qaReport.data && qnAiAllowed(r.u) ? h('span', { className: 'qn-ai-chip' }, 'AI') : null)),
               qnHasTemper(q) ? h('td', null, tmCell(r)) : null,
               keys.map(function (x) { return h('td', { key: x.id }, qnShow(x, a[x.id], false) || '—'); }),
-              h('td', { className: 'qn-tbl-date' }, fmtDate(r.u.qa.at)));
+              h('td', { className: 'qn-tbl-date' }, fmtDate(r.u.qa.at), qnHasTemper(q) ? null : qChip(r)));
           }))))) : null,
       keys.length ? null : h('div', { className: 'qn-people' }, rows.map(function (r) {
         return h('button', { key: r.u.id, type: 'button', className: 'qn-person', onClick: function () { p.onOpen(r.u.id); } },
           h('span', { className: 'qn-person-top' },
             h(Av, { name: r.u.name, src: r.u.avatar, size: 36 }),
             h('span', { className: 'qn-person-t' }, h('b', null, r.u.name), h('small', null, [r.u.position, fmtDate(r.u.qa.at)].filter(Boolean).join(' · ')), h(QnConsChips, { t: t, u: r.u })),
-            r.ta ? tmCell(r) : null),
+            r.ta || qChip(r) ? tmCell(r) : null),
           r.res.length ? h('span', { className: 'qn-person-sc' }, r.res.filter(function (x) { return x.n; }).map(function (x) { return h('span', { key: x.s.id }, h('i', null, x.s.name), ' ', x.few ? t('qn_few') + ' (' + x.n + '/' + x.total + ')' : qnNum(t, x.mean) + '/5', !x.few && x.band ? ' · ' + x.band : ''); })) : null,
           h('span', { className: 'qn-person-go' }, r.u.qaReport && r.u.qaReport.data && qnAiAllowed(r.u) ? h('span', { className: 'qn-ai-chip' }, 'AI ✓') : null, t('qn_res_open')));
       })),
@@ -7960,13 +8199,13 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   }
   function QnAdmin(p) {
     var t = p.t, db = p.db, q0 = (db.settings && db.settings.questionnaire) || {}, ro = lvlOf(p.user) === 'boss';
-    function init() { return { title: q0.title || '', intro: q0.intro || '', on: q0.on !== false, first: !!q0.first, questions: clone(q0.questions || []), scales: clone(q0.scales || []), temper: q0.temper ? clone(q0.temper) : null }; }
+    function init() { return { title: q0.title || '', intro: q0.intro || '', on: q0.on !== false, first: !!q0.first, questions: clone(q0.questions || []), scales: clone(q0.scales || []), temper: q0.temper ? clone(q0.temper) : null, testWarn: q0.testWarn === false ? false : q0.testWarn || '' }; }
     var f = useState(init), v = f[0], view = useState(qnStat(db).done.length ? 'res' : 'edit');
     var paste = useState(null), err = useState(''), who = useState(null), st = qnStat(db), busy = useState(false);
     function set(k, x) { f[1](function (o) { var n = Object.assign({}, o); n[k] = x; return n; }); err[1](''); }
     function setQs(fn) { f[1](function (o) { return Object.assign({}, o, { questions: fn(o.questions.slice()) }); }); err[1](''); }
     function setScs(fn) { f[1](function (o) { return Object.assign({}, o, { scales: fn(o.scales.slice()) }); }); err[1](''); }
-    function setQ(i, k, x) { setQs(function (a) { a[i] = Object.assign({}, a[i]); a[i][k] = x; if (k === 'type' && (x === 'one' || x === 'many') && (a[i].options || []).length < 2) a[i].options = (a[i].options || []).concat(['', '']).slice(0, Math.max(2, (a[i].options || []).length)); if (k === 'type' && x === 'grid') { if (!(a[i].cols || []).length) a[i].cols = ['1', '2', '3']; if ((a[i].options || []).length < 1) a[i].options = ['']; } if (k === 'type' && x === 'section') { a[i].req = false; a[i].scale = ''; } return a; }); }
+    function setQ(i, k, x) { setQs(function (a) { a[i] = Object.assign({}, a[i]); a[i][k] = x; if (k === 'type' && (x === 'one' || x === 'many') && (a[i].options || []).length < 2) a[i].options = (a[i].options || []).concat(['', '']).slice(0, Math.max(2, (a[i].options || []).length)); if (k === 'type' && x === 'grid') { if (!(a[i].cols || []).length) a[i].cols = ['1', '2', '3']; if ((a[i].options || []).length < 1) a[i].options = ['']; } if (k === 'type' && x === 'section') { a[i].req = false; a[i].scale = ''; } if (k === 'type' && x === 'attn') { a[i].scale = ''; if (!a[i].expect) a[i].expect = 2; } return a; }); }
     function setOpt(i, k, fn) { setQs(function (a) { var x = Object.assign({}, a[i]); x.options = (x.options || []).slice(); x.pts = (x.options || []).map(function (_, z) { return (x.pts || [])[z] || 0; }); fn(x, k); a[i] = x; return a; }); }
     function move(i, d) { setQs(function (a) { var j = i + d; if (j < 0 || j >= a.length) return a; var x = a[i]; a[i] = a[j]; a[j] = x; return a; }); }
     function add(list) { setQs(function (a) { return a.concat(list); }); }
@@ -7995,7 +8234,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       f[1](function (o) { return Object.assign({}, o, { scales: o.scales.concat(x.scales), temper: o.temper && o.temper.e ? o.temper : x.temper }); });
       p.say(t('qn_tpl_ok'));
     }
-    var pick = function (o) { return { title: o.title || '', intro: o.intro || '', on: o.on !== false, first: !!o.first, questions: o.questions || [], scales: o.scales || [], temper: o.temper || null }; };
+    var pick = function (o) { return { title: o.title || '', intro: o.intro || '', on: o.on !== false, first: !!o.first, questions: o.questions || [], scales: o.scales || [], temper: o.temper || null, testWarn: o.testWarn === false ? false : String(o.testWarn || '').trim() }; };
     var json = JSON.stringify(pick(v)), saved = JSON.stringify(pick(q0));
     function save() {
       if (ro) return;
@@ -8008,13 +8247,18 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         delete y.colsText;
         ['key', 'secret'].forEach(function (k) { if (!y[k] || x.type === 'section' || x.type === 'note') delete y[k]; });
         if (x.type === 'note' || x.type === 'section') y.req = false;
-        if (x.type === 'scale' && (x.labels || []).filter(function (z) { return String(z).trim(); }).length === 5) y.labels = x.labels.map(function (z) { return String(z).trim().slice(0, 60); }); else delete y.labels;
+        if ((x.type === 'scale' || x.type === 'attn') && (x.labels || []).filter(function (z) { return String(z).trim(); }).length === 5) y.labels = x.labels.map(function (z) { return String(z).trim().slice(0, 60); }); else delete y.labels;
+        /* «Javoblar sifati»: ожидаемый ответ пункта на внимательность; проверка, «слишком хорошо» и пара — только у оценки 1–5 */
+        if (x.type === 'attn') y.expect = Math.max(1, Math.min(5, Math.round(+x.expect || 2))); else delete y.expect;
+        ['infreq', 'sd'].forEach(function (k) { if (x.type === 'scale' && x[k]) y[k] = true; else delete y[k]; });
+        var pq = x.type === 'scale' && x.pair && x.pair !== x.id ? v.questions.filter(function (z) { return z.id === x.pair && z.type === 'scale' && String(z.text || '').trim(); })[0] : null;
+        if (pq) y.pair = pq.id; else delete y.pair;
         delete y.labelsText;
         if (!y.prof || QN_PROF.indexOf(y.prof) < 0) delete y.prof;
         var wq = x.when && v.questions.slice(0, v.questions.indexOf(x)).filter(function (z) { return z.id === x.when.q && (z.type === 'one' || z.type === 'many'); })[0];
         var wany = wq ? (x.when.any || []).filter(function (o) { return (wq.options || []).map(function (z) { return String(z).trim(); }).indexOf(o) >= 0; }) : [];
         if (wany.length && x.type !== 'section') y.when = { q: wq.id, any: wany }; else delete y.when;
-        y.scale = ids[x.scale] && (choice || x.type === 'scale') ? x.scale : '';
+        y.scale = ids[x.scale] && (choice || (x.type === 'scale' && !x.infreq)) ? x.scale : '';
         if (y.scale && choice) y.pts = pairs.map(function (z) { return Math.max(-99, Math.min(99, z[1])); }); else delete y.pts;
         if (!(y.scale && x.type === 'scale' && x.rev)) delete y.rev;
         if (!y.scale) delete y.scale;
@@ -8028,17 +8272,23 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       var tp = null;
       if (v.temper && v.temper.mode === 'max') { var mp = {}; Object.keys(v.temper.map || {}).forEach(function (k) { if (ids[k] && QN_TEMPERS.indexOf(v.temper.map[k]) >= 0) mp[k] = v.temper.map[k]; }); if (Object.keys(mp).length) tp = { mode: 'max', map: mp }; }
       else if (v.temper && ids[v.temper.e] && ids[v.temper.n]) tp = { e: v.temper.e, n: v.temper.n, eMid: +v.temper.eMid || 0, nMid: +v.temper.nMid || 0 };
-      f[1](function (o) { return Object.assign({}, o, { questions: qs, scales: scs, temper: tp }); });
+      f[1](function (o) { return Object.assign({}, o, { questions: qs, scales: scs, temper: tp, testWarn: v.testWarn === false ? false : String(v.testWarn || '').trim().slice(0, 1500) }); });
       p.update(function (d) {
         d.settings = d.settings || {};
         var x = { title: v.title.trim().slice(0, 120), intro: v.intro.trim().slice(0, 4000), on: v.on, first: !!v.first, questions: qs, scales: scs, by: p.user.id, editedAt: Date.now() };
         if (tp) x.temper = tp;
+        /* предупреждение перед тестом: false — не показывать, текст — свой, нет поля — стандартный (на языке сотрудника) */
+        if (v.testWarn === false) x.testWarn = false; else if (String(v.testWarn || '').trim()) x.testWarn = String(v.testWarn).trim().slice(0, 1500);
         d.settings.questionnaire = x;
       });
       p.say(t('saved'));
     }
     var n = 0, TYPES = QN_TYPES.map(function (k) { return [k, t('qn_t_' + k)]; }), SCS = [['', t('qn_scale_none')]].concat(v.scales.map(function (s) { return [s.id, s.name || '…']; }));
-    var qOf = function (sid) { return qnAsk(v).filter(function (x) { return x.scale === sid && (x.type === 'one' || x.type === 'many' || x.type === 'scale'); }); };
+    var qOf = function (sid) { return qnAsk(v).filter(function (x) { return x.scale === sid && !(x.type === 'scale' && x.infreq) && (x.type === 'one' || x.type === 'many' || x.type === 'scale'); }); };
+    /* номера вопросов (как в списке) — для выбора пары; позиция среди пунктов теста — чтобы предупредить о близкой паре */
+    var qnum = {}, qpos = {}, qn0 = 0, qp0 = 0;
+    v.questions.forEach(function (x) { if (x.type !== 'section' && x.type !== 'note' && x.type !== 'consent') qnum[x.id] = ++qn0; if (x.type === 'scale' || x.type === 'attn') qpos[x.id] = ++qp0; });
+    var hasTest = v.scales.length > 0 || v.questions.some(qnQItem);
     var qSaved = (db.settings && db.settings.questionnaire) || v;
     var editor = h('div', { className: 'in-cols' },
         h('div', { className: 'in-forms' },
@@ -8049,7 +8299,10 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
               h(Field, { name: 'qn-title', label: t('in_f_title'), value: v.title, placeholder: t('qn_title'), onChange: function (x) { set('title', x); } }),
               h(Field, { name: 'qn-intro', label: t('qn_intro'), multiline: true, rows: 3, value: v.intro, placeholder: t('qn_intro_ph'), onChange: function (x) { set('intro', x); } }),
               h('label', { className: 'check big lor-span' }, h('input', { type: 'checkbox', id: 'qn-on', checked: v.on, disabled: ro, onChange: function (e) { set('on', e.target.checked); } }), t('qn_on')),
-              h('label', { className: 'check big lor-span' }, h('input', { type: 'checkbox', id: 'qn-first', checked: !!v.first, disabled: ro, onChange: function (e) { set('first', e.target.checked); } }), h('span', null, t('qn_first'), h('small', { className: 'lor-muted qn-first-hint' }, t('qn_first_hint')))))),
+              h('label', { className: 'check big lor-span' }, h('input', { type: 'checkbox', id: 'qn-first', checked: !!v.first, disabled: ro, onChange: function (e) { set('first', e.target.checked); } }), h('span', null, t('qn_first'), h('small', { className: 'lor-muted qn-first-hint' }, t('qn_first_hint')))),
+              /* честное предупреждение перед тестом: по умолчанию включено, пустой текст — стандартный на языке сотрудника */
+              hasTest ? h('label', { className: 'check big lor-span' }, h('input', { type: 'checkbox', id: 'qn-warn-on', checked: v.testWarn !== false, disabled: ro, onChange: function (e) { set('testWarn', e.target.checked ? '' : false); } }), h('span', null, t('qn_warn_on'), h('small', { className: 'lor-muted qn-first-hint' }, t('qn_warn_hint')))) : null,
+              hasTest && v.testWarn !== false ? h(Field, { name: 'qn-warn', label: t('qn_warn_l'), multiline: true, rows: 3, value: v.testWarn || '', placeholder: t('qn_warn_def'), onChange: function (x) { set('testWarn', x); } }) : null)),
           h('section', { className: 'box qn-edit' },
             h('div', { className: 'qn-edit-head' },
               h('h2', { className: 'lor-h' }, t('qn_qs'), h('span', { className: 'lor-count' }, qnAsk(v).length)),
@@ -8076,8 +8329,16 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
                 h('div', { className: 'qn-item-meta' },
                   h('select', { className: 'lor-input qn-type qn-type-sel', value: x.type, disabled: ro, 'aria-label': t('qn_type'), onChange: function (e) { setQ(i, 'type', e.target.value); } }, TYPES.map(function (o) { return h('option', { key: o[0], value: o[0] }, o[1]); })),
                   sec ? null : h('label', { className: 'check' }, h('input', { type: 'checkbox', checked: !!x.req, disabled: ro, onChange: function (e) { setQ(i, 'req', e.target.checked); } }), t('qn_req')),
-                  v.scales.length && (choice || x.type === 'scale') ? h('select', { className: 'lor-input qn-type qn-scale-sel', value: x.scale || '', disabled: ro, 'aria-label': t('qn_scale_l'), onChange: function (e) { setQ(i, 'scale', e.target.value); } }, SCS.map(function (o) { return h('option', { key: o[0], value: o[0] }, o[0] ? t('qn_scale_l') + ': ' + o[1] : o[1]); })) : null,
-                  scored && x.type === 'scale' ? h('label', { className: 'check' }, h('input', { type: 'checkbox', checked: !!x.rev, disabled: ro, onChange: function (e) { setQ(i, 'rev', e.target.checked); } }), t('qn_rev')) : null,
+                  v.scales.length && (choice || (x.type === 'scale' && !x.infreq)) ? h('select', { className: 'lor-input qn-type qn-scale-sel', value: x.scale || '', disabled: ro, 'aria-label': t('qn_scale_l'), onChange: function (e) { setQ(i, 'scale', e.target.value); } }, SCS.map(function (o) { return h('option', { key: o[0], value: o[0] }, o[0] ? t('qn_scale_l') + ': ' + o[1] : o[1]); })) : null,
+                  scored && x.type === 'scale' && !x.infreq ? h('label', { className: 'check' }, h('input', { type: 'checkbox', checked: !!x.rev, disabled: ro, onChange: function (e) { setQ(i, 'rev', e.target.checked); } }), t('qn_rev')) : null,
+                  /* «Javoblar sifati»: ожидаемый ответ пункта на внимательность; у оценки — проверка, «слишком хорошо», пара */
+                  x.type === 'attn' ? h('label', { className: 'qn-exp', title: t('qn_attn_hint') }, h('span', { className: 'lor-sm lor-muted' }, t('qn_expect')),
+                    h('select', { className: 'lor-input qn-type qn-exp-sel', value: x.expect || 2, disabled: ro, 'aria-label': t('qn_expect'), onChange: function (e) { setQ(i, 'expect', +e.target.value); } }, [1, 2, 3, 4, 5].map(function (k) { return h('option', { key: k, value: k }, k); }))) : null,
+                  x.type === 'scale' ? h('label', { className: 'check', title: t('qn_infreq_hint') }, h('input', { type: 'checkbox', className: 'qn-infreq', checked: !!x.infreq, disabled: ro, onChange: function (e) { setQ(i, 'infreq', e.target.checked); } }), t('qn_infreq')) : null,
+                  x.type === 'scale' ? h('label', { className: 'check', title: t('qn_sd_hint') }, h('input', { type: 'checkbox', className: 'qn-sd', checked: !!x.sd, disabled: ro, onChange: function (e) { setQ(i, 'sd', e.target.checked); } }), t('qn_sd')) : null,
+                  x.type === 'scale' ? h('select', { className: 'lor-input qn-type qn-pair-sel', value: x.pair || '', disabled: ro, 'aria-label': t('qn_pair'), title: t('qn_pair_hint'), onChange: function (e) { setQ(i, 'pair', e.target.value); } },
+                    [h('option', { key: '', value: '' }, t('qn_pair_none'))].concat(v.questions.filter(function (z) { return z.type === 'scale' && z.id !== x.id; }).map(function (z) { var tx = String(z.text || '').trim(); return h('option', { key: z.id, value: z.id }, t('qn_pair') + ': ' + qnum[z.id] + '. ' + (tx.length > 40 ? tx.slice(0, 39) + '…' : tx)); }))) : null,
+                  x.type === 'scale' && x.pair && qpos[x.pair] && Math.abs(qpos[x.pair] - qpos[x.id]) < 10 ? h('small', { className: 'lor-muted qn-pair-near' }, t('qn_pair_near')) : null,
                   sec ? null : h('label', { className: 'check', title: t('qn_key_hint') }, h('input', { type: 'checkbox', checked: !!x.key, disabled: ro, onChange: function (e) { setQ(i, 'key', e.target.checked); } }), t('qn_key')),
                   sec ? null : h('label', { className: 'check', title: t('qn_secret_hint') }, h('input', { type: 'checkbox', checked: !!x.secret, disabled: ro, onChange: function (e) { setQ(i, 'secret', e.target.checked); } }), t('qn_secret')),
                   x.type === 'text' || x.type === 'long' || x.type === 'date' ? h('select', { className: 'lor-input qn-type qn-prof-sel', value: x.prof || '', disabled: ro, 'aria-label': t('qn_prof'), title: t('qn_prof_hint'), onChange: function (e) { setQ(i, 'prof', e.target.value); } },
@@ -8097,7 +8358,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
                     })) : null,
                     wq && !any.length ? h('small', { className: 'lor-muted' }, t('qn_when_pick')) : null);
                 })(),
-                x.type === 'scale' ? h('div', { className: 'qn-item-opts' },
+                x.type === 'scale' || x.type === 'attn' ? h('div', { className: 'qn-item-opts' },
                   h('span', { className: 'lor-sm lor-muted' }, t('qn_labels')),
                   h('input', { className: 'lor-input qn-grid-cols', value: x.labelsText != null ? x.labelsText : (x.labels || []).join(' | '), readOnly: ro, placeholder: 'Umuman to‘g‘ri kelmaydi | … | To‘liq to‘g‘ri keladi', 'aria-label': t('qn_labels'), onChange: function (e) { var raw = e.target.value; setQs(function (a) { a[i] = Object.assign({}, a[i], { labelsText: raw, labels: raw.split('|').map(function (c) { return c.trim(); }) }); return a; }); } })) : null,
                 grid ? h('div', { className: 'qn-item-opts' },

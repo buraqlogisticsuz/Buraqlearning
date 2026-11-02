@@ -4123,3 +4123,41 @@ select.lor-input.slim:not([multiple]) { background-position: right 10px center; 
 .qn-cons-box .hint-sw-t small { font-size: 12px; line-height: 17px; }
 .qn-cons-base { color: var(--blue-text); }
 @media (max-width: 640px) { .qn-page-main.qn-cons-step .qn-step-head .lor-h { font-size: 22px; line-height: 28px; } }
+/* «Savolnoma» → «Javoblar sifati»: светофор фирменными цветами и словами — норма синим, «осторожно» — красным кольцом,
+   «не толкуется» — красным; причины, «слишком хорошо» отдельно, показатели в раскрывающейся панели; подсказка
+   «shoshilmang» и предупреждение перед тестом у сотрудника */
+.qn-q { display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; border: var(--hairline) solid var(--line); border-left: 2px solid var(--blue); border-radius: var(--radius-md); background: var(--surface-raised); }
+.qn-q.is-amber, .qn-q.is-red { border-left-color: var(--red); }
+.qn-q.is-na { border-left-color: var(--gray); }
+.qn-q-head { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; }
+.qn-q-head .qn-q-retake { margin-left: auto; }
+.qn-q-lv { display: inline-flex; align-items: center; gap: 6px; font-size: 15px; line-height: 20px; font-weight: 500; color: var(--ink); }
+.qn-q-lv i { width: 10px; height: 10px; border-radius: 50%; background: var(--blue); flex: none; }
+.qn-q-lv.is-amber i { background: transparent; border: 2px solid var(--red); width: 6px; height: 6px; }
+.qn-q-lv.is-red { color: var(--red-text); }
+.qn-q-lv.is-red i { background: var(--red); }
+.qn-q-lv.is-na i { background: var(--gray); }
+.qn-q-why { margin: 0; padding-left: 18px; font-size: 14px; line-height: 20px; }
+.qn-q-why li + li { margin-top: 2px; }
+.qn-q-skip, .qn-q-prev, .qn-q-wait, .qn-q-foot { margin: 0; }
+.qn-q-wait { color: var(--blue-text); }
+.qn-q-sd { display: flex; gap: 8px; align-items: flex-start; margin: 0; padding: 8px 12px; border-radius: var(--radius-sm); background: var(--surface-sunken); font-size: 13px; line-height: 19px; }
+.qn-q-sd svg { flex: none; margin-top: 1px; color: var(--blue-text); }
+.qn-q-raw summary { cursor: pointer; font-size: 13px; line-height: 20px; color: var(--blue-text); }
+.qn-q-raw dl { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 16px; max-width: 460px; margin: 8px 0; font-size: 13px; line-height: 19px; }
+.qn-q-raw dl div { display: contents; }
+.qn-q-raw dt { color: var(--ink-muted); }
+.qn-q-raw dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.qn-q-chip { align-self: flex-start; margin-top: 3px; padding: 1px 7px; border-radius: var(--radius-pill); border: var(--hairline) solid var(--red); color: var(--red-text); font-size: 11px; line-height: 15px; font-weight: 400; white-space: nowrap; }
+.qn-q-chip.is-red { background: var(--red-soft); border-color: var(--red-soft); }
+.qn-q-chip.is-wait { border-color: var(--blue-soft); background: var(--blue-soft); color: var(--blue-text); }
+.qn-tbl-date .qn-q-chip { display: inline-block; margin-left: 6px; }
+.qn-fast { display: flex; align-items: center; gap: 8px; margin: -4px 0 0; padding: 8px 12px; border-radius: var(--radius-md); background: var(--blue-soft); color: var(--blue-text); font-size: 14px; line-height: 20px; }
+.qn-fast svg { flex: none; }
+.qn-note-box.qn-warn { border-left: 2px solid var(--red); border-radius: 0 var(--radius-md) var(--radius-md) 0; }
+.qn-exp { display: inline-flex; align-items: center; gap: 6px; }
+.qn-exp-sel.qn-type { min-width: 72px; }
+.qn-pair-sel.qn-type { min-width: 150px; max-width: 280px; }
+.qn-pair-near { font-size: 12px; line-height: 16px; color: var(--red-text); }
+@media (max-width: 640px) { .qn-q-head .qn-q-retake { margin-left: 0; } }
+@media print { .qn-q-raw { display: none; } }
