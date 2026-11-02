@@ -713,6 +713,26 @@ try {
   assert.equal(new URL(E.url()).hash, '#home', 'чужой раздел (кабинет SOP-менеджера) после обновления — стартовая страница');
   step('обновление страницы: тот же раздел и тот же урок; чужой адрес — стартовая страница');
 
+  // ---------- «Tanishuv»: SOP-менеджер меняет приветствие и обязательное знакомство (текст + видео); сотрудник подтверждает ----------
+  await nav(A, 'cms'); await A.locator('.lor-tab').filter({ hasText: 'Tanishuv' }).click(); await A.waitForTimeout(300);
+  await A.fill('#f-in-g-title', 'Xush kelibsiz!');
+  await A.fill('#f-in-i-text', 'Kompaniya haqida matn.\n\nIkkinchi xatboshi.');
+  await A.fill('#f-in-v-src', 'https://youtu.be/dQw4w9WgXcQ');
+  await A.locator('.in-admin .in-actions .lor-btn-primary').click(); await settle(A);
+  { const w = srv.g.state().settings.welcome;
+    assert.equal(w.title, 'Xush kelibsiz!');
+    assert.ok(w.at && w.video && /youtu/.test(w.video.src) && /Ikkinchi/.test(w.introText), 'приветствие, знакомство и видео — на сервере'); }
+  await A.locator('.lor-tab').filter({ hasText: 'Darslar' }).click();
+  await E.reload({ waitUntil: 'networkidle' }); await watchSync(E); await E.waitForTimeout(1500);
+  // окно открывается само при входе; если страница ещё взяла данные из копии на устройстве — из меню пользователя
+  if (!(await E.locator('.intro-modal').count())) { await E.locator('.user-btn').first().click(); await E.locator('.user-pop-links button.intro').click(); }
+  await E.locator('.intro-modal').waitFor({ timeout: 5000 });
+  assert.ok(await E.locator('.intro-modal button:has-text("Tasdiqlash")').isDisabled(), 'без галочки подтвердить нельзя');
+  await E.check('#in-seen'); await E.locator('.intro-modal button:has-text("Tasdiqlash")').click(); await settle(E);
+  assert.ok(srv.g.state().users.find(u => u.id === emp.id).introSeenAt, 'знакомство подтверждено — на сервере');
+  assert.equal(await E.locator('.intro-modal').count(), 0, 'окно закрылось');
+  step('«Tanishuv»: SOP-менеджер задал приветствие и обязательное знакомство (текст + видео), сотрудник подтвердил');
+
   // ---------- демо больше нет: ?demo=1 — тот же вход на сервер; без адреса сервера — «Server ulanmagan» ----------
   const D = await device('бывшее демо', '?demo=1');
   assert.equal(await D.locator('.demo-box').count(), 0, 'демо-входов нет');

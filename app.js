@@ -173,17 +173,80 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         h('div', { className: 'terms-scroll' }, h(TermsList, { lang: p.lang })),
         p.acceptedAt ? h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, '✓ ' + t('accepted_on') + ': ' + fmt(p.acceptedAt, t)) : null));
   }
+  /* приветствие и обязательное знакомство с компанией (settings.welcome) — пишут SOP-менеджер и CEO в «Kontent» → «Tanishuv»:
+     { title, text } — первый шаг приветствия; { introTitle, introText, video: { src, title } } — знакомство, которое сотрудник
+     обязан прочитать/посмотреть и подтвердить (users[].introSeenAt); at — версия знакомства: изменили текст или видео —
+     все подтверждают заново */
+  function welcomeOf(db) { return (db.settings && db.settings.welcome) || {}; }
+  function introOf(db) { var w = welcomeOf(db); return String(w.introText || '').trim() || (w.video && w.video.src) ? w : null; }
+  function introSeen(w, u) { return !!(w && u && u.introSeenAt && u.introSeenAt >= (w.at || 0)); }
+  function introDue(db, u) { var w = introOf(db); return !!(w && u && u.role === 'employee' && !introSeen(w, u)); }
+  function paras(s) { return String(s || '').split(/\n\s*\n/).filter(function (x) { return x.trim(); }).map(function (x, i) { return h('p', { key: i }, x.trim()); }); }
+  /* видео знакомства: YouTube — встроенный плеер, прямой .mp4/.webm — <video>, другое — ссылкой */
+  function IntroVideo(p) {
+    var src = String(p.video.src || '').trim();
+    if (ytId(src)) return h(Player, { t: p.t, video: p.video });
+    if (/^https?:\/\/\S+\.(mp4|webm|mov|m4v)(\?\S*)?$/i.test(src)) return h('video', { className: 'intro-mp4', src: src, controls: true, playsInline: true, preload: 'metadata' });
+    if (/^https?:\/\//i.test(src)) return h('a', { className: 'app-link intro-link', href: src, target: '_blank', rel: 'noopener noreferrer' }, '▶ ' + p.t('in_open_video'));
+    return null;
+  }
+  function IntroBody(p) {
+    var w = p.w || {}, v = w.video || {};
+    return h('div', { className: 'intro-body' },
+      String(w.introText || '').trim() ? h('div', { className: 'intro-text' }, paras(w.introText)) : null,
+      v.src ? h(IntroVideo, { t: p.t, video: { title: v.title || w.introTitle || p.t('in_title'), duration: '', src: v.src } }) : null);
+  }
+  /* знакомство поверх программы: обязательное (ещё не подтверждено) — с галочкой и «Tasdiqlash»; уже подтверждено — просто посмотреть */
+  function IntroModal(p) {
+    var t = p.t, u = p.user, w = introOf(p.db) || {}, due = introDue(p.db, u), ok = useState(false);
+    useEffect(function () { function k(e) { if (e.key === 'Escape') p.onClose(); } window.addEventListener('keydown', k); return function () { window.removeEventListener('keydown', k); }; }, []);
+    function confirm() {
+      var at = Date.now();
+      p.update(function (d) { patchUser(d, u.id, function (x) { x.introSeenAt = at; }); d.audit.unshift({ id: nextId(d), userId: u.id, key: 'intro-seen', at: at }); });
+      SAY('in_confirmed'); p.onClose();
+    }
+    return h('div', { className: 'lor-scrim', onMouseDown: function (e) { if (e.target === e.currentTarget) p.onClose(); } },
+      h('div', { className: 'lor-modal intro-modal', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'in-h' },
+        h('button', { type: 'button', className: 'lor-modal-x', 'aria-label': t('close'), onClick: function () { p.onClose(); } }, '×'),
+        h('span', { className: 'lor-eyebrow' }, due ? t('in_banner_t') : t('in_tab')),
+        h('h2', { className: 'lor-h', id: 'in-h' }, w.introTitle || t('in_title')),
+        h(IntroBody, { t: t, w: w }),
+        due ? h('label', { className: 'check big' }, h('input', { type: 'checkbox', id: 'in-seen', checked: ok[0], onChange: function (e) { ok[1](e.target.checked); } }), t('in_seen'))
+          : u.introSeenAt ? h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, '✓ ' + tpl(t('in_seen_on'), { d: fmt(u.introSeenAt, t) })) : null,
+        h('div', { className: 'lor-modal-actions' },
+          due ? h(Btn, { variant: 'ghost', onClick: function () { p.onClose(); } }, t('clk_later')) : null,
+          due ? h(Btn, { variant: 'primary', arrow: true, disabled: !ok[0], onClick: confirm }, t('in_confirm'))
+            : h(Btn, { variant: 'primary', onClick: function () { p.onClose(); } }, t('close')))));
+  }
+  /* напоминание на главной, пока знакомство не подтверждено */
+  function IntroBanner(p) {
+    var t = p.t;
+    if (!p.openIntro || !introDue(p.db, p.user)) return null;
+    return h('section', { className: 'clock-banner intro-banner' },
+      h('svg', { className: 'cb-ico', width: 24, height: 24, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true }, h('circle', { cx: 12, cy: 12, r: 9 }), h('path', { d: 'M10 8.5v7l5.5-3.5z' })),
+      h('div', { className: 'cb-body' }, h('b', null, t('in_banner_t')), h('span', null, t('in_banner_sub'))),
+      h(Btn, { variant: 'primary', arrow: true, onClick: p.openIntro }, t('in_open')));
+  }
   function Welcome(p) {
-    var t = p.t, u = p.user, s = useState(0), step = s[0], a1 = useState(false), a2 = useState(false);
+    var t = p.t, u = p.user, s = useState(0), step = s[0], a1 = useState(false), a2 = useState(false), seen = useState(false);
+    var w = welcomeOf(p.db), iw = introOf(p.db);
     var slides = [
-      { t: t('w1_t'), body: h('p', { className: 'lor-sop', style: { margin: 0 } }, t('w1_p')) },
+      { t: String(w.title || '').trim() || t('w1_t'), body: String(w.text || '').trim() ? h('div', { className: 'welcome-greet lor-sop' }, paras(w.text)) : h('p', { className: 'lor-sop', style: { margin: 0 } }, t('w1_p')) },
+      iw ? { t: String(iw.introTitle || '').trim() || t('in_title'), need: !seen[0], body: h(F, null, h(IntroBody, { t: t, w: iw }),
+        h('label', { className: 'check big' }, h('input', { type: 'checkbox', id: 'in-seen', checked: seen[0], onChange: function (e) { seen[1](e.target.checked); } }), t('in_seen'))) } : null,
       { t: t('w2_t'), body: h('ol', { className: 'welcome-list' }, t('w2_list').split('|').map(function (x, i) { return h('li', { key: i }, x); })) },
       { t: t('w3_t'), body: h('ul', { className: 'welcome-list is-ul' }, t('w3_list').split('|').map(function (x, i) { var parts = x.split(' — '); return h('li', { key: i }, h('b', null, parts[0]), parts[1] ? ' — ' + parts[1] : ''); })) },
       { t: t('w4_t'), body: h(F, null, h('p', { className: 'lor-muted', style: { margin: 0 } }, t('terms_intro')), h('div', { className: 'terms-scroll' }, h(TermsList, { lang: p.lang })),
         h('label', { className: 'check big' }, h('input', { type: 'checkbox', id: 'agree1', checked: a1[0], onChange: function (e) { a1[1](e.target.checked); } }), t('agree1')),
-        h('label', { className: 'check big' }, h('input', { type: 'checkbox', id: 'agree2', checked: a2[0], onChange: function (e) { a2[1](e.target.checked); } }), t('agree2'))) }];
+        h('label', { className: 'check big' }, h('input', { type: 'checkbox', id: 'agree2', checked: a2[0], onChange: function (e) { a2[1](e.target.checked); } }), t('agree2'))) }].filter(Boolean);
     var cur = slides[step], last = step === slides.length - 1;
-    function accept() { p.update(function (d) { d.users.forEach(function (x) { if (x.id === u.id) { x.termsAcceptedAt = Date.now(); x.termsVersion = '1.0'; } }); d.audit.unshift({ id: nextId(d), userId: u.id, key: 'terms-accepted', at: Date.now() }); }); }
+    function accept() {
+      var at = Date.now();
+      p.update(function (d) {
+        d.users.forEach(function (x) { if (x.id === u.id) { x.termsAcceptedAt = at; x.termsVersion = '1.0'; if (iw && seen[0]) x.introSeenAt = at; } });
+        d.audit.unshift({ id: nextId(d), userId: u.id, key: 'terms-accepted', at: at });
+      });
+    }
     return h('div', { className: 'welcome' },
       h('div', { className: 'welcome-card' },
         h('div', { className: 'welcome-side' },
@@ -198,7 +261,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           h('div', { className: 'welcome-foot' },
             step === 0 ? h(Btn, { variant: 'ghost', onClick: p.logout }, t('logout')) : h(Btn, { variant: 'ghost', onClick: function () { s[1](step - 1); } }, t('prev')),
             last ? h('div', { className: 'welcome-final' }, h(Btn, { variant: 'ghost', onClick: p.logout }, t('decline_exit')), h(Btn, { variant: 'primary', arrow: true, disabled: !(a1[0] && a2[0]), onClick: accept }, t('accept_start')))
-              : h(Btn, { variant: 'primary', arrow: true, onClick: function () { s[1](step + 1); } }, t('next'))))));
+              : h(Btn, { variant: 'primary', arrow: true, disabled: !!cur.need, onClick: function () { s[1](step + 1); } }, t('next'))))));
   }
 
   /* ---------- AI (claude.use("sample")) ---------- */
@@ -4347,7 +4410,9 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     ['.pay-card', 'hint_paycard_t', 'hint_paycard'],
     ['.pay-filters', 'hint_payflt_t', 'hint_payflt'],
     ['.ld-box', 'hint_ldr_t', 'hint_ldr'],
-    ['.wz-admin', 'hint_wz_t', 'hint_wz']
+    ['.wz-admin', 'hint_wz_t', 'hint_wz'],
+    ['.in-admin', 'hint_in_t', 'hint_in'],
+    ['.intro-banner', 'hint_inb_t', 'hint_inb']
   ];
   var HINT_ALL = HINTS.map(function (x) { return x[0]; }).join(', ');
 
@@ -6416,6 +6481,62 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           return h('li', { key: i }, h('div', null, h('p', { lang: 'uz' }, x.text), x.tr ? h('small', null, x.tr) : null, h('small', null, '— ' + x.by)));
         }))));
   }
+  /* Kontent → «Tanishuv»: приветствие (первый шаг для нового сотрудника) и обязательное знакомство — текст и видео
+     (settings.welcome). Меняют SOP-менеджер и CEO; руководитель только смотрит. Изменили текст или видео знакомства —
+     версия (at) новая, и все сотрудники подтверждают его заново */
+  function introStat(db) {
+    var w = introOf(db), emps = db.users.filter(function (u) { return u.role === 'employee'; });
+    var seen = w ? emps.filter(function (u) { return introSeen(w, u); }) : [];
+    return { w: w, emps: emps, seen: seen, wait: w ? emps.filter(function (u) { return seen.indexOf(u) < 0; }) : [] };
+  }
+  function WelcomeAdmin(p) {
+    var t = p.t, db = p.db, w0 = welcomeOf(db), ro = lvlOf(p.user) === 'boss';
+    var f = useState(function () { return { title: w0.title || '', text: w0.text || '', introTitle: w0.introTitle || '', introText: w0.introText || '', vsrc: (w0.video && w0.video.src) || '', vtitle: (w0.video && w0.video.title) || '' }; }), v = f[0];
+    function set(k, x) { var o = Object.assign({}, v); o[k] = x; f[1](o); }
+    var src = v.vsrc.trim(), bad = !!src && !/^https?:\/\/\S+$/i.test(src), st = introStat(db);
+    function save() {
+      if (bad || ro) return;
+      var changed = v.introText.trim() !== String(w0.introText || '').trim() || src !== String((w0.video && w0.video.src) || '').trim(), now = Date.now();
+      p.update(function (d) {
+        d.settings = d.settings || {};
+        var x = { title: v.title.trim().slice(0, 120), text: v.text.trim().slice(0, 4000), introTitle: v.introTitle.trim().slice(0, 120), introText: v.introText.trim().slice(0, 12000), by: p.user.id, editedAt: now, at: changed ? now : (w0.at || now) };
+        if (src) x.video = { src: src.slice(0, 500), title: v.vtitle.trim().slice(0, 120) };
+        d.settings.welcome = x;
+      });
+      p.say(t(changed && (v.introText.trim() || src) ? 'in_saved_re' : 'saved'));
+    }
+    var preview = { introTitle: v.introTitle, introText: v.introText, video: src && !bad ? { src: src, title: v.vtitle } : null };
+    return h('div', { className: 'in-admin' },
+      h('div', { className: 'in-cols' },
+        h('div', { className: 'in-forms' },
+          h('section', { className: 'box' },
+            h('h2', { className: 'lor-h' }, t('in_greet_t')),
+            h('p', { className: 'lor-sm lor-muted', style: { margin: '0 0 12px' } }, t('in_greet_hint')),
+            h('div', { className: 'wz-form' },
+              h(Field, { name: 'in-g-title', label: t('in_f_title'), value: v.title, placeholder: t('w1_t'), onChange: function (x) { set('title', x); } }),
+              h(Field, { name: 'in-g-text', label: t('in_f_text'), multiline: true, rows: 4, value: v.text, placeholder: t('w1_p'), onChange: function (x) { set('text', x); } }))),
+          h('section', { className: 'box' },
+            h('h2', { className: 'lor-h' }, t('in_req_t')),
+            h('p', { className: 'lor-sm lor-muted', style: { margin: '0 0 12px' } }, t('in_req_hint')),
+            h('div', { className: 'wz-form' },
+              h(Field, { name: 'in-i-title', label: t('in_f_title'), value: v.introTitle, placeholder: t('in_title'), onChange: function (x) { set('introTitle', x); } }),
+              h(Field, { name: 'in-i-text', label: t('in_text'), multiline: true, rows: 8, value: v.introText, onChange: function (x) { set('introText', x); } }),
+              h(Field, { name: 'in-v-src', label: t('in_video'), value: v.vsrc, placeholder: 'https://youtu.be/…', error: bad ? t('in_video_bad') : null, onChange: function (x) { set('vsrc', x); } }),
+              h(Field, { name: 'in-v-title', label: t('in_video_title'), value: v.vtitle, onChange: function (x) { set('vtitle', x); } }))),
+          h('div', { className: 'in-actions' },
+            ro ? h('span', { className: 'lor-sm lor-muted' }, t('in_ro')) : h('span'),
+            h(Btn, { variant: 'primary', arrow: true, disabled: ro || bad, onClick: save }, t('save')))),
+        h('div', { className: 'in-side' },
+          h('section', { className: 'box in-stat' },
+            h('span', { className: 'lor-eyebrow' }, t('in_stat_t')),
+            st.w ? h('b', { className: 'in-stat-n' }, st.seen.length + ' / ' + st.emps.length) : null,
+            st.w ? h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, tpl(t('in_stat'), { n: st.seen.length, m: st.emps.length })) : h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('in_none')),
+            st.w && st.wait.length ? h('div', { className: 'in-wait' }, h('span', { className: 'lor-sm lor-muted' }, t('in_wait')), st.wait.map(function (u) { return h('span', { key: u.id, className: 'in-chip' }, u.name); })) : null),
+          preview.introText.trim() || preview.video ? h('section', { className: 'box in-preview' },
+            h('span', { className: 'lor-eyebrow' }, t('in_preview')),
+            h('h3', { className: 'lor-h' }, preview.introTitle.trim() || t('in_title')),
+            h(IntroBody, { t: t, w: preview })) : null)));
+  }
   function Login(p) {
     var t = p.t, a = useState(''), b = useState(''), e = useState(''), th = useThemePref(), busy = useState(false), from = useState(introFrom)[0];
     function submit(ev) {
@@ -6745,6 +6866,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         h('div', null, h('span', { className: 'lor-eyebrow' }, u.position + ' · ' + u.department), h('h1', { className: 'lor-title' }, t('welcome') + ', ' + firstName(u), h(PageTip, { t: t, id: 'home' }))),
         h(Badge, { status: u.status, lang: p.lang })),
       h(ClockBanner, p),
+      h(IntroBanner, p),
       (function () {
         var iss = assetsOf(db, u.id).filter(function (a) { return a.status === 'issued'; });
         return iss.length ? h('section', { className: 'lor-notice as-notice' },
@@ -6825,7 +6947,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   function EmployeeApp(p) {
     var t = p.t, db = p.db, u = p.user;
     var r = useHashRoute(EMP_ROUTES, { name: 'home' }), route = r[0], dr = useState(false), ai = useState(false);
-    var ini = useState(false), sv = useState(false), pHide = useState(false), tour = useState(false), gate = useState(false), gateInit = useRef(false);
+    var ini = useState(false), sv = useState(false), pHide = useState(false), tour = useState(false), gate = useState(false), gateInit = useRef(false), intro = useState(false);
     var pal = useState(false); usePalette(pal[0], pal[1]);
     var hintOn = !!u.hints;
     var theme = useThemePref(p.say, t);
@@ -6835,7 +6957,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var filled = !!(u.profileComplete && u.assetsDeclaredAt);
     var ready = !!(u.termsAcceptedAt && filled);
     /* при открытии программы — модальное окно отметки прихода, если сотрудник ещё не отметился сегодня (один раз за заход) */
-    useEffect(function () { if (gateInit.current || !ready) return; gateInit.current = true; if (clockDue(dbRef.current, u)) gate[1](true); }, [ready]);
+    /* сначала обязательное знакомство (если не подтверждено), после него — отметка прихода */
+    useEffect(function () { if (gateInit.current || !ready) return; gateInit.current = true; if (introDue(dbRef.current, u)) intro[1]('auto'); else if (clockDue(dbRef.current, u)) gate[1](true); }, [ready]);
     function forceGo(x) { r[1](x); dr[1](false); window.scrollTo(0, 0); }
     function go(x) { if (route.name === 'lesson' && leaveRef.current && leaveRef.current(x)) { dr[1](false); return; } forceGo(x); }
     function openNotif(n) {
@@ -6923,7 +7046,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var sections = courseSections(db, u).map(function (s) {
       return { title: s.title, officialOnly: s.officialOnly && u.status !== 'official', lessons: s.lessons.map(function (l) { var st = lessonStatus(db, u, l.id); return { id: l.id, title: l.title, status: st === 'question' || st === 'updated' ? 'in-progress' : st, active: (route.name === 'lesson' || route.name === 'quiz') && route.id === l.id }; }) };
     });
-    var q = Object.assign({}, p, { go: go, openNotif: openNotif, pulseDue: due, openSurvey: function () { sv[1](true); }, openIni: function () { ini[1](true); }, openClock: function () { gate[1](true); } });
+    var q = Object.assign({}, p, { go: go, openNotif: openNotif, pulseDue: due, openSurvey: function () { sv[1](true); }, openIni: function () { ini[1](true); }, openClock: function () { gate[1](true); }, openIntro: function () { intro[1]('view'); } });
     var main = !filled ? h(ProfilePage, p)
       : route.name === 'lesson' ? h(LessonView, Object.assign({}, q, { id: route.id, forceGo: forceGo, leaveRef: leaveRef, key: route.id }))
       : route.name === 'quiz' ? h(QuizView, Object.assign({}, q, { id: route.id, key: 'q' + route.id }))
@@ -6945,7 +7068,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     if (LmsPay.schemeFor(db.pay, u) || (db.payCalcs || []).some(function (c) { return c.uid === u.id; })) navItems.push(['pay', t('nav_pay')]);
     var nav = filled ? navItems.map(function (n) { return { key: n[0], label: n[1], count: n[2], active: route.name === n[0], onClick: function () { go({ name: n[0] }); } }; }) : null;
     var issuedN = assetsOf(db, u.id).filter(function (a) { return a.status === 'issued'; }).length;
-    var links = filled ? [{ key: 'drill', label: t('dr_title'), onClick: function () { go({ name: 'drill' }); } }, { key: 'assets', label: t('as_my_title'), count: issuedN, onClick: function () { go({ name: 'assets' }); } }, { key: 'ideas', label: t('ini_my'), onClick: function () { go({ name: 'ideas' }); } }, { key: 'report', label: t('mr_nav'), onClick: function () { go({ name: 'report' }); } }, { key: 'help', label: t('nav_help'), onClick: function () { go({ name: 'help' }); } }] : null;
+    var links = filled ? (introOf(db) ? [{ key: 'intro', label: t('in_title'), onClick: function () { intro[1]('view'); } }] : []).concat([{ key: 'drill', label: t('dr_title'), onClick: function () { go({ name: 'drill' }); } }, { key: 'assets', label: t('as_my_title'), count: issuedN, onClick: function () { go({ name: 'assets' }); } }, { key: 'ideas', label: t('ini_my'), onClick: function () { go({ name: 'ideas' }); } }, { key: 'report', label: t('mr_nav'), onClick: function () { go({ name: 'report' }); } }, { key: 'help', label: t('nav_help'), onClick: function () { go({ name: 'help' }); } }]) : null;
     return h(F, null,
       h(Header, { t: t, lang: p.lang, setLang: p.setLang, onProfile: p.openProfile, user: u, notifs: mine, onNotif: openNotif, onReadAll: function () { p.update(function (d) { d.notifications.forEach(function (n) { if (n.userId === u.id) n.read = true; }); }); }, onLogout: p.logout, onMenu: filled ? function () { dr[1](!dr[0]); } : null,
         nav: nav, links: links, hint: filled ? hint : null, theme: theme, onSearch: filled ? function () { pal[1](true); } : null, onHelp: filled ? function () { go({ name: 'help' }); } : null, medalNew: !!u.medalNew, onMedalSeen: function () { p.update(function (d) { d.users.forEach(function (x) { if (x.id === u.id) x.medalNew = false; }); }); }, rank: filled ? rankOf(db, u) : null, fmtNotif: function (n) { return notifText(n, db, p.lang, t); }, onPath: filled ? function () { go({ name: 'path' }); } : null, onTerms: p.showTerms,
@@ -6957,7 +7080,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       due && !pHide[0] && !sv[0] && !ai[0] && !ini[0] && !u.celebrate && route.name !== 'lesson' && route.name !== 'quiz' && route.name !== 'drill' ? h(PulseBubble, { t: t, db: db, user: u, onStart: function () { sv[1](true); }, onLater: snoozePulse, onClose: function () { pHide[1](true); } }) : null,
       sv[0] ? h(SurveyModal, Object.assign({}, p, { key: 'sv', onClose: function () { sv[1](false); pHide[1](true); }, openIni: function () { ini[1](true); } })) : null,
       ini[0] ? h(IniModal, Object.assign({}, p, { key: 'ini', onClose: function () { ini[1](false); }, onList: function () { go({ name: 'ideas' }); } })) : null,
-      gate[0] ? h(ClockGate, Object.assign({}, q, { key: 'gate', onClose: function () { gate[1](false); } })) : null,
+      intro[0] ? h(IntroModal, Object.assign({}, q, { key: 'intro', onClose: function () { var auto = intro[0] === 'auto'; intro[1](false); if (auto && clockDue(dbRef.current, u)) gate[1](true); } })) : null,
+      gate[0] && !intro[0] ? h(ClockGate, Object.assign({}, q, { key: 'gate', onClose: function () { gate[1](false); } })) : null,
       filled ? h(AIMentor, Object.assign({}, p, { open: ai[0], setOpen: ai[1], lessonId: route.name === 'lesson' ? route.id : null, openLesson: function (id) { go({ name: 'lesson', id: id }); } })) : null,
       hintOn && !tour[0] && u.tourDone ? h(HintLayer, { t: t }) : null,
       pal[0] ? h(Palette, Object.assign({}, q, { onClose: function () { pal[1](false); }, go: function (x) { go(x); } })) : null,
@@ -7125,7 +7249,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
 
     return h('div', { className: 'app-wrap' },
       h('div', { className: 'page-head' }, h('div', null, h('span', { className: 'lor-eyebrow' }, t('srv_cms_hint')), h('h1', { className: 'lor-title' }, t('nav_cms'), h(PageTip, { t: t, id: 'cms' })))),
-      h('div', { className: 'lor-tabs fb-tabs', role: 'tablist' }, [['lessons', t('cms_tab_lessons'), flat(db.course).length], ['cases', t('nav_cases'), (db.cases || []).length], ['journals', t('db_tab_j'), (db.journals || []).length], ['terms', t('db_tab_t'), (db.terms || []).length], ['tracks', t('trk_tab'), (db.tracks || []).length], ['plan', t('pl_tab'), (db.planTpl || []).length], ['wisdom', t('wz_title'), ((db.settings && db.settings.wisdom && db.settings.wisdom.list) || []).length]].map(function (x) {
+      h('div', { className: 'lor-tabs fb-tabs', role: 'tablist' }, [['lessons', t('cms_tab_lessons'), flat(db.course).length], ['welcome', t('in_tab'), (function () { var st = introStat(db); return st.w ? st.seen.length + '/' + st.emps.length : 0; })()], ['cases', t('nav_cases'), (db.cases || []).length], ['journals', t('db_tab_j'), (db.journals || []).length], ['terms', t('db_tab_t'), (db.terms || []).length], ['tracks', t('trk_tab'), (db.tracks || []).length], ['plan', t('pl_tab'), (db.planTpl || []).length], ['wisdom', t('wz_title'), ((db.settings && db.settings.wisdom && db.settings.wisdom.list) || []).length]].map(function (x) {
         return h('button', { key: x[0], type: 'button', role: 'tab', 'aria-selected': tab[0] === x[0], className: cx('lor-tab', tab[0] === x[0] && 'is-on'), onClick: function () { tab[1](x[0]); } }, x[1], h('span', { className: 'lor-count' }, x[2]));
       })),
       tab[0] === 'cases' ? h(CasesAdmin, p) :
@@ -7134,6 +7258,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       tab[0] === 'tracks' ? h(TracksAdmin, p) :
       tab[0] === 'plan' ? h(PlanAdmin, p) :
       tab[0] === 'wisdom' ? h(WisdomAdmin, p) :
+      tab[0] === 'welcome' ? h(WelcomeAdmin, p) :
       h('div', { className: 'cms' },
         audSec[0] && db.course.sections.some(function (s) { return s.id === audSec[0]; }) ? h(AudienceModal, Object.assign({}, p, { section: db.course.sections.filter(function (s) { return s.id === audSec[0]; })[0], onClose: function () { audSec[1](null); } })) : null,
         h('aside', { className: 'cms-tree' },
