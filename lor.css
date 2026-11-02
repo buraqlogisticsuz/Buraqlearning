@@ -3951,3 +3951,12 @@ input.org-name:hover, input.org-name:focus { border-color: var(--line); backgrou
 .qn-team-people li { padding: 8px 12px; border-radius: var(--radius-md); background: var(--surface-sunken); }
 .qn-team-people b { font-weight: 500; display: inline; margin: 0; color: var(--ink); font-size: 14px; }
 @media (max-width: 760px) { .qn-team-cols { grid-template-columns: 1fr; } }
+/* удаление сотрудника: ссылка слева в окне «Tahrirlash», окно подтверждения — что уйдёт, что останется */
+.ud-open { margin-right: auto; color: var(--red-text); font-size: 13px; }
+.ud-modal .lor-h { margin-bottom: 0; }
+.ud-warn { border: var(--hairline) solid var(--red); background: var(--red-soft); color: var(--red-text); border-radius: var(--radius-md); padding: var(--space-3) var(--space-4); font-size: 13px; }
+.ud-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); font-size: 13px; }
+.ud-list li { position: relative; padding-left: 22px; color: var(--ink); }
+.ud-list li::before { position: absolute; left: 0; top: 0; width: 16px; text-align: center; }
+.ud-list li.is-gone::before { content: '×'; color: var(--red-text); }
+.ud-list li.is-kept::before { content: '✓'; color: var(--blue-text); }

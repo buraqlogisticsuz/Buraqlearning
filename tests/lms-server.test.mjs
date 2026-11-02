@@ -414,7 +414,7 @@ const pickN = n => ({ userId: n.userId, kind: n.kind, route: n.route, err: n.err
 test('since: та же версия — без данных; после правки — новое состояние', () => {
   const { D, A } = platform();
   const v = D({ action: 'load' });
-  assert.deepEqual(D({ action: 'since', rev: v.rev }), { ok: true, v: 15, ai: false, rev: v.rev, same: true });
+  assert.deepEqual(D({ action: 'since', rev: v.rev }), { ok: true, v: 16, ai: false, rev: v.rev, same: true });
   A({ action: 'patch', ops: [{ op: 'set', path: ['notifications', { id: 9 }], value: { id: 9, userId: 10427, text: 'yangi' }, after: null }] });
   const n = D({ action: 'since', rev: v.rev });
   assert.equal(n.rev, v.rev + 1); assert.equal(n.state.notifications[0].text, 'yangi');
@@ -815,4 +815,24 @@ test('должности и отделы (settings.positions / settings.depts, v
   assert.equal(A({ action: 'patch', ops: [{ op: 'set', path: ['settings'], value: Object.assign({}, whole, { positions: [] }) }] }).rejected.length, 1);
   assert.equal(set(D, 'positions', ['x']).rejected.length, 1, 'сотрудник — нет');
   assert.equal(set(B, 'positions', ['x']).rejected.length, 1, 'руководитель только смотрит');
+});
+
+test('удаление сотрудника (v16): вход закрыт сразу, скан паспорта — с Диска; руководство так не удалить, владелец только смотрит', () => {
+  const pl = platform(), { g, A, D, Z } = pl, { C, B } = chiefs(pl);
+  const pdf = 'data:application/pdf;base64,' + Buffer.from('%PDF-1.4 ' + 'x'.repeat(3000)).toString('base64');
+  assert.deepEqual(rejected(D({ action: 'patch', ops: [{ op: 'set', path: ['users', { id: 10427 }, 'profile'], value: { lastName: 'Karimova', passportFile: { name: 'pasport.pdf', type: 'application/pdf', data: pdf } } }] })), []);
+  const id = g.state().users.find(u => u.id === 10427).profile.passportFile.data.slice(8);
+  assert.ok(g.files[id] && g.props['cred:10427']);
+  const del = who => who({ action: 'patch', ops: [{ op: 'del', path: ['users', { id: 10427 }] }, { op: 'del', path: ['notifications', { id: 2 }] }] });
+  assert.equal(B({ action: 'patch', ops: [{ op: 'del', path: ['users', { id: 10427 }] }] }).rejected.length, 1, 'владелец только смотрит');
+  assert.equal(A({ action: 'patch', ops: [{ op: 'del', path: ['users', { id: 10901 }] }] }).rejected.length, 1, 'вход CEO SOP-менеджер не удаляет');
+  assert.deepEqual(rejected(del(A)), []);
+  const st = g.state();
+  assert.ok(!st.users.some(u => u.id === 10427) && !g.props['cred:10427'], 'карточки и учётной записи нет');
+  assert.equal(D({ action: 'load' }).code, 'auth', 'открытый вход закрылся');
+  assert.equal(g.post({ action: 'login', login: 'd.karimova', password: 'pw-dilnoza' }).code, 'login', 'по паролю не войти');
+  assert.equal(g.files[id], undefined, 'скан паспорта удалён с Диска');
+  assert.ok(st.xtasks.some(x => x.uid === 10427), 'история (задачи) остаётся');
+  assert.equal(Z({ action: 'load' }).ok, true, 'остальные работают');
+  assert.ok(C({ action: 'load' }).ok);
 });

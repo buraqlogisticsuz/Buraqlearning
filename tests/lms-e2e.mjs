@@ -964,7 +964,7 @@ try {
   // ---------- порядок входа нового сотрудника: анкета → тест → приветствие и условия → профиль → «Tanishuv» последним ----------
   const jid = Math.max(...srv.g.state().users.map(u => u.id)) + 1000;
   { const tk = srv.g.post({ action: 'login', login: srv.admin.login, password: srv.admin.password }).token;
-    assert.deepEqual(srv.g.post({ token: tk, action: 'patch', ops: [{ op: 'set', path: ['users', { id: jid }], value: { id: jid, role: 'employee', login: 'new.xodim', password: 'xodim-12345', name: 'Bekzod Yusupov', position: 'Omborchi', status: 'probation' } }] }).rejected, []); }
+    assert.deepEqual(srv.g.post({ token: tk, action: 'patch', ops: [{ op: 'set', path: ['users', { id: jid }], value: { id: jid, role: 'employee', login: 'new.xodim', password: 'xodim-12345', name: 'Sanjar Qodirov', position: 'Omborchi', status: 'probation' } }] }).rejected, []); }
   const J = await device('новый сотрудник');
   await signIn(J, 'new.xodim', 'xodim-12345');
   await J.locator('.qn-page .qn-wiz').waitFor({ timeout: 8000 });
@@ -985,7 +985,7 @@ try {
   await J.locator('#f-lastName').waitFor({ timeout: 5000 });
   assert.equal(await J.locator('.ir').count(), 0, 'пока профиль не заполнен — знакомства нет');
   // профиль по шагам тоже проверен выше
-  jpatch([{ op: 'set', path: ['users', { id: jid }, 'profile'], value: { lastName: 'Yusupov', firstName: 'Bekzod' } }, { op: 'set', path: ['users', { id: jid }, 'profileComplete'], value: true }, { op: 'set', path: ['users', { id: jid }, 'assetsDeclaredAt'], value: Date.now() }]);
+  jpatch([{ op: 'set', path: ['users', { id: jid }, 'profile'], value: { lastName: 'Qodirov', firstName: 'Sanjar' } }, { op: 'set', path: ['users', { id: jid }, 'profileComplete'], value: true }, { op: 'set', path: ['users', { id: jid }, 'assetsDeclaredAt'], value: Date.now() }]);
   setClock(true);
   await J.reload({ waitUntil: 'networkidle' }); await watchSync(J);
   await J.locator('.ir').waitFor({ timeout: 8000 });
@@ -1007,6 +1007,23 @@ try {
   setClock(false);
   assert.deepEqual(await rejected(J), [], 'сервер принял всё от нового сотрудника');
   step('порядок входа: анкета → тест темперамента → приветствие и условия → профиль → «Tanishuv» последним (отложить нельзя) → отметка прихода');
+
+  // ---------- удаление сотрудника: «Xodimlar» → «Tahrirlash» → «Xodimni o‘chirish»; вход закрывается сразу ----------
+  await A.reload({ waitUntil: 'networkidle' }); await watchSync(A);
+  await nav(A, 'staff');
+  await A.locator('tr', { hasText: 'Sanjar Qodirov' }).getByRole('button', { name: 'Tahrirlash' }).first().click();
+  await A.locator('.ud-open').click();
+  await A.locator('.ud-modal').waitFor({ timeout: 5000 });
+  assert.ok(await A.locator('.ud-modal .lor-btn-primary').isDisabled(), 'без галочки «tushundim» не удалить');
+  await shot(A, 'xodimni-ochirish');
+  await A.check('#ud-ok'); await A.locator('.ud-modal .lor-btn-primary').click(); await settle(A);
+  assert.equal(srv.g.state().users.some(u => u.id === jid), false, 'карточки нет — на сервере');
+  assert.equal(srv.g.post({ action: 'login', login: 'new.xodim', password: 'xodim-12345' }).code, 'login', 'по паролю больше не войти');
+  assert.equal(await A.locator('tr', { hasText: 'Sanjar Qodirov' }).count(), 0, 'в списке сотрудников его нет');
+  assert.deepEqual(await rejected(A), [], 'сервер принял удаление');
+  await J.reload({ waitUntil: 'networkidle' });
+  await J.locator('#f-login').waitFor({ timeout: 8000 });
+  step('удаление сотрудника: «Xodimlar» → «Tahrirlash» → «Xodimni o‘chirish» с подтверждением; вход закрылся, карточки нет');
 
   // ---------- демо больше нет: ?demo=1 — тот же вход на сервер; без адреса сервера — «Server ulanmagan» ----------
   const D = await device('бывшее демо', '?demo=1');

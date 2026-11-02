@@ -20,7 +20,7 @@
  *
  * Запрос — POST с JSON { action, token, … }, ответ — JSON { ok, … } или { ok: false, code, error }.
  */
-var LMS_VERSION = 15;          // 2: файлы — отдельно на Диске, действие file; 3: ИИ через Claude API (действие ai);
+var LMS_VERSION = 16;          // 2: файлы — отдельно на Диске, действие file; 3: ИИ через Claude API (действие ai);
                                // 4: адресаты идей — CEO, Project Manager, руководитель компании (свой вход, role 'leader');
                                // 5: у идеи несколько адресатов (to — список), repliedBy — кто ответил;
                                // 6: свой профиль — имя и фото, смена логина и пароля (действие account);
@@ -33,6 +33,7 @@ var LMS_VERSION = 15;          // 2: файлы — отдельно на Дис
                                // 13: приход/уход сотрудник отмечает в программе (действие clock), время ставит сервер
                                // 14: вывод по анкете (users[].qaReport) — только CEO, SOP-менеджеру и руководителю, сотрудник его не видит и не пишет
                                // 15: список должностей и отделов (settings.positions / settings.depts) меняет только CEO
+                               // 16: удалили сотрудника — файлы из его карточки (скан паспорта) уходят с Диска, если больше нигде не нужны
 var PBKDF2_ITER = 10000;          // пароль хранится только как PBKDF2-SHA256 с солью
 var SESSION_DAYS = 30;            // вход на устройстве живёт 30 дней с последнего запроса
 var FAIL_MAX = 5, FAIL_LOCK_MIN = 15;  // 5 неверных паролей подряд — логин закрыт на 15 минут
@@ -697,6 +698,7 @@ function patch_(s, ops) {
     if (admin) syncCreds_(st, before, me, s, rejected);
     if ((st.audit || []).length > AUDIT_KEEP) st.audit = st.audit.slice(0, AUDIT_KEEP);
     if (applied) { st.rev = (+st.rev || 0) + 1; writeState_(st); }
+    if (admin && applied) dropGoneFiles_(st, before);
     return { ok: true, rev: st.rev, applied: applied, rejected: rejected };
   });
 }
@@ -722,6 +724,21 @@ function syncCreds_(st, before, me, s, rejected) {
   var alive = {};
   (st.users || []).forEach(function (u) { alive[String(u.id)] = 1; });
   Object.keys(cr).forEach(function (k) { if (!alive[k]) { props_().deleteProperty('cred:' + k); dropSessions_(k); } });
+}
+
+/* удалённый сотрудник: файлы из его карточки (скан паспорта и т. п.) — в корзину Диска, если на них больше ничто
+   не ссылается; учётную запись и входы уже закрыл syncCreds_. Вызывается после записи состояния */
+function dropGoneFiles_(st, before) {
+  var alive = {}, all = null;
+  (st.users || []).forEach(function (u) { alive[String(u.id)] = 1; });
+  (before || []).forEach(function (u) {
+    if (!u || alive[String(u.id)]) return;
+    (JSON.stringify(u).match(/"lmsfile:[\w-]+"/g) || []).forEach(function (r) {
+      if (all === null) all = JSON.stringify(st);
+      if (all.indexOf(r) >= 0) return;
+      try { DriveApp.getFileById(r.slice(9, -1)).setTrashed(true); } catch (e) {}
+    });
+  });
 }
 
 /* ---------------- файлы: на Диске, в данных — ссылка ---------------- */

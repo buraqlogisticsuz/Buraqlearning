@@ -2920,3 +2920,24 @@ Object.assign(APP_T.uz, { in_last: 'Oxirgi qadam', in_req_hint: 'Yangi xodim bun
 Object.assign(APP_T.ru, { in_last: 'Последний шаг', in_req_hint: 'Новый сотрудник видит это в самом конце: после анкеты и теста, приветствия и профиля. Пока не откроет все документы и не подтвердит «ознакомился», на платформу не попадёт. Работающим сотрудникам показывается окном. Изменили текст, документ или видео — все подтверждают заново. Абзацы разделяйте пустой строкой.' });
 Object.assign(APP_T.en, { in_last: 'Final step', in_req_hint: 'A new employee sees this at the very end: after the questionnaire and test, the welcome and the profile. They cannot enter the platform until they open every document and confirm. Current employees get it as a window. Change the text, a document or the video and everyone confirms again. Separate paragraphs with an empty line.' });
 Object.assign(APP_T.zh, { in_last: '最后一步', in_req_hint: '新员工在最后看到此内容：在问卷和测试、欢迎页和个人资料之后。打开全部文件并确认“已了解”之前无法进入平台。在职员工会以弹窗形式看到。修改文字、文件或视频后，所有人需重新确认。段落之间请空一行。' });
+/* удаление сотрудника: «Xodimlar» → «Tahrirlash» → «Xodimni o‘chirish» */
+Object.assign(APP_T.uz, { ud_open: 'Xodimni o‘chirish', ud_eyebrow: 'Xodimni o‘chirish — qaytarib bo‘lmaydi', ud_login: 'Kirish darhol yopiladi: login va parol endi ishlamaydi.',
+  ud_gone: 'O‘chiriladi: kartochka, profil (pasport skani bilan), savolnoma javoblari, darslar progressi, o‘qish vaqti, bildirishnomalar va savollari.',
+  ud_kept: 'Qoladi: maosh hisob-kitoblari, davomat, mol-mulk tarixi, g‘oyalar, topshiriqlar va jurnal.', ud_keep: 'O‘qish natijalarini ({n} ta dars) reytingda «oldingi nomzodlar» qatorida qoldirish',
+  ud_assets: 'Xodimda hali {n} ta kompaniya mol-mulki bor. Avval qaytarib oling — tarixda u «qaytarilmagan» bo‘lib qoladi.', ud_backup: 'Kerak bo‘lsa, avval nusxa oling: menyu → «Ma’lumotlarni yuklab olish».',
+  ud_sure: 'Tushundim: xodim butunlay o‘chiriladi', ud_btn: 'O‘chirish', ud_done: '{n} o‘chirildi — kirish yopildi' });
+Object.assign(APP_T.ru, { ud_open: 'Удалить сотрудника', ud_eyebrow: 'Удаление сотрудника — без возврата', ud_login: 'Вход закроется сразу: логин и пароль больше не работают.',
+  ud_gone: 'Удалится: карточка, профиль (со сканом паспорта), ответы анкеты, прогресс по урокам, время учёбы, уведомления и вопросы.',
+  ud_kept: 'Останется: расчёты зарплаты, посещаемость, история имущества, идеи, задачи и журнал.', ud_keep: 'Оставить итоги обучения ({n} уроков) в рейтинге среди «прежних кандидатов»',
+  ud_assets: 'У сотрудника ещё {n} шт. имущества компании. Сначала примите его — иначе в истории оно останется «не возвращено».', ud_backup: 'Если нужно, сначала сохраните копию: меню → «Скачать все данные».',
+  ud_sure: 'Понятно: сотрудник удаляется навсегда', ud_btn: 'Удалить', ud_done: '{n} — удалён(а), вход закрыт' });
+Object.assign(APP_T.en, { ud_open: 'Delete employee', ud_eyebrow: 'Deleting an employee — cannot be undone', ud_login: 'Sign-in closes at once: the login and password stop working.',
+  ud_gone: 'Deleted: the card, profile (with the passport scan), questionnaire answers, lesson progress, study time, notifications and questions.',
+  ud_kept: 'Kept: pay calculations, attendance, property history, ideas, tasks and the log.', ud_keep: 'Keep the learning results ({n} lessons) in the rating among “previous candidates”',
+  ud_assets: 'The employee still has {n} company items. Take them back first — otherwise the history shows them as not returned.', ud_backup: 'If needed, save a copy first: menu → “Download all data”.',
+  ud_sure: 'I understand: the employee is deleted for good', ud_btn: 'Delete', ud_done: '{n} deleted — sign-in closed' });
+Object.assign(APP_T.zh, { ud_open: '删除员工', ud_eyebrow: '删除员工——无法恢复', ud_login: '登录立即关闭：账号和密码将失效。',
+  ud_gone: '将删除：员工卡片、个人资料（含护照扫描件）、问卷回答、课程进度、学习时间、通知和提问。',
+  ud_kept: '将保留：工资计算、考勤、财物记录、建议、任务和日志。', ud_keep: '在排行榜“以往候选人”中保留学习成绩（{n} 节课）',
+  ud_assets: '该员工还持有 {n} 件公司财物。请先收回——否则记录中会显示“未归还”。', ud_backup: '如有需要，请先保存副本：菜单 →“下载全部数据”。',
+  ud_sure: '我明白：员工将被永久删除', ud_btn: '删除', ud_done: '已删除 {n}——登录已关闭' });

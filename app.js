@@ -6829,9 +6829,53 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       er[0] ? h('p', { className: 'lor-field-error', style: { margin: 0 } }, er[0]) : null);
   }
   /* the SOP manager edits someone's card: name, login, photo, position and department, a new password */
+  /* удаление сотрудника (SOP-менеджер и CEO, «Xodimlar» → «Tahrirlash» → «Xodimni o‘chirish»). Вход закрывается сразу:
+     сервер стирает учётную запись и сессии (syncCreds_), файлы карточки (скан паспорта) уходят с Диска (dropGoneFiles_).
+     Удаляются карточка с профилем и анкетой, прогресс, время учёбы, уведомления и обращения. Остаются (история компании):
+     зарплата, посещаемость, имущество, идеи, сверхзадачи, опросы, журнал. Итоги обучения можно оставить в рейтинге
+     среди «прежних» (db.alumni) — без личных данных, только имя, должность и цифры */
+  function userStats(db, u) {
+    var pr = prog(db, u.id), passed = 0, sc = [];
+    for (var k in pr) if (pr[k] && pr[k].status === 'passed') { passed++; if (pr[k].score != null) sc.push(pr[k].score); }
+    return { passed: passed, avgScore: sc.length ? Math.round(sc.reduce(function (a, b) { return a + b; }, 0) / sc.length) : 0, avgMinutes: Math.round(avgMinutes(db, u)), days: daysSince(u) };
+  }
+  function deleteUser(d, uid, by, keep) {
+    var x = d.users.filter(function (u) { return u.id === uid; })[0], at = Date.now();
+    if (!x || x.role !== 'employee') return;
+    if (keep) { var st = userStats(d, x); if (st.passed) { d.alumni = d.alumni || []; d.alumni.push({ id: 'x' + x.id, name: x.name, position: x.position || '', cohort: x.cohort || '', level: x.level || 0, stats: st, leftAt: at }); } }
+    d.users = d.users.filter(function (u) { return u.id !== uid; });
+    ['progress', 'study', 'reminded'].forEach(function (k) { if (d[k]) delete d[k][uid]; });
+    d.notifications = (d.notifications || []).filter(function (n) { return n.userId !== uid; });
+    d.requests = (d.requests || []).filter(function (r) { return r.userId !== uid; });
+    d.audit.unshift({ id: nextId(d), userId: by, key: 'user-deleted', name: x.name, at: at });
+  }
+  function DelUserModal(p) {
+    var t = p.t, u = p.u, db = p.db, ok = useState(false), keep = useState(true);
+    var st = userStats(db, u), live = assetsOf(db, u.id).filter(function (a) { return a.status !== 'returned'; }).length;
+    function del() {
+      p.update(function (d) { deleteUser(d, u.id, p.user.id, keep[0]); });
+      p.say(tpl(t('ud_done'), { n: u.name })); p.onClose();
+    }
+    return h(Modal, { t: t, hid: 'ud-h', onClose: p.onBack, className: 'ud-modal' },
+      h('span', { className: 'lor-eyebrow' }, t('ud_eyebrow')),
+      h('h2', { className: 'lor-h', id: 'ud-h' }, u.name),
+      h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, [u.position, u.department, u.login].filter(Boolean).join(' · ')),
+      live ? h('div', { className: 'ud-warn', role: 'alert' }, tpl(t('ud_assets'), { n: live })) : null,
+      h('ul', { className: 'ud-list' },
+        h('li', { className: 'is-gone' }, t('ud_login')),
+        h('li', { className: 'is-gone' }, t('ud_gone')),
+        h('li', { className: 'is-kept' }, t('ud_kept'))),
+      st.passed ? h('label', { className: 'check' }, h('input', { type: 'checkbox', id: 'ud-keep', checked: keep[0], onChange: function (e) { keep[1](e.target.checked); } }), tpl(t('ud_keep'), { n: st.passed })) : null,
+      h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('ud_backup')),
+      h('label', { className: 'check big' }, h('input', { type: 'checkbox', id: 'ud-ok', checked: ok[0], onChange: function (e) { ok[1](e.target.checked); } }), t('ud_sure')),
+      h('div', { className: 'lor-modal-actions' },
+        h(Btn, { variant: 'ghost', onClick: p.onBack }, t('cancel')),
+        h(Btn, { variant: 'primary', disabled: !ok[0], onClick: del }, t('ud_btn'))));
+  }
   function UserEditModal(p) {
-    var t = p.t, u = p.u, emp = u.role === 'employee';
+    var t = p.t, u = p.u, emp = u.role === 'employee', delAsk = useState(false);
     var f = useState({ name: u.name || '', login: u.login || '', position: u.position || '', department: u.department || '', avatar: u.avatar || null, password: '' }), v = f[0], er = useState({});
+    if (delAsk[0]) return h(DelUserModal, Object.assign({}, p, { onBack: function () { delAsk[1](false); } }));
     function set(k, x) { var o = Object.assign({}, f[0]); o[k] = x; f[1](o); }
     function save() {
       var e = {}, l = v.login.trim().toLowerCase(), n = v.name.trim();
@@ -6861,6 +6905,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         emp ? h(Field, { name: 'ue-dep', label: t('department'), value: v.department, options: withCur(depOf(p.db), u.department), onChange: function (x) { set('department', x); } }) : null,
         h(Field, { name: 'ue-pw', label: t('ue_pw'), value: v.password, error: er[0].password, hint: t('ue_pw_hint'), onChange: function (x) { set('password', x); } })),
       h('div', { className: 'lor-modal-actions' },
+        emp && (lvlOf(p.user) === 'ceo' || lvlOf(p.user) === 'sop') ? h('button', { type: 'button', className: 'app-link ud-open', onClick: function () { delAsk[1](true); } }, t('ud_open')) : null,
         h(Btn, { variant: 'ghost', onClick: p.onClose }, t('cancel')),
         h(Btn, { variant: 'primary', arrow: true, onClick: save }, t('save'))));
   }
