@@ -2946,3 +2946,8 @@ Object.assign(APP_T.uz, { pl_new_ph: 'Yangi band…', pl_col_empty: 'Hali band y
 Object.assign(APP_T.ru, { pl_new_ph: 'Новый пункт…', pl_col_empty: 'Пунктов пока нет', mr_l_void: 'до начала работы / ещё не наступил', n_month_adm: 'Отчёт за {m} готов: сотрудников {n}, в зоне риска {r}.' });
 Object.assign(APP_T.en, { pl_new_ph: 'New item…', pl_col_empty: 'No items yet', mr_l_void: 'before start / not yet', n_month_adm: 'Report for {m} is ready: {n} employees, {r} at risk.' });
 Object.assign(APP_T.zh, { pl_new_ph: '新事项…', pl_col_empty: '暂无事项', mr_l_void: '入职前 / 尚未到来', n_month_adm: '{m}月度报告已生成：员工 {n} 名，风险区 {r} 名。' });
+/* «Savolnoma»: вопрос по условию (x.when) */
+Object.assign(APP_T.uz, { qn_when: 'Qachon ko‘rsatish', qn_when_all: 'Har doim ko‘rsatish', qn_when_if: 'Faqat agar «{q}» savolida tanlansa:', qn_when_pick: 'variantni belgilang' });
+Object.assign(APP_T.ru, { qn_when: 'Когда показывать', qn_when_all: 'Показывать всегда', qn_when_if: 'Только если в «{q}» выбрано:', qn_when_pick: 'отметьте вариант' });
+Object.assign(APP_T.en, { qn_when: 'When to show', qn_when_all: 'Always show', qn_when_if: 'Only if “{q}” is answered:', qn_when_pick: 'tick an option' });
+Object.assign(APP_T.zh, { qn_when: '何时显示', qn_when_all: '始终显示', qn_when_if: '仅当“{q}”选择：', qn_when_pick: '请勾选选项' });

@@ -241,8 +241,12 @@ SOP-менеджера: задайте любое новое значение (`
     не нажмёт «показать», и **не уходит в ИИ**; **«Profilga»** (`prof`: name, birth, phone, telegram, email, address,
     passport, emg) — ответ подставится в профиль, второй раз не вводить. Загрузка текстом или файлом **.txt / .docx** с
     пометками в конце строки: `[qisqa] [batafsil] [sana] [tanlov] [bir nechta] [baho] [jadval: A | B | C] [rozilik]
-    [ixtiyoriy] [asosiy] [maxfiy] [profil:email]`, строки `@sarlavha: …`, `@kirish: …`, `@birinchi`. Сам текст анкеты
-    компании в репозиторий не кладём — файл загружают в «Kontent» → «Savolnoma».
+    [ixtiyoriy] [asosiy] [maxfiy] [profil:email] [agar: Oilali]`, строки `@sarlavha: …`, `@kirish: …`, `@birinchi`. Сам
+    текст анкеты компании в репозиторий не кладём — файл загружают в «Kontent» → «Savolnoma».
+  - **Вопрос по условию** (`when: { q, any }`): виден, только если в вопросе с вариантами выше выбран один из
+    отмеченных вариантов — «Farzandlaringiz soni» только при «Oilali». В редакторе — строка «Har doim ko‘rsatish /
+    Faqat agar «…» savolida tanlansa:» и варианты-чипы; в тексте — `[agar: Oilali]` (или `[agar: A | B]`: ближайший
+    выше вопрос с таким вариантом). Скрытый вопрос не обязателен, не нумеруется, его ответ не сохраняется (`qnShowIf`).
   - **Тест после анкеты** (например, «Temperament testi»: 50 утверждений, 1–5) — той же загрузкой текста, дописывается в
     конец анкеты. У раздела: `[shkala: Название]` — оценки раздела суммируются в шкалу; `[temperament: sangvinik |
     xolerik | melanxolik | flegmatik]` — темперамент **по самой высокой шкале** (`temper: { mode: 'max', map }`):

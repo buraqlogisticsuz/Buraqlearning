@@ -1025,6 +1025,30 @@ try {
   await J.locator('#f-login').waitFor({ timeout: 8000 });
   step('удаление сотрудника: «Xodimlar» → «Tahrirlash» → «Xodimni o‘chirish» с подтверждением; вход закрылся, карточки нет');
 
+  // ---------- вопрос по условию: «Farzandlaringiz soni» — только при «Oilali» ([agar: Oilali]) ----------
+  await nav(A, 'cms'); await A.locator('.lor-tab').filter({ hasText: 'Savolnoma' }).click(); await A.waitForTimeout(300);
+  await A.locator('.qn-views .seg button').nth(1).click();
+  await A.locator('.qn-edit:not(.qn-scales) .qn-imp button').click();
+  await A.fill('#f-qn-paste', '# Oila\nOilaviy holatingiz [tanlov]\n- Oilali\n- Oilasiz\nFarzandlaringiz soni [qisqa] [agar: Oilali]');
+  await A.locator('.qn-paste-act .lor-btn-primary').click();
+  assert.equal(await A.locator('.qn-when.is-on').count(), 1, 'в редакторе — условие «faqat agar …» с отмеченным вариантом');
+  await A.locator('.qn-admin .in-actions .lor-btn-primary').click(); await settle(A);
+  { const q = srv.g.state().settings.questionnaire, by = t => q.questions.find(x => x.text.startsWith(t));
+    assert.deepEqual(by('Farzandlaringiz').when, { q: by('Oilaviy').id, any: ['Oilali'] }, 'условие — на сервере'); }
+  await E.reload({ waitUntil: 'networkidle' }); await watchSync(E);
+  await E.locator('.qn-wiz').waitFor({ timeout: 8000 });
+  const kids = () => E.locator('.qn-field .qn-q', { hasText: 'Farzandlaringiz' }).count();
+  assert.equal(await kids(), 0, 'пока не выбрано — вопроса о детях нет');
+  await E.locator('.qn-tile', { hasText: 'Oilasiz' }).click();
+  assert.equal(await kids(), 0, '«Oilasiz» — вопроса о детях нет');
+  await E.locator('.qn-tile', { hasText: 'Oilali' }).click();
+  assert.equal(await kids(), 1, '«Oilali» — вопрос о детях появился');
+  await E.locator('.qn-tile', { hasText: 'Oilasiz' }).click();
+  await E.locator('.qn-page-foot .lor-btn-primary').click();
+  await E.locator('.qn-done').waitFor({ timeout: 5000 }); await settle(E);
+  assert.equal(srv.g.state().users.find(u => u.id === emp.id).qa.answers[srv.g.state().settings.questionnaire.questions.find(x => x.text.startsWith('Oilaviy')).id], 'Oilasiz');
+  step('вопрос по условию: «Farzandlaringiz soni» виден только при «Oilali»; с «Oilasiz» анкета отправляется без него');
+
   // ---------- демо больше нет: ?demo=1 — тот же вход на сервер; без адреса сервера — «Server ulanmagan» ----------
   const D = await device('бывшее демо', '?demo=1');
   assert.equal(await D.locator('.demo-box').count(), 0, 'демо-входов нет');
