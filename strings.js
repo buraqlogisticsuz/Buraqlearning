@@ -2885,3 +2885,15 @@ Object.assign(APP_T.uz, { ir_doc: 'Hujjat', ir_video: 'Video', ir_windows: 'Oyna
 Object.assign(APP_T.ru, { ir_doc: 'Документ', ir_video: 'Видео', ir_windows: 'Окна', ir_hide: 'Скрыть', ir_show: 'Показать', ir_doc_hidden: 'окно документа скрыто — нажмите «Документ»' });
 Object.assign(APP_T.en, { ir_doc: 'Document', ir_video: 'Video', ir_windows: 'Windows', ir_hide: 'Hide', ir_show: 'Show', ir_doc_hidden: 'the document window is hidden — press “Document”' });
 Object.assign(APP_T.zh, { ir_doc: '文件', ir_video: '视频', ir_windows: '窗口', ir_hide: '隐藏', ir_show: '显示', ir_doc_hidden: '文件窗口已隐藏——请点击“文件”' });
+
+// «Savolnoma»: тест после анкеты — пояснения, подписи оценок 1–5, темперамент по самой высокой шкале
+Object.assign(APP_T.uz, { qn_t_note: 'Izoh (savol emas)', qn_labels: 'Baho yorliqlari 1–5 («|» bilan):', qn_tm_mode: 'Temperamentni hisoblash usuli', qn_tm_mode_max: 'Eng yuqori ball (har shkala — bitta temperament)', qn_tm_mode_en: 'Ikki shkala: ekstraversiya × neyrotizm', qn_tm_not: 'Temperament emas', qn_tm_max_hint: 'Ball eng yuqori shkala — asosiy temperament, ikkinchisi — qo‘shimcha. Temperamentga bog‘lanmagan shkala (masalan, ishonchlilik) alohida baholanadi.', qn_tm_second: 'qo‘shimcha: {t}' });
+Object.assign(APP_T.ru, { qn_t_note: 'Пояснение (не вопрос)', qn_labels: 'Подписи оценок 1–5 (через «|»):', qn_tm_mode: 'Как считать темперамент', qn_tm_mode_max: 'По самому высокому баллу (шкала = темперамент)', qn_tm_mode_en: 'Две шкалы: экстраверсия × нейротизм', qn_tm_not: 'Не темперамент', qn_tm_max_hint: 'Шкала с самым высоким баллом — основной темперамент, вторая — дополнительный. Шкала без темперамента (например, надёжность) оценивается отдельно.', qn_tm_second: 'дополнительный: {t}' });
+Object.assign(APP_T.en, { qn_t_note: 'Note (not a question)', qn_labels: 'Rating labels 1–5 (separate with “|”):', qn_tm_mode: 'How to work out the temperament', qn_tm_mode_max: 'Highest score (each scale is a temperament)', qn_tm_mode_en: 'Two scales: extraversion × neuroticism', qn_tm_not: 'Not a temperament', qn_tm_max_hint: 'The highest-scoring scale is the main temperament, the second is the additional one. A scale without a temperament (e.g. reliability) is rated separately.', qn_tm_second: 'additional: {t}' });
+Object.assign(APP_T.zh, { qn_t_note: '说明（非问题）', qn_labels: '1–5 分标签（用“|”分隔）：', qn_tm_mode: '气质类型计算方式', qn_tm_mode_max: '按最高分（每个量表对应一种气质）', qn_tm_mode_en: '两个量表：外向性 × 神经质', qn_tm_not: '不对应气质', qn_tm_max_hint: '得分最高的量表为主要气质，第二高为辅助气质。未对应气质的量表（如可靠性）单独评估。', qn_tm_second: '辅助：{t}' });
+
+// «Savolnoma»: шкала «не про меня ←→ про меня»
+Object.assign(APP_T.uz, { qn_lk_pick: 'Sizga qanchalik to‘g‘ri keladi? Belgilang' });
+Object.assign(APP_T.ru, { qn_lk_pick: 'Насколько это про вас? Отметьте' });
+Object.assign(APP_T.en, { qn_lk_pick: 'How much is this like you? Pick one' });
+Object.assign(APP_T.zh, { qn_lk_pick: '这多大程度上符合您？请选择' });

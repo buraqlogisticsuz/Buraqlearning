@@ -3871,3 +3871,67 @@ input.org-name:hover, input.org-name:focus { border-color: var(--line); backgrou
   .ir > .ir-foot { flex-direction: column; align-items: stretch; gap: 10px; padding: 10px 14px; }
   .ir > .ir-foot .ir-actions { justify-content: space-between; }
 }
+
+/* «Savolnoma»: пояснение в разделе, оценка 1–5 с подписями, дополнительный темперамент */
+.qn-note-box { display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px; border-radius: var(--radius-md); background: var(--blue-soft); color: var(--ink); font-size: 14px; line-height: 21px; }
+.qn-note-box svg { flex: none; color: var(--blue-text); margin-top: 1px; }
+.qn-note-box p { margin: 0 0 6px; }
+.qn-note-box p:last-child { margin-bottom: 0; }
+.qn-scale.has-labels .qn-sc-row { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.qn-scale.has-labels .qn-sc { width: auto; height: auto; min-height: 62px; padding: 8px 6px; border-radius: var(--radius-md); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; }
+.qn-scale.has-labels .qn-sc b { font-size: 16px; line-height: 18px; font-weight: 500; }
+.qn-scale.has-labels .qn-sc small { font-size: 11px; line-height: 14px; opacity: .85; text-align: center; }
+.qn-scale.has-labels .qn-sc.is-on { transform: none; }
+.qn-temper-2 { font-size: 13px; line-height: 18px; opacity: .85; }
+.qn-tm-2 { color: var(--ink-muted); }
+.qn-tm-scn { min-width: 160px; font-size: 14px; color: var(--ink); }
+@media (max-width: 640px) {
+  .qn-scale.has-labels .qn-sc-row { gap: 4px; }
+  .qn-scale.has-labels .qn-sc { min-height: 70px; padding: 6px 2px; }
+  .qn-scale.has-labels .qn-sc small { font-size: 10px; line-height: 12px; }
+}
+.qn-track { display: block; }
+.qn-track .lor-progress-fill { display: block; transition: width var(--t-lg) var(--ease-out); }
+
+/* «Savolnoma»: оценка 1–5 с подписями — шкала «не про меня ←→ про меня»: кружки на линии, крайние крупнее,
+   слева красные (не согласен), посередине серый, справа синие (согласен); выбранный — с заливкой и галочкой */
+.qn-lk { display: grid; grid-template-columns: minmax(70px, 130px) minmax(0, 1fr) minmax(70px, 130px); align-items: center; gap: 10px 16px; padding: 8px 0 2px; }
+.qn-lk-end { font-size: 12px; line-height: 16px; }
+.qn-lk-end.is-l { text-align: right; color: var(--red-text); }
+.qn-lk-end.is-r { text-align: left; color: var(--blue-text); }
+.qn-lk-dots { position: relative; display: flex; align-items: center; justify-content: space-between; max-width: 420px; width: 100%; justify-self: center; }
+.qn-lk-dots::before { content: ''; position: absolute; left: 22px; right: 22px; top: 50%; height: 2px; transform: translateY(-50%); background: linear-gradient(90deg, var(--red-soft), var(--line) 50%, var(--blue-soft)); }
+.qn-lk-dots .qn-sc { position: relative; z-index: 1; padding: 0; border-radius: 50%; border: 2px solid var(--border); background: var(--surface-raised); color: var(--white); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; transition: transform var(--t-sm) var(--ease-out), background-color var(--t-sm) var(--ease), box-shadow var(--t-sm) var(--ease), opacity var(--t-sm) var(--ease); }
+.qn-lk-dots .qn-sc.s-1, .qn-lk-dots .qn-sc.s-5 { width: 48px; height: 48px; }
+.qn-lk-dots .qn-sc.s-2, .qn-lk-dots .qn-sc.s-4 { width: 38px; height: 38px; }
+.qn-lk-dots .qn-sc.s-3 { width: 28px; height: 28px; }
+.qn-lk-dots .qn-sc.s-1, .qn-lk-dots .qn-sc.s-2 { border-color: var(--red); }
+.qn-lk-dots .qn-sc.s-4, .qn-lk-dots .qn-sc.s-5 { border-color: var(--blue); }
+.qn-lk-dots .qn-sc.s-3 { border-color: var(--gray); }
+.qn-lk-dots .qn-sc:hover { transform: scale(1.12); }
+.qn-lk-dots .qn-sc.s-1:hover, .qn-lk-dots .qn-sc.s-2:hover { background: var(--red-soft); }
+.qn-lk-dots .qn-sc.s-4:hover, .qn-lk-dots .qn-sc.s-5:hover { background: var(--blue-soft); }
+.qn-lk-dots .qn-sc.s-3:hover { background: var(--surface-sunken); }
+.qn-lk-dots .qn-sc:active { transform: scale(.94); }
+.qn-lk-dots.has-v .qn-sc:not(.is-on) { opacity: .6; }
+.qn-lk-dots.has-v .qn-sc:not(.is-on):hover { opacity: 1; }
+.qn-lk-dots .qn-sc.is-on { transform: scale(1.12); }
+.qn-lk-dots .qn-sc.is-on.s-1, .qn-lk-dots .qn-sc.is-on.s-2 { background: var(--red); border-color: var(--red); color: var(--on-red); box-shadow: 0 0 0 6px var(--red-soft); }
+.qn-lk-dots .qn-sc.is-on.s-4, .qn-lk-dots .qn-sc.is-on.s-5 { background: var(--blue); border-color: var(--blue); color: var(--on-blue); box-shadow: 0 0 0 6px var(--blue-soft); }
+.qn-lk-dots .qn-sc.is-on.s-3 { background: var(--gray); border-color: var(--gray); color: var(--navy); box-shadow: 0 0 0 6px var(--surface-sunken); }
+.qn-lk-dots .qn-sc.is-on svg { animation: qn-pop .3s var(--ease-out); }
+.qn-lk-dots .qn-sc:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.qn-lk-cap { grid-column: 1 / -1; justify-self: center; min-height: 18px; font-size: 13px; line-height: 18px; color: var(--ink-muted); }
+.qn-lk-cap.is-set { font-weight: 500; animation: qn-in var(--t-md) var(--ease-out); }
+.qn-lk-cap.is-l { color: var(--red-text); }
+.qn-lk-cap.is-r { color: var(--blue-text); }
+.qn-lk-cap.is-m { color: var(--ink); }
+@media (max-width: 640px) {
+  .qn-lk { grid-template-columns: 1fr 1fr; }
+  .qn-lk-dots { grid-column: 1 / -1; grid-row: 1; max-width: none; }
+  .qn-lk-end { grid-row: 2; }
+  .qn-lk-end.is-l { text-align: left; }
+  .qn-lk-end.is-r { text-align: right; }
+  .qn-lk-cap { grid-row: 3; }
+}
+@media (prefers-reduced-motion: reduce) { .qn-lk-dots .qn-sc, .qn-lk-cap.is-set, .qn-lk-dots .qn-sc.is-on svg { animation: none; transition: none; } }

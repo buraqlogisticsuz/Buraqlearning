@@ -889,6 +889,42 @@ try {
   await A.locator('.lor-tab').filter({ hasText: 'Darslar' }).click();
   step('«сначала анкета»: по шагам до всего остального; таблица языков, дата, согласие; у SOP — таблица «главное», паспорт скрыт до «показать»');
 
+  // ---------- тест после анкеты: пояснение, оценки 1–5 с подписями, темперамент по самой высокой шкале (основной + дополнительный) ----------
+  await nav(A, 'cms'); await A.locator('.lor-tab').filter({ hasText: 'Savolnoma' }).click(); await A.waitForTimeout(300);
+  await A.locator('.qn-views .seg button').nth(1).click();
+  await A.locator('.qn-edit:not(.qn-scales) .qn-imp button').click();
+  await A.fill('#f-qn-paste', '@baho: Umuman | Kam | Ba’zan | Ko‘proq | To‘liq\n@chegaralar: 1 Past | 3 O‘rta | 5 Yuqori\n# Temperament testi\n> Har bir holatni 1 dan 5 gacha baholang.\n# Muloqot [shkala: Muloqot] [temperament: sangvinik]\nYangi odamlar bilan tez chiqishaman [baho]\n# Liderlik [shkala: Liderlik] [temperament: xolerik]\nTez qaror qabul qilaman [baho]\n# Mas’uliyat [shkala: Ishonchlilik]\nVazifani oxirigacha bajaraman [baho]');
+  await A.locator('.qn-paste-act .lor-btn-primary').click();
+  await A.locator('.qn-admin .in-actions .lor-btn-primary').click(); await settle(A);
+  { const q = srv.g.state().settings.questionnaire, sc = n => q.scales.find(x => x.name === n);
+    assert.equal(q.temper.mode, 'max');
+    assert.deepEqual([q.temper.map[sc('Muloqot').id], q.temper.map[sc('Liderlik').id], q.temper.map[sc('Ishonchlilik').id]], ['sanguine', 'choleric', undefined], 'шкала = темперамент, надёжность — отдельно');
+    const lq = q.questions.find(x => x.text.startsWith('Tez qaror'));
+    assert.deepEqual([lq.type, lq.scale, lq.labels[4]], ['scale', sc('Liderlik').id, 'To‘liq'], 'оценка — в шкале раздела, с подписями');
+    assert.ok(q.questions.some(x => x.type === 'note'), 'пояснение — не вопрос'); }
+  await E.reload({ waitUntil: 'networkidle' }); await watchSync(E);
+  await E.locator('.qn-wiz').waitFor({ timeout: 8000 });
+  assert.match(await E.locator('.qn-step-head .lor-h').innerText(), /TEMPERAMENT TESTI/i, 'кто анкету уже заполнил — сразу к тесту');
+  assert.ok(await E.locator('.qn-note-box').count(), 'пояснение показано');
+  await E.locator('.qn-page-foot .lor-btn-primary').click(); await E.waitForTimeout(250);
+  await E.locator('.qn-sc').nth(1).click(); assert.match(await E.locator('.qn-lk-cap').innerText(), /Kam/, 'подпись выбранной оценки — под шкалой');
+  await E.locator('.qn-page-foot .lor-btn-primary').click(); await E.waitForTimeout(250);
+  await E.locator('.qn-sc').nth(4).click();
+  await E.locator('.qn-page-foot .lor-btn-primary').click(); await E.waitForTimeout(250);
+  await E.locator('.qn-sc').nth(2).click();
+  await E.locator('.qn-page-foot .lor-btn-primary').click();
+  await E.locator('.qn-done').waitFor({ timeout: 5000 }); await settle(E);
+  await E.locator('.qn-done .lor-btn-primary').click();
+  await A.reload({ waitUntil: 'networkidle' }); await watchSync(A);
+  await nav(A, 'cms'); await A.locator('.lor-tab').filter({ hasText: 'Savolnoma' }).click(); await A.waitForTimeout(300);
+  await A.locator('.qn-tbl tbody tr').first().click();
+  { const tx = await A.locator('.qn-temper').innerText();
+    assert.ok(/Xolerik/.test(tx) && /Sangvinik/.test(tx), 'основной — Xolerik (5), дополнительный — Sangvinik (2)'); }
+  assert.match(await A.locator('.qn-bars').innerText(), /Ishonchlilik[\s\S]*3 \/ 5/, 'надёжность — отдельной шкалой');
+  await A.locator('.qn-ans .lor-modal-x').click();
+  await A.locator('.lor-tab').filter({ hasText: 'Darslar' }).click();
+  step('тест после анкеты: пояснение, оценки 1–5 с подписями, темперамент — по самой высокой шкале (основной + дополнительный), надёжность отдельно');
+
   // ---------- «Lavozim va bo‘limlar»: CEO добавляет должность и отдел; SOP-менеджер выбирает их у нового сотрудника, сам список не меняет ----------
   await C.reload({ waitUntil: 'networkidle' }); await watchSync(C);
   await nav(C, 'staff'); await C.locator('.org-btn').click();

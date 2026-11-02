@@ -394,11 +394,11 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
      Ответы — в карточке сотрудника: users[].qa = { answers: { <id вопроса>: текст | [варианты] | 1…5 }, at — когда отправил }.
      Чужие карточки сотрудникам не уходят (сервер: PUBLIC_USER) — ответы видят сам сотрудник, CEO, SOP-менеджер и руководитель.
      Должен заполнить, пока не ответил на все обязательные вопросы: добавили новый обязательный — спросит снова, с прежними ответами */
-  var QN_TYPES = ['long', 'text', 'one', 'many', 'scale', 'date', 'grid', 'consent', 'section'];
+  var QN_TYPES = ['long', 'text', 'one', 'many', 'scale', 'date', 'grid', 'consent', 'note', 'section'];
   /* ответ в карточку профиля (prof): анкета — первой, профиль потом подставит то, что уже написано */
   var QN_PROF = ['name', 'birth', 'phone', 'telegram', 'email', 'address', 'passport', 'emg'];
   function qnOf(db) { var q = db.settings && db.settings.questionnaire; return q && q.on !== false && qnAsk(q).length ? q : null; }
-  function qnAsk(q) { return ((q && q.questions) || []).filter(function (x) { return x.type !== 'section'; }); }
+  function qnAsk(q) { return ((q && q.questions) || []).filter(function (x) { return x.type !== 'section' && x.type !== 'note'; }); }
   function qnHas(v) {
     if (v === true) return true;
     if (v == null || v === false) return false;
@@ -467,13 +467,21 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       return { s: sc, score: score, max: max, n: n, total: qs.length, band: band ? band.label : '' };
     });
   }
-  function qnTemper(q, res) {
-    var tp = q && q.temper; if (!tp || !tp.e || !tp.n) return null;
+  /* темперамент двумя способами: «en» — экстраверсия × нейротизм (выше средней — «высоко»); «max» — у каждой из четырёх шкал
+     свой темперамент (temper.map), основной — самая высокая шкала, дополнительный — вторая */
+  function qnHasTemper(q) { var tp = q && q.temper; return !!(tp && (tp.mode === 'max' ? Object.keys(tp.map || {}).length : tp.e && tp.n)); }
+  function qnTemperAll(q, res) {
+    var tp = q && q.temper; if (!qnHasTemper(q)) return null;
+    if (tp.mode === 'max') {
+      var c = res.filter(function (r) { return tp.map[r.s.id] && r.n; }).sort(function (a, b) { return b.score - a.score; });
+      return c.length ? { main: tp.map[c[0].s.id], second: c[1] && c[1].score > 0 ? tp.map[c[1].s.id] : null } : null;
+    }
     var e = res.filter(function (r) { return r.s.id === tp.e; })[0], nn = res.filter(function (r) { return r.s.id === tp.n; })[0];
     if (!e || !nn || !e.n || !nn.n) return null;
     var hiE = e.score > +tp.eMid, hiN = nn.score > +tp.nMid;
-    return hiE ? (hiN ? 'choleric' : 'sanguine') : (hiN ? 'melancholic' : 'phlegmatic');
+    return { main: hiE ? (hiN ? 'choleric' : 'sanguine') : (hiN ? 'melancholic' : 'phlegmatic') };
   }
+  function qnTemper(q, res) { var x = qnTemperAll(q, res); return x ? x.main : null; }
   /* один вопрос анкеты. Варианты — плитки с буквами A, B, C (да / нет — крупные ✓ и ✕), несколько — те же плитки;
      таблица (языки) — ряд «таблеток»-уровней, заполненных до выбранного; оценка 1–5 — кружки; дата — календарь;
      согласие — карточка со щитом. Номер вопроса становится галочкой, когда ответ есть */
@@ -483,6 +491,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   function QnField(p) {
     var t = p.t, x = p.q, v = p.value, id = 'qn-' + x.id, ch = p.onChange, ro = !ch, done = qnFilled(x, v);
     if (x.type === 'section') return h('h3', { className: 'qn-sec' }, h(Ico, { name: qnSecIco(x.text), size: 18 }), h('span', null, x.text));
+    if (x.type === 'note') return h('div', { className: 'qn-note-box' }, h(Ico, { name: 'bulb', size: 20 }), h('div', null, paras(x.text)));
     var star = x.req ? h('span', { className: 'lor-req', 'aria-hidden': true }, '*') : null;
     if (x.type === 'consent') return h('div', { className: cx('qn-field qn-consent', done && 'is-done', p.err && 'is-err'), 'data-q': x.id },
       h('label', { className: 'qn-consent-l' },
@@ -520,9 +529,22 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           yn ? null : h('span', { className: 'qn-box', 'aria-hidden': true }, h(Ico, { name: 'check', size: 14, w: 2.4 })));
       }));
     }
-    else input = h('div', { className: 'qn-scale' },
-      h('div', { className: 'qn-sc-row', role: 'radiogroup', 'aria-labelledby': id + '-l' }, [1, 2, 3, 4, 5].map(function (n) { return h('button', { key: n, type: 'button', role: 'radio', 'aria-checked': v === n, disabled: ro, className: cx('qn-sc', v === n && 'is-on', typeof v === 'number' && n < v && 'is-below'), onClick: function () { ch(n); } }, n); })),
-      h('span', { className: 'qn-sc-cap' }, t('qn_scale_cap')));
+    else {
+      /* оценка 1–5: с подписями (x.labels — «Umuman to‘g‘ri kelmaydi» … «To‘liq to‘g‘ri keladi») — широкие плитки */
+      var labs = (x.labels || []).length === 5 ? x.labels : null;
+      /* с подписями — шкала «не про меня ←→ про меня»: пять кружков на линии, крайние крупнее, слева красные, справа синие */
+      if (labs) input = h('div', { className: 'qn-lk' },
+        h('span', { className: 'qn-lk-end is-l' }, labs[0]),
+        h('div', { className: cx('qn-lk-dots', typeof v === 'number' && 'has-v'), role: 'radiogroup', 'aria-labelledby': id + '-l' }, [1, 2, 3, 4, 5].map(function (n) {
+          return h('button', { key: n, type: 'button', role: 'radio', 'aria-checked': v === n, 'aria-label': n + ' — ' + labs[n - 1], title: labs[n - 1], disabled: ro, className: cx('qn-sc qn-lk-dot', 's-' + n, v === n && 'is-on'), onClick: function () { ch(n); } },
+            v === n ? h(Ico, { name: 'check', size: n === 3 ? 14 : 18, w: 2.6 }) : null);
+        })),
+        h('span', { className: 'qn-lk-end is-r' }, labs[4]),
+        h('span', { className: cx('qn-lk-cap', typeof v === 'number' && 'is-set', typeof v === 'number' && (v < 3 ? 'is-l' : v > 3 ? 'is-r' : 'is-m')) }, typeof v === 'number' ? labs[v - 1] : t('qn_lk_pick')));
+      else input = h('div', { className: 'qn-scale' },
+        h('div', { className: 'qn-sc-row', role: 'radiogroup', 'aria-labelledby': id + '-l' }, [1, 2, 3, 4, 5].map(function (n) { return h('button', { key: n, type: 'button', role: 'radio', 'aria-checked': v === n, 'aria-label': String(n), disabled: ro, className: cx('qn-sc', v === n && 'is-on', typeof v === 'number' && n < v && 'is-below'), onClick: function () { ch(n); } }, n); })),
+        h('span', { className: 'qn-sc-cap' }, t('qn_scale_cap')));
+    }
     return h('div', { className: cx('qn-field', 'is-' + x.type, done && 'is-done', p.err && 'is-err'), 'data-q': x.id },
       h('span', { className: 'qn-q', id: id + '-l' }, h('span', { className: cx('qn-n', done && 'is-done'), 'aria-hidden': true }, done ? h(Ico, { name: 'check', size: 13, w: 2.6 }) : p.n), h('span', null, x.text, star)),
       x.type === 'many' && !ro ? h('span', { className: 'lor-sm lor-muted qn-many' }, t('qn_many_hint')) : null,
@@ -531,7 +553,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   }
   function qnFields(q, a, set, errs, t) {
     var n = 0;
-    return (q.questions || []).map(function (x) { if (x.type !== 'section' && x.type !== 'consent') n++; return h(QnField, { key: x.id, t: t, q: x, n: n, value: a[x.id], err: errs && errs[x.id], onChange: set ? function (v) { set(x.id, v); } : null }); });
+    return (q.questions || []).map(function (x) { if (x.type !== 'section' && x.type !== 'consent' && x.type !== 'note') n++; return h(QnField, { key: x.id, t: t, q: x, n: n, value: a[x.id], err: errs && errs[x.id], onChange: set ? function (v) { set(x.id, v); } : null }); });
   }
   /* анкета: окно поверх программы или (page — «сначала анкета») страница вместо программы.
      Обязательная — черновик сохраняется сам (через 1,5 с после правки) и по «Keyinroq»; «Yuborish» — когда все
@@ -548,9 +570,15 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   }
   function QnModal(p) {
     var t = p.t, u = p.user, q = qnOf(p.db) || { questions: [] }, due = qnDue(p.db, u), prev = (u.qa && u.qa.answers) || {};
-    var a = useState(function () { return Object.assign({}, prev); }), errs = useState({}), box = useRef(null), saved = useRef(JSON.stringify(prev)), draftAt = useState(0), stp = useState(0);
+    var a = useState(function () { return Object.assign({}, prev); }), errs = useState({}), box = useRef(null), saved = useRef(JSON.stringify(prev)), draftAt = useState(0), stp = useState(function () {
+      /* начать с первого незаполненного раздела, а если перед ним раздел-пояснение (инструкция теста) — с пояснения */
+      var st = qnSteps(q), i = st.map(function (x) { return x.items.every(function (y) { return !y.req || qnFilled(y, prev[y.id]); }); }).indexOf(false);
+      if (i < 0) return 0;
+      while (i > 0 && st[i - 1].items.every(function (y) { return y.type === 'note'; })) i--;
+      return i;
+    });
     var steps = qnSteps(q), num = {}, nn = 0;
-    (q.questions || []).forEach(function (x) { if (x.type !== 'section' && x.type !== 'consent') num[x.id] = ++nn; });
+    (q.questions || []).forEach(function (x) { if (x.type !== 'section' && x.type !== 'consent' && x.type !== 'note') num[x.id] = ++nn; });
     var ask = qnAsk(q), got = ask.filter(function (x) { return qnFilled(x, a[0][x.id]); }).length;
     function set(id, v) { a[1](function (o) { var n = Object.assign({}, o); n[id] = v; return n; }); if (errs[0][id]) errs[1](function (e) { var n = Object.assign({}, e); delete n[id]; return n; }); }
     function answers() {
@@ -585,7 +613,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       h('h2', { key: 'h', className: 'lor-h', id: 'qn-h' }, String(q.title || '').trim() || t('qn_title')),
       String(q.intro || '').trim() ? h('div', { key: 'i', className: 'intro-text qn-intro' }, paras(q.intro)) : null,
       h('p', { key: 'n', className: 'lor-sm lor-muted qn-note' }, t('qn_note_emp'))];
-    var prog = h('div', { className: 'qn-prog' }, h('span', { className: 'lor-sm lor-muted' }, tpl(t('qn_progress'), { n: got, m: ask.length }), draftAt[0] ? ' · ' + t('qn_draft_saved') : ''), h('span', { className: 'lor-progress' }, h('span', { className: 'lor-progress-fill', style: { width: Math.round(got / Math.max(1, ask.length) * 100) + '%' } })));
+    var prog = h('div', { className: 'qn-prog' }, h('span', { className: 'lor-sm lor-muted' }, tpl(t('qn_progress'), { n: got, m: ask.length }), draftAt[0] ? ' · ' + t('qn_draft_saved') : ''), h('span', { className: 'lor-progress-track qn-track' }, h('span', { className: 'lor-progress-fill', style: { width: Math.round(got / Math.max(1, ask.length) * 100) + '%' } })));
     /* страница «сначала анкета»: по разделу за шаг — слева разделы с иконками и галочками, сверху полоса прогресса */
     var bar = h('header', { className: 'qn-page-head' },
       h('img', { src: LOGO_W, alt: 'BURAQ logistics', width: 87, height: 30 }),
@@ -1648,7 +1676,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     [/ta.?lim|образов|educat/i, 'cap'], [/\btil|язык|langu/i, 'globe'], [/tajriba|опыт|experien/i, 'building'], [/ko.?nikma|навык|skill/i, 'laptop'], [/tayyorlik|safar|готовн|readi/i, 'plane'],
     [/haqingizda|о себе|about you/i, 'smile'], [/uslub|odat|стиль|habit/i, 'clock'], [/muammo|muloqot|общени|problem|communic/i, 'chat'], [/motivats|maqsad|мотивац|goal/i, 'target'],
     [/o.?rganish|rivojlan|развит|learn/i, 'book'], [/hissa|вклад|contribut/i, 'benefit'], [/moliya|maosh|финанс|зарплат|salary|financ/i, 'wallet'], [/kutuv|ожидан|expect/i, 'team'],
-    [/halollik|qadriyat|честн|ценност|honest|value/i, 'shield'], [/qiziqish|интерес|hobb|interest/i, 'heart'], [/salomat|здоров|health/i, 'pulse'], [/yakuniy|итог|final/i, 'question']];
+    [/halollik|qadriyat|честн|ценност|honest|value/i, 'shield'], [/qiziqish|интерес|hobb|interest/i, 'heart'], [/salomat|здоров|health/i, 'pulse'], [/yakuniy|итог|final/i, 'question'],
+    [/temperament|темперамент/i, 'spark'], [/liderlik|qat.?iyat|лидер|leader/i, 'flag'], [/aniqlik|tahlil|точност|анализ|analys/i, 'search'], [/sabr|barqaror|терпен|стабил|patien/i, 'clock'], [/mas.?uliyat|intizom|ответствен|дисциплин|disciplin/i, 'check']];
   function qnSecIco(text) { var s = String(text || ''); for (var i = 0; i < QN_SEC_ICO.length; i++) if (QN_SEC_ICO[i][0].test(s)) return QN_SEC_ICO[i][1]; return 'clip'; }
   function Ico(p) { return h('svg', { width: p.size || 20, height: p.size || 20, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: p.w || 1.6, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true, className: p.className }, h('path', { d: ICO[p.name] || ICO.other })); }
 
@@ -7174,14 +7203,43 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   var QN_MARK = { qisqa: 'text', short: 'text', 'короткий': 'text', batafsil: 'long', long: 'long', 'развернутый': 'long', 'развёрнутый': 'long',
     sana: 'date', date: 'date', 'дата': 'date', tanlov: 'one', one: 'one', 'выбор': 'one', 'bir nechta': 'many', many: 'many', 'несколько': 'many',
     baho: 'scale', scale: 'scale', 'оценка': 'scale', rozilik: 'consent', consent: 'consent', 'согласие': 'consent', jadval: 'grid', grid: 'grid', 'таблица': 'grid' };
+  /* тест в том же тексте: у раздела «# …» — [shkala: Название] (оценки 1–5 раздела суммируются в шкалу),
+     [temperament: sangvinik|xolerik|melanxolik|flegmatik] (темперамент — по самой высокой шкале), [chegaralar: 10 Past | 24 O‘rta …];
+     «> …» — пояснение в разделе (не вопрос); «@baho: A | B | C | D | E» — подписи оценок 1–5; «@chegaralar: …» — границы по умолчанию */
+  var QN_TM_WORD = { sangvinik: 'sanguine', 'сангвиник': 'sanguine', sanguine: 'sanguine', xolerik: 'choleric', 'холерик': 'choleric', choleric: 'choleric',
+    melanxolik: 'melancholic', 'меланхолик': 'melancholic', melancholic: 'melancholic', flegmatik: 'phlegmatic', 'флегматик': 'phlegmatic', phlegmatic: 'phlegmatic' };
+  function qnBands(txt) { return String(txt || '').split('|').map(function (b) { var m = /^\s*(\d+)\s*[-–—:]?\s*(.+?)\s*$/.exec(b); return m ? { from: +m[1], label: m[2].slice(0, 160) } : null; }).filter(Boolean); }
   function qnParse(s) {
-    var out = [], cur = null, meta = {};
+    var out = [], cur = null, meta = {}, sec = null, scales = [], map = {}, labels = null, defBands = null;
+    function scaleOf(name, bands) {
+      var sc = scales.filter(function (x) { return x.name.toLowerCase() === name.toLowerCase(); })[0];
+      if (!sc) { sc = { id: 's' + Math.random().toString(36).slice(2, 8), name: name.slice(0, 80), bands: bands || defBands || [] }; scales.push(sc); }
+      else if (bands) sc.bands = bands;
+      return sc;
+    }
     String(s || '').split(/\r?\n/).forEach(function (raw) {
       var l = raw.replace(/\s+/g, ' ').trim(), m;
       if (!l) return;
       if ((m = /^@\s*(sarlavha|title|название|kirish|intro|вступление)\s*:\s*(.+)$/i.exec(l))) { var tk = /^(sarlavha|title|название)$/i.test(m[1]); meta[tk ? 'title' : 'intro'] = m[2].slice(0, tk ? 120 : 4000); return; }
       if (/^@\s*(birinchi|first|первой)\b/i.test(l)) { meta.first = true; return; }
-      if (/^#/.test(l)) { cur = null; out.push(qnNew('section', l.replace(/^#+\s*/, '').slice(0, 300))); return; }
+      if ((m = /^@\s*(baho|оценка|labels)\s*:\s*(.+)$/i.exec(l))) { labels = m[2].split('|').map(function (x) { return x.trim().slice(0, 60); }).slice(0, 5); return; }
+      if ((m = /^@\s*(chegaralar|границы|bands)\s*:\s*(.+)$/i.exec(l))) { defBands = qnBands(m[2]); return; }
+      if (/^#/.test(l)) {
+        cur = null; var sm = [];
+        var title = l.replace(/^#+\s*/, '').replace(/\s*\[([^\]]+)\]/g, function (_, x) { sm.push(x.trim()); return ''; }).trim();
+        sec = qnNew('section', title.slice(0, 300)); sec.req = false; out.push(sec);
+        var tmk = null, bands = null, sname = null;
+        sm.forEach(function (mk) {
+          var low = mk.toLowerCase(), base = low.split(':')[0].trim(), rest = mk.indexOf(':') > 0 ? mk.slice(mk.indexOf(':') + 1).trim() : '';
+          if (/^(shkala|шкала|scale)$/.test(base)) sname = rest || title;
+          else if (/^(temperament|темперамент)$/.test(base)) tmk = QN_TM_WORD[rest.toLowerCase()] || null;
+          else if (/^(chegaralar|границы|bands)$/.test(base)) bands = qnBands(rest);
+        });
+        sec._scale = sname ? scaleOf(sname, bands).id : null;
+        if (sec._scale && tmk) map[sec._scale] = tmk;
+        return;
+      }
+      if (/^>\s*/.test(l)) { var nt = qnNew('note', l.replace(/^>\s*/, '').slice(0, 1500)); nt.req = false; out.push(nt); cur = null; return; }
       if ((m = /^(?:[-–—•*○◦□▪·●]|[a-zа-я][.)])\s*(.+)$/i.exec(l)) && cur) {
         cur.options.push(m[1].trim().slice(0, 200));
         if (!cur.typed && (cur.type === 'long' || cur.type === 'text')) cur.type = 'one';
@@ -7193,17 +7251,23 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       cur = qnNew('long', l.replace(/^\d+\s*[.)]\s*/, '').slice(0, 500));
       marks.forEach(function (mk) {
         var low = mk.toLowerCase(), base = low.split(':')[0].trim(), rest = mk.indexOf(':') > 0 ? mk.slice(mk.indexOf(':') + 1).trim() : '';
-        if (QN_MARK[base]) { cur.type = QN_MARK[base]; cur.typed = true; if (cur.type === 'grid') cur.cols = rest.split('|').map(function (c) { return c.trim(); }).filter(Boolean); }
+        if (QN_MARK[base]) {
+          cur.type = QN_MARK[base]; cur.typed = true;
+          if (cur.type === 'grid') cur.cols = rest.split('|').map(function (c) { return c.trim(); }).filter(Boolean);
+          if (cur.type === 'scale' && rest) cur.labels = rest.split('|').map(function (c) { return c.trim().slice(0, 60); }).slice(0, 5);
+        }
         else if (/^(ixtiyoriy|optional|необязательн)/.test(low)) cur.req = false;
         else if (/^(asosiy|key|главн|основн)/.test(low)) cur.key = true;
         else if (/^(maxfiy|secret|скрыт|конфиденц)/.test(low)) cur.secret = true;
+        else if (/^(teskari|reverse|обратн)/.test(low)) cur.rev = true;
         else if (/^(profil|profile|профиль)$/.test(base) && QN_PROF.indexOf(rest) >= 0) cur.prof = rest;
       });
-      if (cur.type === 'section') cur.req = false;
+      if (cur.type === 'scale') { if (!cur.labels && labels && labels.length === 5) cur.labels = labels.slice(); if (sec && sec._scale) cur.scale = sec._scale; }
+      if (!cur.scale) delete cur.rev;
       out.push(cur);
     });
-    out.forEach(function (x) { delete x.typed; if (x.type === 'grid' && !(x.cols || []).length) x.cols = ['1', '2', '3', '4', '5']; });
-    return { questions: out, title: meta.title, intro: meta.intro, first: meta.first };
+    out.forEach(function (x) { delete x.typed; delete x._scale; if (x.type === 'grid' && !(x.cols || []).length) x.cols = ['1', '2', '3', '4', '5']; });
+    return { questions: out, title: meta.title, intro: meta.intro, first: meta.first, scales: scales, temper: Object.keys(map).length ? { mode: 'max', map: map } : null };
   }
   function qnFromText(s) { return qnParse(s).questions; }
   function docxQnText(doc) {
@@ -7221,11 +7285,11 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   }
   function qnCsv(db, q) {
     var ask = qnAsk(q), cell = function (x) { x = String(x == null ? '' : x); return /[;"\n]/.test(x) ? '"' + x.replace(/"/g, '""') + '"' : x; }, T0 = T('uz');
-    var scs = (q.scales || []), tm = !!(q.temper && q.temper.e && q.temper.n);
+    var scs = (q.scales || []), tm = qnHasTemper(q);
     var rows = [['ID', 'Xodim', 'Lavozim', 'Bo‘lim', 'Yuborilgan'].concat(tm ? ['Temperament'] : [], scs.map(function (s) { return s.name + ' (ball)'; }), scs.map(function (s) { return s.name; }), ask.map(function (x) { return x.text; }))];
     db.users.filter(function (u) { return u.role === 'employee' && u.qa; }).forEach(function (u) {
-      var a = u.qa.answers || {}, res = qnScore(q, u), tp = qnTemper(q, res);
-      rows.push([u.id, u.name, u.position || '', u.department || '', u.qa.at ? fmtDate(u.qa.at) : '—'].concat(tm ? [tp ? T0('qn_tm_' + tp) : ''] : [], res.map(function (r) { return r.n ? r.score + ' / ' + r.max : ''; }), res.map(function (r) { return r.n ? r.band : ''; }), ask.map(function (x) { return qnText(x, a[x.id]); })));
+      var a = u.qa.answers || {}, res = qnScore(q, u), ta = qnTemperAll(q, res), tp = ta && ta.main;
+      rows.push([u.id, u.name, u.position || '', u.department || '', u.qa.at ? fmtDate(u.qa.at) : '—'].concat(tm ? [tp ? T0('qn_tm_' + tp) + (ta.second ? ' + ' + T0('qn_tm_' + ta.second) : '') : ''] : [], res.map(function (r) { return r.n ? r.score + ' / ' + r.max : ''; }), res.map(function (r) { return r.n ? r.band : ''; }), ask.map(function (x) { return qnText(x, a[x.id]); })));
     });
     return '﻿' + rows.map(function (r) { return r.map(cell).join(';'); }).join('\r\n');
   }
@@ -7236,7 +7300,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       var pct = r.max > 0 ? Math.max(0, Math.min(100, Math.round(r.score / r.max * 100))) : 0;
       return h('div', { key: r.s.id, className: 'qn-bar' },
         h('div', { className: 'qn-bar-top' }, h('span', { className: 'qn-bar-name' }, r.s.name), h('span', { className: 'qn-bar-n' }, r.n ? r.score + ' / ' + r.max : '—')),
-        h('span', { className: 'lor-progress' }, h('span', { className: 'lor-progress-fill', style: { width: (r.n ? pct : 0) + '%' } })),
+        h('span', { className: 'lor-progress-track qn-track' }, h('span', { className: 'lor-progress-fill', style: { width: (r.n ? pct : 0) + '%' } })),
         r.n ? h('span', { className: 'qn-bar-band' }, r.band || '', r.n < r.total ? h('small', null, (r.band ? ' · ' : '') + tpl(t('qn_answered'), { n: r.n, m: r.total })) : null) : h('span', { className: 'qn-bar-band lor-muted' }, t('qn_res_noans')));
     }));
   }
@@ -7246,18 +7310,19 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     return h('div', { className: 'qn-temper is-' + k },
       h('span', { className: 'lor-eyebrow' }, t('qn_temper')),
       h('b', null, t('qn_tm_' + k)),
+      p.k2 ? h('span', { className: 'qn-temper-2' }, tpl(t('qn_tm_second'), { t: t('qn_tm_' + p.k2) })) : null,
       p.short ? null : h('p', null, t('qn_tm_' + k + '_d')));
   }
   /* AI-вывод по ответам: только для CEO, SOP-менеджера и руководителя (сервер не отдаёт users[].qaReport сотруднику) */
   /* в ИИ — только должность, отдел и ответы; скрытые вопросы (паспорт, родители, здоровье — [maxfiy]) и согласия не уходят */
-  function qnAiPrompt(q, u, res, tp, lang) {
+  function qnAiPrompt(q, u, res, tp, lang, tp2) {
     var a = (u.qa && u.qa.answers) || {}, n = 0;
-    var qa = (q.questions || []).filter(function (x) { return !x.secret && x.type !== 'consent'; }).map(function (x) { if (x.type === 'section') return '\n## ' + x.text; n++; return n + '. ' + x.text + '\n   Javob: ' + (qnText(x, a[x.id]) || '—'); }).join('\n');
+    var qa = (q.questions || []).filter(function (x) { return !x.secret && x.type !== 'consent' && x.type !== 'note'; }).map(function (x) { if (x.type === 'section') return '\n## ' + x.text; n++; return n + '. ' + x.text + '\n   Javob: ' + (qnText(x, a[x.id]) || '—'); }).join('\n');
     var sc = res.filter(function (r) { return r.n; }).map(function (r) { return '- ' + r.s.name + ': ' + r.score + ' / ' + r.max + (r.band ? ' (' + r.band + ')' : ''); }).join('\n');
     return 'Siz BURAQ Logistics kompaniyasida HR-psixolog yordamchisisiz. Xodim (yoki ishga kirayotgan nomzod) kompaniya anketasini to‘ldirdi. Rahbariyat (CEO va SOP menejeri) uchun uning qisqa profilini tuzing: temperament, kuchli tomonlari, e’tibor berish kerak bo‘lgan joylar, motivatsiya, rahbarga maslahatlar va suhbatda aniqlashtiradigan savollar.\n' +
       'Qoidalar: faqat quyidagi javoblar va ballarga tayaning; dalil kam bo‘lsa, «ehtimol» deb yozing. Tibbiy yoki psixiatrik tashxis qo‘ymang. Din, millat, sog‘liq, siyosiy qarashlar, oilaviy holat, farzandlar haqida xulosa chiqarmang va ularni baholashda ishlatmang. «E’tibor berish kerak» bo‘limida faqat ishga oid kuzatuvlar bo‘lsin (masalan: ish joylarini tez-tez almashtirgan, javoblar juda qisqa, kutilgan maosh lavozimdan ancha yuqori, javoblar bir-biriga zid). Ohang — hurmatli va xolis; bu ishga olish yoki bo‘shatish uchun yagona asos emas. Javob tili: ' + (LANG_NAME[lang] || LANG_NAME.uz) + '.\n' +
       'LAVOZIM: ' + [u.position, u.department].filter(Boolean).join(', ') + '\n' +
-      'TEST BO‘YICHA TEMPERAMENT: ' + (tp ? T('uz')('qn_tm_' + tp) : 'hisoblanmagan — javoblardan ehtiyotkorlik bilan taxmin qiling') + '\n' +
+      'TEST BO‘YICHA TEMPERAMENT: ' + (tp ? T('uz')('qn_tm_' + tp) + (tp2 ? ' (qo‘shimcha: ' + T('uz')('qn_tm_' + tp2) + ')' : '') : 'hisoblanmagan — javoblardan ehtiyotkorlik bilan taxmin qiling') + '\n' +
       (sc ? 'SHKALALAR:\n' + sc + '\n' : '') +
       'SAVOLLAR VA JAVOBLAR:\n' + qa.slice(0, 30000) + '\n\n' +
       'Faqat JSON qaytaring, izohsiz: {"temperament": "1 jumla: temperament va nima uchun", "summary": "2–3 jumla", "strengths": ["3–5 ta"], "risks": ["e’tibor berish kerak: 0–4 ta, ishga oid"], "growth": ["2–3 ta rivojlantirish nuqtasi"], "motivation": "1–2 jumla", "communication": "1–2 jumla", "management": ["rahbarga 2–4 amaliy maslahat"], "roles": "qaysi vazifalarda o‘zini yaxshi ko‘rsatadi, 1–2 jumla", "interview": ["suhbatda aniqlashtirish uchun 2–4 savol"]}';
@@ -7273,7 +7338,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     function make() {
       if (!sampler || busy[0]) return;
       var res = qnScore(p.q, u), c = new AbortController(); ctl.current = c; busy[1](true); er[1]('');
-      sampler.json(qnAiPrompt(p.q, u, res, qnTemper(p.q, res), p.lang), { signal: c.signal }).then(function (r) {
+      var ta = qnTemperAll(p.q, res);
+      sampler.json(qnAiPrompt(p.q, u, res, ta && ta.main, p.lang, ta && ta.second), { signal: c.signal }).then(function (r) {
         var x = qnAiClean(r); if (!x) { er[1](t('ai_bad_json')); return; }
         var at = Date.now();
         p.update(function (db) { patchUser(db, u.id, function (z) { z.qaReport = { at: at, by: p.user.id, lang: p.lang, data: x }; }); });
@@ -7301,7 +7367,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   /* карточка одного сотрудника — CEO, SOP-менеджер, руководитель: главное, согласия, темперамент и шкалы, вывод ИИ,
      все ответы по разделам; скрытые ответы — по кнопке; «Chop etish» — печать или PDF */
   function QnPerson(p) {
-    var t = p.t, u = p.u, q = p.q, a = (u.qa && u.qa.answers) || {}, n = 0, res = qnScore(q, u), tp = qnTemper(q, res), open = useState(false);
+    var t = p.t, u = p.u, q = p.q, a = (u.qa && u.qa.answers) || {}, n = 0, res = qnScore(q, u), ta = qnTemperAll(q, res), tp = ta && ta.main, open = useState(false);
     var keys = qnKeys(q), cons = qnAsk(q).filter(function (x) { return x.type === 'consent'; }), hasSecret = qnAsk(q).some(function (x) { return x.secret && qnHas(a[x.id]); });
     useEffect(function () { function k(e) { if (e.key === 'Escape') p.onClose(); } window.addEventListener('keydown', k); return function () { window.removeEventListener('keydown', k); document.body.classList.remove('qn-printing'); }; }, []);
     function print() {
@@ -7327,13 +7393,13 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           var ok = a[x.id] === true;
           return h('p', { key: x.id, className: cx('lor-sm', ok ? 'is-ok' : 'is-no') }, (ok ? '✓ ' : '— ') + x.text + (ok && u.qa && u.qa.at ? ' · ' + fmtDate(u.qa.at) + (u.login ? ' · ' + u.login : '') : ''));
         })) : null,
-        tp || res.length ? h('div', { className: 'qn-res-top' }, h(TemperCard, { t: t, k: tp }), res.length ? h(QnBars, { t: t, res: res }) : null) : null,
+        tp || res.length ? h('div', { className: 'qn-res-top' }, h(TemperCard, { t: t, k: tp, k2: ta && ta.second }), res.length ? h(QnBars, { t: t, res: res }) : null) : null,
         h(QnAi, Object.assign({}, p, { q: q, u: u })),
         h('p', { className: 'lor-sm lor-muted qn-disc' }, t('qn_res_hint')),
         h('h3', { className: 'qn-sec' }, t('qn_answers_t')),
         h('dl', { className: 'qn-dl' }, (q.questions || []).map(function (x) {
           if (x.type === 'section') return h('h3', { key: x.id, className: 'qn-sec' }, h(Ico, { name: qnSecIco(x.text), size: 18 }), h('span', null, x.text));
-          if (x.type === 'consent') return null;
+          if (x.type === 'consent' || x.type === 'note') return null;
           n++; var v = qnShow(x, a[x.id], open[0]);
           return h('div', { key: x.id, className: cx('qn-dl-row', x.secret && 'is-secret') }, h('dt', null, n + '. ' + x.text), h('dd', { className: v ? '' : 'lor-muted' }, v || '—'));
         })),
@@ -7344,7 +7410,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var t = p.t, db = p.db, q = p.q, emps = db.users.filter(function (u) { return u.role === 'employee'; }), qs = useState(''), keys = qnKeys(q);
     var sent = emps.filter(function (u) { return u.qa && u.qa.at; }).sort(function (a, b) { return b.qa.at - a.qa.at; }), wait = emps.filter(function (u) { return !(u.qa && u.qa.at); });
     var needle = qs[0].trim().toLowerCase();
-    var rows = sent.map(function (u) { var res = qnScore(q, u); return { u: u, res: res, tp: qnTemper(q, res) }; });
+    var rows = sent.map(function (u) { var res = qnScore(q, u), ta = qnTemperAll(q, res); return { u: u, res: res, tp: ta && ta.main, tp2: ta && ta.second }; });
     var tm = {}; rows.forEach(function (r) { if (r.tp) tm[r.tp] = (tm[r.tp] || 0) + 1; });
     var scs = (q.scales || []).map(function (sc, i) { var xs = rows.map(function (r) { return r.res[i]; }).filter(function (r) { return r && r.n; }); return { s: sc, avg: xs.length ? Math.round(xs.reduce(function (s, r) { return s + r.score; }, 0) / xs.length * 10) / 10 : null, max: xs.length ? xs[0].max : 0 }; });
     if (!sent.length) return h('section', { className: 'box' }, h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('qn_res_none')), wait.length ? h('div', { className: 'in-wait' }, h('span', { className: 'lor-sm lor-muted' }, t('qn_wait')), wait.map(function (u) { return h('span', { key: u.id, className: 'in-chip' }, u.name); })) : null);
@@ -7353,7 +7419,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         h('span', { className: 'lor-eyebrow' }, t('qn_res_team')),
         h('b', { className: 'in-stat-n' }, sent.length + ' / ' + emps.length),
         h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, tpl(t('qn_stat'), { n: sent.length, m: emps.length })),
-        q.temper && q.temper.e ? h('div', { className: 'qn-tm-grid' }, QN_TEMPERS.map(function (k) { return h('div', { key: k, className: cx('qn-tm-cell', 'is-' + k) }, h('b', null, tm[k] || 0), h('span', null, t('qn_tm_' + k))); })) : null,
+        qnHasTemper(q) ? h('div', { className: 'qn-tm-grid' }, QN_TEMPERS.map(function (k) { return h('div', { key: k, className: cx('qn-tm-cell', 'is-' + k) }, h('b', null, tm[k] || 0), h('span', null, t('qn_tm_' + k))); })) : null,
         scs.some(function (x) { return x.avg != null; }) ? h('div', { className: 'qn-avg' }, scs.map(function (x) { return x.avg == null ? null : h('span', { key: x.s.id, className: 'in-chip' }, x.s.name + ': ' + tpl(t('qn_res_avg'), { n: x.avg }) + ' / ' + x.max); })) : null,
         h('p', { className: 'lor-sm lor-muted qn-disc' }, t('qn_res_hint'))),
       /* главные ответы ([asosiy]) — таблицей: строка на человека, поиск по имени, должности и ответам */
@@ -7362,7 +7428,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           h('h2', { className: 'lor-h' }, t('qn_tbl_t')),
           h('input', { type: 'search', className: 'lor-input qn-search', value: qs[0], placeholder: t('qn_search'), 'aria-label': t('qn_search'), onChange: function (e) { qs[1](e.target.value); } })),
         h('div', { className: 'qn-tbl-wrap' }, h('table', { className: 'qn-tbl' },
-          h('thead', null, h('tr', null, h('th', { scope: 'col' }, t('qn_tbl_who')), q.temper && q.temper.e ? h('th', { scope: 'col' }, t('qn_temper')) : null, keys.map(function (x) { return h('th', { key: x.id, scope: 'col', title: x.text }, qnShort(x)); }), h('th', { scope: 'col' }, t('qn_tbl_sent')))),
+          h('thead', null, h('tr', null, h('th', { scope: 'col' }, t('qn_tbl_who')), qnHasTemper(q) ? h('th', { scope: 'col' }, t('qn_temper')) : null, keys.map(function (x) { return h('th', { key: x.id, scope: 'col', title: x.text }, qnShort(x)); }), h('th', { scope: 'col' }, t('qn_tbl_sent')))),
           h('tbody', null, rows.filter(function (r) {
             if (!needle) return true;
             var a = r.u.qa.answers || {};
@@ -7371,7 +7437,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
             var a = r.u.qa.answers || {};
             return h('tr', { key: r.u.id, tabIndex: 0, onClick: function () { p.onOpen(r.u.id); }, onKeyDown: function (e) { if (e.key === 'Enter') p.onOpen(r.u.id); } },
               h('th', { scope: 'row' }, h('span', { className: 'qn-tbl-who' }, h(Av, { name: r.u.name, src: r.u.avatar, size: 28 }), h('span', null, h('b', null, r.u.name), h('small', null, r.u.position || '')), r.u.qaReport ? h('span', { className: 'qn-ai-chip' }, 'AI') : null)),
-              q.temper && q.temper.e ? h('td', null, r.tp ? h('span', { className: cx('qn-tm-chip', 'is-' + r.tp) }, t('qn_tm_' + r.tp)) : '—') : null,
+              qnHasTemper(q) ? h('td', null, r.tp ? h('span', { className: cx('qn-tm-chip', 'is-' + r.tp) }, t('qn_tm_' + r.tp)) : '—', r.tp2 ? h('small', { className: 'qn-tm-2' }, ' + ' + t('qn_tm_' + r.tp2)) : null) : null,
               keys.map(function (x) { return h('td', { key: x.id }, qnShow(x, a[x.id], false) || '—'); }),
               h('td', { className: 'qn-tbl-date' }, fmtDate(r.u.qa.at)));
           }))))) : null,
@@ -7407,9 +7473,15 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     /* вопросы из текста или файла (.txt — с пометками типов, .docx — Word); @sarlavha / @kirish / @birinchi — в настройки */
     function addParsed(r) {
       if (!r.questions.length) { err[1](t('qn_imp_none')); return; }
-      f[1](function (o) { var n = Object.assign({}, o, { questions: o.questions.concat(r.questions) }); if (r.title) n.title = r.title; if (r.intro) n.intro = r.intro; if (r.first) n.first = true; return n; });
+      f[1](function (o) {
+        var n = Object.assign({}, o, { questions: o.questions.concat(r.questions) });
+        if (r.title) n.title = r.title; if (r.intro) n.intro = r.intro; if (r.first) n.first = true;
+        if ((r.scales || []).length) n.scales = o.scales.concat(r.scales);
+        if (r.temper) n.temper = o.temper && o.temper.mode === 'max' ? { mode: 'max', map: Object.assign({}, o.temper.map, r.temper.map) } : r.temper;
+        return n;
+      });
       err[1]('');
-      p.say(tpl(t('qn_imp_ok'), { n: r.questions.filter(function (x) { return x.type !== 'section'; }).length }));
+      p.say(tpl(t('qn_imp_ok'), { n: r.questions.filter(function (x) { return x.type !== 'section' && x.type !== 'note'; }).length }));
     }
     function fromWord(e) {
       var file = (e.target.files || [])[0]; e.target.value = '';
@@ -7434,7 +7506,10 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         y.options = pairs.map(function (z) { return z[0]; });
         if (x.type === 'grid') y.cols = (x.cols || []).map(function (c) { return String(c).trim().slice(0, 40); }).filter(Boolean); else delete y.cols;
         delete y.colsText;
-        ['key', 'secret'].forEach(function (k) { if (!y[k] || x.type === 'section') delete y[k]; });
+        ['key', 'secret'].forEach(function (k) { if (!y[k] || x.type === 'section' || x.type === 'note') delete y[k]; });
+        if (x.type === 'note' || x.type === 'section') y.req = false;
+        if (x.type === 'scale' && (x.labels || []).filter(function (z) { return String(z).trim(); }).length === 5) y.labels = x.labels.map(function (z) { return String(z).trim().slice(0, 60); }); else delete y.labels;
+        delete y.labelsText;
         if (!y.prof || QN_PROF.indexOf(y.prof) < 0) delete y.prof;
         y.scale = ids[x.scale] && (choice || x.type === 'scale') ? x.scale : '';
         if (y.scale && choice) y.pts = pairs.map(function (z) { return Math.max(-99, Math.min(99, z[1])); }); else delete y.pts;
@@ -7447,7 +7522,9 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       var badG = qs.filter(function (x) { return x.type === 'grid' && (!x.options.length || x.cols.length < 2); })[0];
       if (badG) { err[1](tpl(t('qn_err_grid'), { q: badG.text.slice(0, 60) })); view[1]('edit'); return; }
       var scs = v.scales.map(function (s) { return { id: s.id, name: String(s.name || '').trim().slice(0, 80) || t('qn_sc_l'), bands: (s.bands || []).map(function (b) { return { from: +b.from || 0, label: String(b.label || '').trim().slice(0, 160) }; }).filter(function (b) { return b.label; }).sort(function (a, b) { return a.from - b.from; }) }; });
-      var tp = v.temper && ids[v.temper.e] && ids[v.temper.n] ? { e: v.temper.e, n: v.temper.n, eMid: +v.temper.eMid || 0, nMid: +v.temper.nMid || 0 } : null;
+      var tp = null;
+      if (v.temper && v.temper.mode === 'max') { var mp = {}; Object.keys(v.temper.map || {}).forEach(function (k) { if (ids[k] && QN_TEMPERS.indexOf(v.temper.map[k]) >= 0) mp[k] = v.temper.map[k]; }); if (Object.keys(mp).length) tp = { mode: 'max', map: mp }; }
+      else if (v.temper && ids[v.temper.e] && ids[v.temper.n]) tp = { e: v.temper.e, n: v.temper.n, eMid: +v.temper.eMid || 0, nMid: +v.temper.nMid || 0 };
       f[1](function (o) { return Object.assign({}, o, { questions: qs, scales: scs, temper: tp }); });
       p.update(function (d) {
         d.settings = d.settings || {};
@@ -7484,10 +7561,10 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
                 h(Btn, { variant: 'primary', size: 'sm', disabled: !paste[0].trim(), onClick: function () { addParsed(qnParse(paste[0])); paste[1](null); } }, t('qn_paste_add')))) : null,
             v.questions.length ? null : h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('qn_empty')),
             h('ol', { className: 'qn-items' }, v.questions.map(function (x, i) {
-              var sec = x.type === 'section', choice = x.type === 'one' || x.type === 'many', grid = x.type === 'grid', scored = !!x.scale && (choice || x.type === 'scale'); if (!sec && x.type !== 'consent') n++;
+              var sec = x.type === 'section' || x.type === 'note', choice = x.type === 'one' || x.type === 'many', grid = x.type === 'grid', scored = !!x.scale && (choice || x.type === 'scale'); if (!sec && x.type !== 'consent') n++;
               return h('li', { key: x.id, className: cx('qn-item', sec && 'is-sec') },
                 h('div', { className: 'qn-item-top' },
-                  h('span', { className: 'qn-item-n' }, sec ? '§' : n),
+                  h('span', { className: 'qn-item-n' }, x.type === 'note' ? '›' : sec ? '§' : n),
                   h('textarea', { className: 'lor-input qn-item-text', rows: sec ? 1 : 2, value: x.text, readOnly: ro, placeholder: sec ? t('qn_sec_ph') : t('qn_q_ph'), 'aria-label': sec ? t('qn_t_section') : tpl(t('qn_q_n'), { n: n }), onChange: function (e) { setQ(i, 'text', e.target.value); } }),
                   ro ? null : h('span', { className: 'qn-item-mv' },
                     h('button', { type: 'button', className: 'in-dl-mv', disabled: i === 0, 'aria-label': t('up'), title: t('up'), onClick: function () { move(i, -1); } }, '↑'),
@@ -7502,6 +7579,9 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
                   sec ? null : h('label', { className: 'check', title: t('qn_secret_hint') }, h('input', { type: 'checkbox', checked: !!x.secret, disabled: ro, onChange: function (e) { setQ(i, 'secret', e.target.checked); } }), t('qn_secret')),
                   x.type === 'text' || x.type === 'long' || x.type === 'date' ? h('select', { className: 'lor-input qn-type qn-prof-sel', value: x.prof || '', disabled: ro, 'aria-label': t('qn_prof'), title: t('qn_prof_hint'), onChange: function (e) { setQ(i, 'prof', e.target.value); } },
                     [['', t('qn_prof_none')]].concat(QN_PROF.map(function (k) { return [k, t('qn_prof') + ': ' + t('qn_pf_' + k)]; })).map(function (o) { return h('option', { key: o[0], value: o[0] }, o[1]); })) : null),
+                x.type === 'scale' ? h('div', { className: 'qn-item-opts' },
+                  h('span', { className: 'lor-sm lor-muted' }, t('qn_labels')),
+                  h('input', { className: 'lor-input qn-grid-cols', value: x.labelsText != null ? x.labelsText : (x.labels || []).join(' | '), readOnly: ro, placeholder: 'Umuman to‘g‘ri kelmaydi | … | To‘liq to‘g‘ri keladi', 'aria-label': t('qn_labels'), onChange: function (e) { var raw = e.target.value; setQs(function (a) { a[i] = Object.assign({}, a[i], { labelsText: raw, labels: raw.split('|').map(function (c) { return c.trim(); }) }); return a; }); } })) : null,
                 grid ? h('div', { className: 'qn-item-opts' },
                   h('span', { className: 'lor-sm lor-muted' }, t('qn_grid_cols')),
                   h('input', { className: 'lor-input qn-grid-cols', value: x.colsText != null ? x.colsText : (x.cols || []).join(' | '), readOnly: ro, placeholder: 'Bilmayman | Boshlang‘ich | O‘rta | Yuqori', 'aria-label': t('qn_grid_cols'), onChange: function (e) { var raw = e.target.value; setQs(function (a) { a[i] = Object.assign({}, a[i], { colsText: raw, cols: raw.split('|').map(function (c) { return c.trim(); }).filter(Boolean) }); return a; }); } }),
@@ -7525,7 +7605,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
             h('div', { className: 'qn-edit-head' },
               h('h2', { className: 'lor-h' }, t('qn_sc_t'), h('span', { className: 'lor-count' }, v.scales.length)),
               ro ? null : h('div', { className: 'qn-imp' },
-                v.temper && v.temper.e ? null : h(Btn, { variant: 'outline', size: 'sm', onClick: addTpl }, t('qn_tpl_temper')),
+                v.temper ? null : h(Btn, { variant: 'outline', size: 'sm', onClick: addTpl }, t('qn_tpl_temper')),
                 h(Btn, { variant: 'outline', size: 'sm', onClick: function () { setScs(function (a) { return a.concat([{ id: 's' + Math.random().toString(36).slice(2, 8), name: '', bands: [{ from: 0, label: '' }] }]); }); } }, '+ ' + t('qn_sc_add')))),
             h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('qn_sc_hint')),
             v.scales.map(function (sc, si) {
@@ -7547,8 +7627,20 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
                   ro ? null : h('button', { type: 'button', className: 'app-link qn-add-opt', onClick: function () { setScs(function (a) { var y = Object.assign({}, a[si]); y.bands = (y.bands || []).concat([{ from: mx, label: '' }]); a[si] = y; return a; }); } }, '+ ' + t('qn_band_add'))));
             }),
             v.scales.length >= 2 ? h('div', { className: 'qn-tm-cfg' },
-              h('label', { className: 'check big' }, h('input', { type: 'checkbox', id: 'qn-tm-on', checked: !!(v.temper && v.temper.e), disabled: ro, onChange: function (e) { set('temper', e.target.checked ? { e: v.scales[0].id, n: v.scales[1].id, eMid: 12, nMid: 12 } : null); } }), t('qn_tm_on')),
-              v.temper && v.temper.e ? h('div', { className: 'qn-tm-row' },
+              h('label', { className: 'check big' }, h('input', { type: 'checkbox', id: 'qn-tm-on', checked: !!v.temper, disabled: ro, onChange: function (e) { set('temper', e.target.checked ? (v.scales.length >= 4 ? { mode: 'max', map: {} } : { e: v.scales[0].id, n: v.scales[1].id, eMid: 12, nMid: 12 }) : null); } }), t('qn_tm_on')),
+              v.temper ? h('div', { className: 'seg', role: 'radiogroup', 'aria-label': t('qn_tm_mode') }, [['max', t('qn_tm_mode_max')], ['en', t('qn_tm_mode_en')]].map(function (o) {
+                var on = (v.temper.mode === 'max') === (o[0] === 'max');
+                return h('button', { key: o[0], type: 'button', role: 'radio', 'aria-checked': on, className: on ? 'is-on' : '', disabled: ro, onClick: function () { set('temper', o[0] === 'max' ? { mode: 'max', map: {} } : { e: v.scales[0].id, n: v.scales[1].id, eMid: 12, nMid: 12 }); } }, o[1]);
+              })) : null,
+              v.temper && v.temper.mode === 'max' ? h('div', { className: 'qn-tm-row' },
+                v.scales.map(function (sc) {
+                  return h('div', { key: sc.id, className: 'qn-band' },
+                    h('span', { className: 'qn-tm-scn' }, sc.name || '…'),
+                    h('select', { className: 'lor-input', value: (v.temper.map || {})[sc.id] || '', disabled: ro, 'aria-label': (sc.name || '') + ' — ' + t('qn_temper'), onChange: function (e) { var mp = Object.assign({}, v.temper.map || {}); if (e.target.value) mp[sc.id] = e.target.value; else delete mp[sc.id]; set('temper', { mode: 'max', map: mp }); } },
+                      [['', t('qn_tm_not')]].concat(QN_TEMPERS.map(function (k) { return [k, t('qn_tm_' + k)]; })).map(function (o) { return h('option', { key: o[0], value: o[0] }, o[1]); })));
+                }),
+                h('span', { className: 'lor-sm lor-muted' }, t('qn_tm_max_hint'))) : null,
+              v.temper && v.temper.mode !== 'max' ? h('div', { className: 'qn-tm-row' },
                 [['e', 'eMid', t('qn_tm_e')], ['n', 'nMid', t('qn_tm_n')]].map(function (z) {
                   return h('div', { key: z[0], className: 'qn-tm-axis' },
                     h('span', { className: 'lor-field-label' }, z[2]),
