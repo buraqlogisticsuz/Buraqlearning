@@ -771,7 +771,7 @@ try {
   await A.fill('#f-qn-paste', '1. Nega aynan BURAQ Logistics’ni tanladingiz?\n2. Qaysi ish formati sizga qulay?\n- Ofisda\n- Masofadan\n# Tajriba\n3. Logistikadagi tajribangizni baholang');
   await A.locator('.qn-paste-act .lor-btn-primary').click();
   assert.equal(await A.locator('.qn-item').count(), 4, 'три вопроса и раздел');
-  await A.locator('.qn-item').nth(3).locator('select.qn-type').selectOption('scale');
+  await A.locator('.qn-item').nth(3).locator('select.qn-type-sel').selectOption('scale');
   // шкалы: шаблон темперамента (экстраверсия, нейротизм, искренность); вопрос 2 → экстраверсия (Ofisda = 1), оценка → нейротизм
   await A.locator('.qn-scales .qn-imp button').first().click();
   assert.equal(await A.locator('.qn-sc-card').count(), 3, 'шаблон — три шкалы');
@@ -792,7 +792,7 @@ try {
   await E.locator('.qn-modal .lor-modal-actions .lor-btn-primary').click();
   assert.equal(await E.locator('.qn-field.is-err').count(), 3, 'без ответов не отправить — три вопроса подсвечены');
   await E.locator('.qn-field').nth(0).locator('textarea').fill('Kompaniya rivojlanmoqda');
-  await E.locator('.qn-field').nth(1).locator('.qn-opt').filter({ hasText: 'Masofadan' }).click();
+  await E.locator('.qn-field').nth(1).locator('.qn-tile').filter({ hasText: 'Masofadan' }).click();
   await E.locator('.qn-field').nth(2).locator('.qn-sc').nth(3).click();
   await shot(E, 'savolnoma-xodim');
   await E.locator('.qn-modal .lor-modal-actions .lor-btn-primary').click(); await settle(E);
@@ -828,6 +828,59 @@ try {
   assert.ok(await A.locator('.in-dirty').count(), 'до «Saqlash» — «не сохранено»');
   await A.locator('.lor-tab').filter({ hasText: 'Darslar' }).click();
   step('«Savolnoma»: SOP-менеджер добавил вопросы списком (варианты, раздел, оценка 1–5), сотрудник заполнил обязательные; результаты: шкалы, темперамент, вывод ИИ (сотруднику не виден); вопросы из Word');
+
+  // ---------- «сначала анкета»: новые поля (согласие, таблица языков, дата) и пометки в тексте; сотрудник заполняет по шагам до всего остального ----------
+  await nav(A, 'cms'); await A.locator('.lor-tab').filter({ hasText: 'Savolnoma' }).click(); await A.waitForTimeout(300);
+  await A.locator('.qn-views .seg button').nth(1).click();
+  await A.locator('.qn-edit:not(.qn-scales) .qn-imp button').click();
+  await A.fill('#f-qn-paste', '@birinchi\n# Tillar\nQaysi tillarni bilasiz? [jadval: Bilmayman | O‘rta | Yuqori] [asosiy]\n- Rus tili\n- Xitoy tili\nTug‘ilgan sanangiz [sana] [profil:birth]\nPasport seriyasi va raqami [qisqa] [maxfiy] [profil:passport]\n# Tasdiq va rozilik\nMa’lumotlarim to‘g‘ri ekanini tasdiqlayman [rozilik]');
+  await A.locator('.qn-paste-act .lor-btn-primary').click();
+  assert.ok(await A.locator('#qn-first').isChecked(), '«@birinchi» включил «сначала анкета»');
+  await A.locator('.qn-admin .in-actions .lor-btn-primary').click(); await settle(A);
+  { const q = srv.g.state().settings.questionnaire, by = t => q.questions.find(x => x.text.startsWith(t));
+    assert.equal(q.first, true);
+    assert.deepEqual([by('Qaysi tillarni').type, by('Qaysi tillarni').cols, by('Qaysi tillarni').options, by('Qaysi tillarni').key], ['grid', ['Bilmayman', 'O‘rta', 'Yuqori'], ['Rus tili', 'Xitoy tili'], true]);
+    assert.deepEqual([by('Tug‘ilgan').type, by('Tug‘ilgan').prof, by('Pasport').secret, by('Pasport').prof, by('Ma’lumotlarim').type], ['date', 'birth', true, 'passport', 'consent']); }
+  await E.reload({ waitUntil: 'networkidle' }); await watchSync(E);
+  await E.locator('.qn-page .qn-wiz').waitFor({ timeout: 8000 });
+  assert.equal(await E.locator('.app-body').count(), 0, 'пока анкета не отправлена — платформы нет');
+  assert.equal(await E.locator('.qn-stp').count(), 4, 'шаги по разделам');
+  await shot(E, 'anketa-1-qadam');
+  // прежние ответы уже есть — сразу к новым разделам
+  await E.locator('.qn-stp').nth(2).click();
+  await E.locator('.qn-page-foot .lor-btn-primary').click();
+  assert.ok(await E.locator('.qn-field.is-err').count() >= 2, 'без ответов дальше не пускает');
+  await E.locator('.qn-lv-row').nth(0).locator('.qn-lv-pill').nth(2).click();
+  await E.locator('.qn-lv-row').nth(1).locator('.qn-lv-pill').nth(1).click();
+  assert.equal(await E.locator('.qn-lv-row').nth(0).locator('.qn-lv-pill.is-fill, .qn-lv-pill.is-on').count(), 2, 'уровень заполняется до выбранного');
+  await E.fill('.qn-field.is-date input[type="date"]', '1999-04-12');
+  await E.fill('.qn-field.is-text input', 'AA 1234567');
+  await shot(E, 'anketa-2-tillar');
+  await E.locator('.qn-page-foot .lor-btn-primary').click(); await E.waitForTimeout(300);
+  await E.locator('.qn-consent-l').click();
+  await shot(E, 'anketa-3-rozilik');
+  await E.locator('.qn-page-foot .lor-btn-primary').click();
+  await E.locator('.qn-done').waitFor({ timeout: 5000 });
+  await settle(E);
+  { const qa = srv.g.state().users.find(u => u.id === emp.id).qa, q = srv.g.state().settings.questionnaire, by = t => q.questions.find(x => x.text.startsWith(t));
+    assert.deepEqual(qa.answers[by('Qaysi tillarni').id], { 'Rus tili': 'Yuqori', 'Xitoy tili': 'O‘rta' });
+    assert.equal(qa.answers[by('Tug‘ilgan').id], '1999-04-12'); assert.equal(qa.answers[by('Ma’lumotlarim').id], true); }
+  await shot(E, 'anketa-4-rahmat');
+  await E.locator('.qn-done .lor-btn-primary').click();
+  await E.locator('.app-body').waitFor({ timeout: 5000 });
+  // CEO/SOP: таблица «главное» и скрытый паспорт
+  await A.reload({ waitUntil: 'networkidle' }); await watchSync(A);
+  await nav(A, 'cms'); await A.locator('.lor-tab').filter({ hasText: 'Savolnoma' }).click(); await A.waitForTimeout(300);
+  assert.match(await A.locator('.qn-tbl').innerText(), /Rus tili: Yuqori/, 'в таблице — главный ответ (языки)');
+  await A.locator('.qn-tbl tbody tr').first().click();
+  assert.ok(!(await A.locator('.qn-ans').innerText()).includes('AA 1234567'), 'паспорт скрыт, пока не нажать «показать»');
+  await A.getByRole('button', { name: 'Maxfiy ma’lumotlarni ko‘rsatish' }).click();
+  assert.ok((await A.locator('.qn-ans').innerText()).includes('AA 1234567'), '…а после — виден');
+  assert.match(await A.locator('.qn-cons').innerText(), /✓ Ma’lumotlarim to‘g‘ri/, 'согласие — с отметкой');
+  await A.waitForTimeout(400); await shot(A, 'anketa-5-ceo');
+  await A.locator('.qn-ans .lor-modal-x').click();
+  await A.locator('.lor-tab').filter({ hasText: 'Darslar' }).click();
+  step('«сначала анкета»: по шагам до всего остального; таблица языков, дата, согласие; у SOP — таблица «главное», паспорт скрыт до «показать»');
 
   // ---------- «Lavozim va bo‘limlar»: CEO добавляет должность и отдел; SOP-менеджер выбирает их у нового сотрудника, сам список не меняет ----------
   await C.reload({ waitUntil: 'networkidle' }); await watchSync(C);
