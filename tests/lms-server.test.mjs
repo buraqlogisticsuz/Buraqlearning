@@ -414,7 +414,7 @@ const pickN = n => ({ userId: n.userId, kind: n.kind, route: n.route, err: n.err
 test('since: та же версия — без данных; после правки — новое состояние', () => {
   const { D, A } = platform();
   const v = D({ action: 'load' });
-  assert.deepEqual(D({ action: 'since', rev: v.rev }), { ok: true, v: 16, ai: false, rev: v.rev, same: true });
+  assert.deepEqual(D({ action: 'since', rev: v.rev }), { ok: true, v: 17, ai: false, rev: v.rev, same: true });
   A({ action: 'patch', ops: [{ op: 'set', path: ['notifications', { id: 9 }], value: { id: 9, userId: 10427, text: 'yangi' }, after: null }] });
   const n = D({ action: 'since', rev: v.rev });
   assert.equal(n.rev, v.rev + 1); assert.equal(n.state.notifications[0].text, 'yangi');
@@ -747,21 +747,77 @@ test('приход/уход в программе: отметку ставит �
   assert.equal(Z({ action: 'clock', kind: 'in' }).code, 'off', 'выключено в настройках');
 });
 
-test('фото при отметке прихода — просто снимок (файл на сервере), видно сотруднику и админу', () => {
-  const { A, D } = platform();
-  const img = 'data:image/jpeg;base64,' + 'A'.repeat(3000);
+test('v17: снимков при отметке прихода нет — поле photo сервер не читает, правка со снимком не проходит', () => {
+  const { g, A, D } = platform();
+  const img = 'data:image/jpeg;base64,' + 'A'.repeat(3000), n = Object.keys(g.files).length;
   const r = D({ action: 'clock', kind: 'in', photo: img });
-  assert.equal(r.ok, true, JSON.stringify(r));
-  const rec = A({ action: 'load' }).state.attend['10427'][r.day];
-  assert.match(rec.inPhoto, /^lmsfile:/, 'в записи ссылка на файл, не сам data:');
-  const id = rec.inPhoto.slice('lmsfile:'.length);
-  const own = D({ action: 'file', id });
-  assert.equal(own.ok, true, JSON.stringify(own));           // сотрудник видит своё фото
-  assert.ok(own.data && own.data.length > 100);
-  assert.equal(A({ action: 'file', id }).ok, true);           // админ видит любое
-  const r2 = D({ action: 'clock', kind: 'out', photo: 'not-an-image' });
-  assert.equal(r2.ok, true);                                  // кривое «фото» не ломает отметку
-  assert.equal(A({ action: 'load' }).state.attend['10427'][r.day].outPhoto, undefined, 'не картинка не сохраняется');
+  assert.equal(r.ok, true, JSON.stringify(r));                // страница, открытая до v17, всё равно отмечает приход
+  assert.equal(D({ action: 'clock', kind: 'out', photo: img }).ok, true);
+  const rec = g.state().attend['10427'][r.day];
+  assert.deepEqual(Object.keys(rec).sort(), ['in', 'out', 'src'], 'в записи только время'); assert.equal(rec.in, r.time);
+  assert.equal(Object.keys(g.files).length, n, 'файл снимка не создан');
+  // запись прихода целиком со снимком (старая страница SOP-менеджера) — без снимка; поле снимка в пути — отказ
+  const day = '2026-10-01';
+  const p = A({ action: 'patch', ops: [
+    { op: 'set', path: ['attend', '10427', day], value: { in: '09:00', src: 'manual', inPhoto: img, prev: { in: '09:05', src: 'app', inPhoto: 'lmsfile:file-0000000001' } } },
+    { op: 'set', path: ['attend', '10427', r.day, 'inPhoto'], value: img },
+    { op: 'set', path: ['users', { id: 10427 }, 'faceEnroll'], value: { photo: img } }] });
+  assert.deepEqual(p.rejected.map(x => x.i), [1, 2]);
+  assert.deepEqual(g.state().attend['10427'][day], { in: '09:00', src: 'manual', prev: { in: '09:05', src: 'app' } });
+  assert.equal(D({ action: 'patch', ops: [{ op: 'set', path: ['users', { id: 10427 }, 'faceEnroll'], value: { photo: img } }] }).rejected.length, 1, 'сотрудник — тоже');
+  assert.equal(Object.keys(g.files).length, n, 'и из правок файлов не прибавилось');
+  assert.deepEqual({ ...g.ctx.purgeFaces() }, { purged: false, files: 0 }, 'новая установка — чистить нечего');
+});
+
+// данные до v17: снимки при отметке прихода (attend[uid][день].inPhoto / outPhoto, и в прежней версии записи prev)
+function oldFaces(g) {
+  const mk = (id) => { g.files[id] = { name: 'ishga-kelish', type: 'image/jpeg', bytes: [1, 2, 3], folder: 'x', created: 0 }; return 'lmsfile:' + id; };
+  const st = g.state();
+  delete st.settings.facePurgedV;
+  st.attend = {
+    '10427': { '2026-10-20': { in: '09:01', out: '18:00', src: 'app', inPhoto: mk('file-face-01'), outPhoto: mk('file-face-02') },
+      '2026-10-21': { in: '09:30', src: 'manual', by: 1, prev: { in: '09:40', src: 'app', inPhoto: mk('file-face-03') } } },
+    '10391': { '2026-10-20': { in: '08:55', src: 'turnstile' } } };
+  st.users.find(u => u.id === 10391).faceEnroll = { photo: mk('file-face-04'), at: 1 };
+  g.files[g.props.LMS_STATE].content = JSON.stringify(st);
+  return ['file-face-01', 'file-face-02', 'file-face-03', 'file-face-04'];
+}
+const FACE_RE = /inPhoto|outPhoto|faceEnroll|file-face/;
+
+test('v17: старые снимки — один раз из данных и в корзину Диска; до записи их уже не видно и файл не отдаётся', () => {
+  const { g, A, D } = platform();
+  const ids = oldFaces(g), rev = g.state().rev;
+  // файл, на который ссылается ещё что-то (тот же номер в карточке), не удаляется
+  const st0 = g.state(); st0.users.find(u => u.id === 10427).profile = { passportFile: { name: 'p.pdf', data: 'lmsfile:file-face-05' } };
+  st0.attend['10427']['2026-10-22'] = { in: '09:00', src: 'app', inPhoto: 'lmsfile:file-face-05' };
+  g.files['file-face-05'] = { name: 'p.pdf', type: 'application/pdf', bytes: [1], folder: 'x', created: 0 };
+  g.files[g.props.LMS_STATE].content = JSON.stringify(st0);
+  const v = A({ action: 'load' }).state;
+  assert.doesNotMatch(JSON.stringify(v.attend) + JSON.stringify(v.users.map(u => u.faceEnroll)), FACE_RE, 'снимков не видно сразу');
+  assert.equal(v.attend['10427']['2026-10-20'].in, '09:01', 'время прихода остаётся');
+  assert.equal(A({ action: 'file', id: 'file-face-01' }).code, 'forbidden', 'файл снимка больше не отдаётся');
+  assert.equal(D({ action: 'file', id: 'file-face-01' }).code, 'forbidden');
+  assert.ok(ids.every(id => g.files[id]), 'до записи файлы на месте — данные на Диске ещё ссылаются на них');
+  assert.deepEqual({ ...g.ctx.purgeFaces() }, { purged: true, files: 4 });
+  const st = g.state();
+  assert.equal(st.settings.facePurgedV, 1); assert.equal(st.rev, rev + 1);
+  assert.doesNotMatch(JSON.stringify(st.attend) + JSON.stringify(st.users.map(u => u.faceEnroll || null)), /inPhoto|outPhoto|faceEnroll|file-face-0[1-4]/);
+  assert.deepEqual(st.attend['10427']['2026-10-21'], { in: '09:30', src: 'manual', by: 1, prev: { in: '09:40', src: 'app' } });
+  assert.deepEqual(st.attend['10391']['2026-10-20'], { in: '08:55', src: 'turnstile' });
+  assert.ok(ids.every(id => !g.files[id]), 'снимки — в корзине');
+  assert.ok(g.files['file-face-05'], 'файл, нужный в другом месте, остаётся');
+  assert.deepEqual({ ...g.ctx.purgeFaces() }, { purged: false, files: 0 }, 'второй раз — ничего');
+  assert.equal(g.state().rev, rev + 1);
+});
+
+test('v17: в Apps Script очистка записывается первой же правкой — без purgeFaces', () => {
+  const { g, D } = platform();
+  const ids = oldFaces(g);
+  assert.equal(D({ action: 'clock', kind: 'in' }).ok, true);
+  const st = g.state();
+  assert.equal(st.settings.facePurgedV, 1);
+  assert.doesNotMatch(JSON.stringify(st.attend) + JSON.stringify(st.users), FACE_RE);
+  assert.ok(ids.every(id => !g.files[id]), 'снимки — в корзине');
 });
 
 test('«Tanishuv»: документы (PDF, Word) — файлом на сервере, в данных ссылка; сотрудник их получает, правит только SOP/CEO', () => {

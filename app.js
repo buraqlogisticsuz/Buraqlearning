@@ -6341,72 +6341,24 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       h('div', { className: 'cb-body' }, h('b', null, t('clk_banner_t')), h('span', null, t('clk_banner_sub'))),
       h(Btn, { variant: 'primary', arrow: true, onClick: p.openClock }, t('clk_in')));
   }
-  /* модальное окно отметки прихода: простое фото (не биометрия) с камеры по согласию, видимый индикатор, фото — только на сервер.
-     Нет камеры/согласия — можно отметиться без фото, по времени. Окно всегда закрывается («Keyinroq»), чтобы никого не запереть. */
+  /* модальное окно отметки прихода: время ставит сервер, без камеры и снимков (решение владельца «delete face control»,
+     сервер v17 — фото лица может считаться биометрией). Окно всегда закрывается («Keyinroq»), чтобы никого не запереть */
   function ClockGate(p) {
-    var t = p.t;
-    // камера включается по нажатию (так требует Safari — getUserMedia только после действия пользователя), а не сама
-    var cam = useState('idle'), busy = useState(false), videoRef = useRef(null), streamRef = useRef(null);
-    useEffect(function () { return function () { if (streamRef.current) { streamRef.current.getTracks().forEach(function (tr) { tr.stop(); }); streamRef.current = null; } }; }, []);
-    useEffect(function () { if (cam[0] === 'live' && videoRef.current && streamRef.current) { videoRef.current.srcObject = streamRef.current; videoRef.current.play().catch(function () {}); } }, [cam[0]]);
-    function stop() { if (streamRef.current) { streamRef.current.getTracks().forEach(function (tr) { tr.stop(); }); streamRef.current = null; } }
-    function startCam() {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { cam[1]('nocam'); return; }
-      cam[1]('wait');
-      navigator.mediaDevices.getUserMedia({ video: { width: 480, height: 360, facingMode: 'user' }, audio: false }).then(function (s) {
-        streamRef.current = s; cam[1]('live');
-      }, function () { cam[1]('nocam'); });
-    }
-    function capture() {
-      var v = videoRef.current; if (!v || !v.videoWidth) return null;
-      var w = 320, hh = Math.round(w * v.videoHeight / v.videoWidth) || 240, c = document.createElement('canvas');
-      c.width = w; c.height = hh; c.getContext('2d').drawImage(v, 0, 0, w, hh);
-      try { return c.toDataURL('image/jpeg', 0.7); } catch (e) { return null; }
-    }
-    function start(withPhoto) {
+    var t = p.t, busy = useState(false);
+    function start() {
       if (busy[0]) return; busy[1](true);
-      SV.clock('in', withPhoto ? capture() : null).then(function () { busy[1](false); stop(); SAY('clk_in_ok'); p.onClose(); },
+      SV.clock('in').then(function () { busy[1](false); SAY('clk_in_ok'); p.onClose(); },
         function (e) { busy[1](false); SAY(CLK_ERR[e && e.code] || 'clk_err'); });
     }
-    function close() { stop(); p.onClose(); }
-    var live = cam[0] === 'live';
-    return h('div', { className: 'lor-scrim', onClick: function (e) { if (e.target === e.currentTarget) close(); } },
+    return h('div', { className: 'lor-scrim', onClick: function (e) { if (e.target === e.currentTarget) p.onClose(); } },
       h('div', { className: 'lor-modal clock-modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': t('clk_gate_t') },
-        h('button', { type: 'button', className: 'lor-modal-x', 'aria-label': t('close'), onClick: close }, '×'),
+        h('button', { type: 'button', className: 'lor-modal-x', 'aria-label': t('close'), onClick: p.onClose }, '×'),
         h('span', { className: 'lor-eyebrow' }, t('at_sec_t')),
         h('h3', { className: 'lor-h', style: { marginTop: 4 } }, t('clk_gate_t')),
-        h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('clk_gate_note')),
-        live ? h('div', { className: 'clk-cam' }, h('video', { ref: videoRef, autoPlay: true, playsInline: true, muted: true }), h('span', { className: 'clk-cam-rec' }, '● ' + t('clk_rec')))
-          : cam[0] === 'wait' ? h('div', { className: 'clk-cam is-wait' }, h('span', null, t('clk_cam_wait')))
-          : cam[0] === 'nocam' ? h('div', { className: 'clk-cam is-off' }, h('span', null, t('clk_cam_off')))
-          : h('div', { className: 'clk-cam is-idle' },
-              h('svg', { width: 34, height: 34, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true }, h('path', { d: 'M4 7h3l1.5-2h7L17 7h3v12H4z' }), h('circle', { cx: 12, cy: 13, r: 3.4 })),
-              h('span', null, t('clk_cam_idle'))),
-        cam[0] !== 'nocam' ? h('button', { type: 'button', className: 'app-link clk-nophoto', onClick: function () { start(false); } }, t('clk_nophoto')) : null,
+        h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('clk_gate_time')),
         h('div', { className: 'lor-modal-actions' },
-          h(Btn, { variant: 'ghost', onClick: close }, t('clk_later')),
-          live ? h(Btn, { variant: 'primary', arrow: true, disabled: busy[0], onClick: function () { start(true); } }, busy[0] ? t('clk_wait') : t('clk_shot_start'))
-            : cam[0] === 'nocam' ? h(Btn, { variant: 'primary', arrow: true, disabled: busy[0], onClick: function () { start(false); } }, busy[0] ? t('clk_wait') : t('clk_nocam_start'))
-            : h(Btn, { variant: 'primary', arrow: true, disabled: cam[0] === 'wait', onClick: startCam }, t('clk_cam_on')))));
-  }
-  /* снимок отметки прихода: по клику берёт файл с сервера и показывает в лайтбоксе. Своё фото видит сотрудник,
-     любое — CEO и SOP-менеджер (сервер проверяет доступ к файлу в file_). Грузится лениво — только при открытии. */
-  function ClockPhoto(p) {
-    var id = String(p.fid || '').replace(/^lmsfile:/, '');
-    var src = useState(null), open = useState(false), busy = useState(false);
-    function show() {
-      if (!id) return; open[1](true);
-      if (!src[0] && !busy[0]) { busy[1](true); SV.file(id).then(function (r) { src[1]('data:' + (r.type || 'image/jpeg') + ';base64,' + r.data); busy[1](false); }, function () { busy[1](false); }); }
-    }
-    if (!id) return null;
-    return h(F, null,
-      h('button', { type: 'button', className: 'clk-thumb', title: p.title || '', 'aria-label': (p.title || '') + ' — surat', onClick: show },
-        h('svg', { width: 15, height: 15, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true }, h('path', { d: 'M4 7h3l1.5-2h7L17 7h3v12H4z' }), h('circle', { cx: 12, cy: 13, r: 3.4 }))),
-      open[0] ? h('div', { className: 'lightbox clk-lightbox', onClick: function () { open[1](false); } },
-        h('div', { className: 'clk-lb-box', onClick: function (e) { e.stopPropagation(); } },
-          busy[0] || !src[0] ? h('span', { className: 'clk-lb-wait' }, '…') : h('img', { src: src[0], alt: p.title || '' }),
-          p.title ? h('span', { className: 'clk-lb-cap' }, p.title) : null,
-          h('button', { type: 'button', className: 'lor-modal-x', 'aria-label': '×', onClick: function (e) { e.stopPropagation(); open[1](false); } }, '×'))) : null);
+          h(Btn, { variant: 'ghost', onClick: p.onClose }, t('clk_later')),
+          h(Btn, { variant: 'primary', arrow: true, disabled: busy[0], onClick: start }, busy[0] ? t('clk_wait') : t('clk_in')))));
   }
   function AttHome(p) {
     var t = p.t, db = p.db, u = p.user, k = dayKey(Date.now()), week = workWeek(db), o = attDay(db, u, k, week), c = attMonth(db, u, ymOf(Date.now())), sc = schedOf(db, u);
@@ -6425,9 +6377,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       canClock && inT ? h('div', { className: 'at-clock' },
           !outT ? h(F, null,
               h('div', { className: 'at-clock-st' }, h('b', null, inT), h('span', null, t('clk_came'))),
-              o.rec && o.rec.inPhoto ? h(ClockPhoto, { fid: o.rec.inPhoto, title: t('clk_came') + ' · ' + inT }) : null,
               h(Btn, { variant: 'outline', disabled: !!busy[0], onClick: function () { clock('out'); } }, busy[0] === 'out' ? t('clk_wait') : t('clk_out')))
-          : h('div', { className: 'at-clock-done' }, h('b', null, inT + ' → ' + outT), h('span', null, t('clk_done')), o.rec && o.rec.inPhoto ? h(ClockPhoto, { fid: o.rec.inPhoto, title: inT }) : null))
+          : h('div', { className: 'at-clock-done' }, h('b', null, inT + ' → ' + outT), h('span', null, t('clk_done'))))
         : canClock ? h('div', { className: 'at-today is-wait' }, h('span', null, t('clk_not_started')))
         : shown ? h('div', { className: 'at-today' }, h('b', null, shown.in != null ? m2hm(shown.in) : '—'), h('span', null, t('at_today')), h(AttChip, { t: t, o: shown }))
         : h('div', { className: 'at-today is-wait' }, h('span', null, o.st === 'pending' ? t('at_today_pending') : t('at_today_none')),
@@ -6607,7 +6558,6 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
             h(Av, { name: x.u.name, src: x.u.avatar, size: 34 }),
             h('span', { className: 'at-who' }, h('b', null, x.u.name), h('small', null, x.u.department + ' · ' + o.sc.start + '–' + o.sc.end)),
             h('span', { className: 'at-in' }, h('b', null, o.in != null ? m2hm(o.in) : '—'), h('small', null, t('at_in'))),
-            o.rec && o.rec.inPhoto ? h(ClockPhoto, { fid: o.rec.inPhoto, title: x.u.name + ' · ' + (o.in != null ? m2hm(o.in) : '') }) : null,
             h(AttChip, { t: t, o: o }),
             h('span', { className: 'at-out' }, h('b', null, o.out != null ? m2hm(o.out) : '—'), h('small', null, o.early ? tpl(t('at_early_n'), { n: o.early }) : t('at_out'))),
             h('span', { className: 'at-wk' }, o.worked != null ? fmtMin(o.worked, t) : ''),

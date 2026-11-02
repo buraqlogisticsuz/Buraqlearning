@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startServer, startNoVolume, dataDir, nextBackup } from '../server/index.mjs';
@@ -40,7 +40,7 @@ test('сайт: страница, адрес сервера, только фай
     for (const p of ['/js/..%2ftools/lms-gs/Code.gs', '/js/..%2f..%2fetc/passwd', '/fonts/%2e%2e/README.md'])
       assert.equal(await new Promise(r => http.get(s.url.slice(0, -1) + p, res => { res.resume(); r(res.statusCode); })), 404, p);
     const ping = await (await fetch(s.url + 'api')).json();
-    assert.equal(ping.ok, true); assert.equal(ping.ready, true); assert.equal(ping.v, 16);
+    assert.equal(ping.ok, true); assert.equal(ping.ready, true); assert.equal(ping.v, 17);
     assert.equal((await s.api(null, 'не json')).code, 'bad');
   } finally { await s.close(); rmSync(dir, { recursive: true, force: true }); }
 });
@@ -79,6 +79,34 @@ test('данные на диске: вход SOP-менеджера в журн�
     const b = readdirSync(join(dir, 'BURAQ o‘quv platformasi — ma’lumotlar', 'backups'));
     assert.equal(b.length, 1); assert.match(b[0], /^state-\d{4}-\d\d-\d\d\.json$/);
   } finally { await s.close(); rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('запуск (v17): снимки при отметке прихода из данных до v17 — прочь из state.json и с диска, один раз', async () => {
+  const dir = tmp();
+  let s = await start(dir);
+  await s.close();
+  const drive = JSON.parse(readFileSync(join(dir, 'drive.json'), 'utf8'));
+  const fid = Object.keys(drive.folders).find(k => !drive.folders[k].parent), base = drive.folders[fid].path;
+  const photo = join(dir, base, 'ishga-kelish'), sf = join(dir, base, 'state.json');
+  writeFileSync(photo, 'jpeg');
+  drive.files['file-face1'] = { name: 'ishga-kelish', type: 'image/jpeg', folder: fid, path: base + '/ishga-kelish', created: Date.now() };
+  writeFileSync(join(dir, 'drive.json'), JSON.stringify(drive));
+  const old = JSON.parse(readFileSync(sf, 'utf8'));
+  delete old.settings.facePurgedV;
+  old.attend = { '10001': { '2026-10-20': { in: '09:00', src: 'app', inPhoto: 'lmsfile:file-face1' } } };
+  writeFileSync(sf, JSON.stringify(old));
+  s = await start(dir);
+  try {
+    assert.ok(s.logs.some(m => /Снимки при отметке прихода удалены из данных, файлов: 1/.test(m)), s.logs.join('\n'));
+    const st = JSON.parse(readFileSync(sf, 'utf8'));
+    assert.deepEqual(st.attend['10001']['2026-10-20'], { in: '09:00', src: 'app' });
+    assert.equal(st.settings.facePurgedV, 1);
+    assert.equal(existsSync(photo), false, 'файл снимка удалён с диска');
+    assert.equal(JSON.parse(readFileSync(join(dir, 'drive.json'), 'utf8')).files['file-face1'], undefined);
+  } finally { await s.close(); }
+  s = await start(dir);
+  try { assert.ok(!s.logs.some(m => /Снимки/.test(m)), 'второй запуск — ничего'); }
+  finally { await s.close(); rmSync(dir, { recursive: true, force: true }); }
 });
 
 test('ИИ: ключ из переменных окружения, пока Claude отвечает — остальные запросы идут; сбой связи возвращает место в лимите', async () => {

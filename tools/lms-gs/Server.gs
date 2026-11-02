@@ -10,6 +10,7 @@
  * 3) Развернуть → Новое развертывание → Тип: Веб-приложение. Выполнять как: Я. Доступ: Все. → Развернуть.
  *    Ссылка …/exec — адрес сервера для страницы платформы.
  * Забыли пароль SOP-менеджера — функция newAdmin: новый вход SOP-менеджера, логин и пароль — в журнале выполнения.
+ * Снимки при отметке прихода (до v17) — функция purgeFaces убирает их из данных и с Диска сразу (иначе — при первой правке).
  * Копия данных — каждую ночь (функция backup, папка backups рядом с state.json), хранится 30 дней.
  * Файлы (сканы паспортов, вложения журналов и сверхзадач) — в папке files рядом с state.json: в данных остаётся
  * ссылка lmsfile:<id>, сам файл сервер отдаёт только тому, кому видна эта ссылка (действие file).
@@ -20,7 +21,7 @@
  *
  * Запрос — POST с JSON { action, token, … }, ответ — JSON { ok, … } или { ok: false, code, error }.
  */
-var LMS_VERSION = 16;          // 2: файлы — отдельно на Диске, действие file; 3: ИИ через Claude API (действие ai);
+var LMS_VERSION = 17;          // 2: файлы — отдельно на Диске, действие file; 3: ИИ через Claude API (действие ai);
                                // 4: адресаты идей — CEO, Project Manager, руководитель компании (свой вход, role 'leader');
                                // 5: у идеи несколько адресатов (to — список), repliedBy — кто ответил;
                                // 6: свой профиль — имя и фото, смена логина и пароля (действие account);
@@ -34,6 +35,8 @@ var LMS_VERSION = 16;          // 2: файлы — отдельно на Дис
                                // 14: вывод по анкете (users[].qaReport) — только CEO, SOP-менеджеру и руководителю, сотрудник его не видит и не пишет
                                // 15: список должностей и отделов (settings.positions / settings.depts) меняет только CEO
                                // 16: удалили сотрудника — файлы из его карточки (скан паспорта) уходят с Диска, если больше нигде не нужны
+                               // 17: фото при отметке прихода больше нет (решение владельца «delete face control»): clock не
+                               //     принимает снимок, прежние снимки один раз убираются из данных и с Диска (facePurge_)
 var PBKDF2_ITER = 10000;          // пароль хранится только как PBKDF2-SHA256 с солью
 var SESSION_DAYS = 30;            // вход на устройстве живёт 30 дней с последнего запроса
 var FAIL_MAX = 5, FAIL_LOCK_MIN = 15;  // 5 неверных паролей подряд — логин закрыт на 15 минут
@@ -43,6 +46,12 @@ var PASS_MARK = 80;
 var MAX_OPS = 500;
 var FILE_MIN = 2048;              // data:-строки короче (значки) остаются в данных, длиннее — файлом на Диске
 var AVATAR_MAX = 16000;           // фото профиля (128×128 JPEG) — в данных, не файлом: его показывают везде, где имя
+// снимки лица при отметке прихода (до v17: attend[uid][день].inPhoto / outPhoto = 'lmsfile:…') больше не храним: фото лица
+// может считаться биометрией, а её нельзя держать вне Узбекистана (сервер — на Railway). FACE_PURGE_V — версия очистки
+// в settings.facePurgedV; поля сверки лица в карточке (faceEnroll, facePhoto) программа не заводила — убираются на всякий случай
+var FACE_PURGE_V = 1;
+var FACE_KEYS = ['inPhoto', 'outPhoto', 'faceEnroll', 'facePhoto'];
+var FACE_TRASH = null;            // номера файлов-снимков: в корзину Диска после записи состояния, где на них нет ссылок
 var LOGIN_RE = /^[a-z0-9][a-z0-9._-]{2,31}$/;   // логин: 3–32 символа, латиница, цифры, точка, дефис, подчёркивание
 var AUDIT_KEEP = 500;             // журнал нарушений защиты урока — последние 500 записей
 var AI_MODEL = 'claude-opus-5-5';  // свойство AI_MODEL меняет модель без правки кода
@@ -188,14 +197,66 @@ function readState_() {
   if (!id) throw err_('setup', 'Сервер не настроен: в редакторе Apps Script запустите функцию setup');
   return migrate_(JSON.parse(DriveApp.getFileById(id).getBlob().getDataAsString('UTF-8')));
 }
-/* до v10 CEO и руководитель были только адресатами идей (role leader) — теперь у них свои кабинеты (role admin) */
+/* до v10 CEO и руководитель были только адресатами идей (role leader) — теперь у них свои кабинеты (role admin);
+   до v17 при отметке прихода хранился снимок лица — facePurge_ */
 function migrate_(st) {
   (st.users || []).forEach(function (u) { if (u && u.role === 'leader' && MGR_POSTS.indexOf(u.post) >= 0) u.role = 'admin'; });
+  return facePurge_(st);
+}
+/* поля снимков (FACE_KEYS) — прочь из объекта и всего, что в нём лежит (запись прихода, её прежняя версия prev);
+   номера файлов из ссылок lmsfile — в refs */
+function faceStrip_(o, refs, depth) {
+  depth = depth || 0;
+  if (!o || typeof o !== 'object' || depth > 8) return o;
+  if (Array.isArray(o)) { o.forEach(function (x) { faceStrip_(x, refs, depth + 1); }); return o; }
+  FACE_KEYS.forEach(function (k) {
+    if (!Object.prototype.hasOwnProperty.call(o, k)) return;
+    if (refs) (JSON.stringify(o[k]) || '').replace(/lmsfile:([\w-]+)/g, function (m, id) { refs.push(id); return m; });
+    delete o[k];
+  });
+  Object.keys(o).forEach(function (k) { faceStrip_(o[k], refs, depth + 1); });
+  return o;
+}
+/* один раз (settings.facePurgedV): снимки лица — прочь из записей прихода и карточек. Чистится при каждом чтении,
+   пока очистка не записана, — поэтому снимков уже не видно и файл не отдаётся (file_ ищет ссылку в видимом);
+   сами файлы уходят в корзину Диска после записи состояния без ссылок на них (writeState_ → faceTrash_) */
+function facePurge_(st) {
+  st.settings = st.settings || {};
+  if (+st.settings.facePurgedV >= FACE_PURGE_V) { FACE_TRASH = null; return st; }
+  var refs = [];
+  faceStrip_(st.attend, refs);
+  (st.users || []).forEach(function (u) { faceStrip_(u, refs); });
+  st.settings.facePurgedV = FACE_PURGE_V;
+  FACE_TRASH = refs;
   return st;
+}
+function faceTrash_(st) {
+  var ids = FACE_TRASH, all = null;
+  FACE_TRASH = null;
+  (ids || []).forEach(function (id) {
+    if (all === null) all = JSON.stringify(st);
+    if (all.indexOf('"lmsfile:' + id + '"') >= 0) return;   // на файл ещё ссылается что-то другое
+    try { DriveApp.getFileById(id).setTrashed(true); } catch (e) {}
+  });
+}
+/* очистка сразу, не дожидаясь первой записи: сервер на Node вызывает её при запуске; в Apps Script — вручную
+   (▶ Выполнить → purgeFaces) или сама при первой правке. Повторный вызов ничего не делает */
+function purgeFaces() {
+  if (!props_().getProperty('LMS_STATE')) return { purged: false, files: 0 };
+  return withLock_(function () {
+    var st = readState_(), ids = FACE_TRASH, seen = {}, all;
+    if (!ids) return { purged: false, files: 0 };
+    st.rev = (+st.rev || 0) + 1;
+    writeState_(st);
+    all = JSON.stringify(st);
+    ids.forEach(function (id) { if (all.indexOf('"lmsfile:' + id + '"') < 0) seen[id] = 1; });
+    return { purged: true, files: Object.keys(seen).length };   // снимков ушло в корзину
+  });
 }
 function writeState_(st) {
   DriveApp.getFileById(props_().getProperty('LMS_STATE')).setContent(JSON.stringify(st));
   props_().setProperty('LMS_REV', String(st.rev));
+  faceTrash_(st);
   // сервер на Node (server/telegram.mjs): новые уведомления — в Telegram; в Apps Script этой функции нет
   if (typeof LMS_AFTER_WRITE === 'function') LMS_AFTER_WRITE(st);
 }
@@ -214,7 +275,7 @@ function emptyState_() {
   return {
     v: 23, rev: 1, seq: 100,
     course: { sections: [] }, levels: [], tracks: [], planTpl: [],
-    settings: { survey: { on: false, every: 3, round: 0 } },
+    settings: { survey: { on: false, every: 3, round: 0 }, facePurgedV: FACE_PURGE_V },
     users: [], alumni: [], progress: {}, study: {}, requests: [], notifications: [], reminded: {}, audit: [],
     assets: [], errors: [], cases: [], journals: [], terms: [], drills: [], sopUpdates: [], initiatives: [], surveys: [],
     attend: {}, attendCover: {}, attendImports: [], attendAlias: {}, xtasks: [], monthly: {},
@@ -689,6 +750,7 @@ function patch_(s, ops) {
       var top = op && Array.isArray(op.path) ? op.path[0] : '';
       var why = !top ? 'неверная правка' : DEVICE_KEYS.indexOf(top) >= 0 ? '«' + top + '» хранится только на устройстве' : admin ? checkAdmin_(st, op, me) : checkEmployee_(st, me, op) || (foreignFile(op) ? 'чужой файл' : null);
       if (!why && !admin && top === 'notifications' && op.path.length === 2 && op.op === 'set' && !LmsSync.get(st, op.path)) op = Object.assign({}, op, { value: Object.assign({}, op.value, { from: me.id }) });
+      if (!why && (top === 'attend' || top === 'users')) { var fo = faceOp_(op); if (fo) op = fo; else why = 'снимков лица платформа больше не хранит'; }
       if (why) { rejected.push({ i: i, reason: why }); return; }
       try {
         if (op.op === 'set' && !(op.path[op.path.length - 1] === 'avatar' && avatarOk_(op.value))) op = Object.assign({}, op, { value: storeFiles_(op.value, me.id) });
@@ -701,6 +763,14 @@ function patch_(s, ops) {
     if (admin && applied) dropGoneFiles_(st, before);
     return { ok: true, rev: st.rev, applied: applied, rejected: rejected };
   });
+}
+
+/* правка записей прихода или карточек: поле снимка в пути — отказ (null); снимок внутри значения (страница, открытая
+   до v17, переписывает запись прихода целиком) — убирается, остальное записывается */
+function faceOp_(op) {
+  if (op.path.some(function (x) { return FACE_KEYS.indexOf(x) >= 0; })) return null;
+  if (op.op !== 'set' || !op.value || typeof op.value !== 'object') return op;
+  return Object.assign({}, op, { value: faceStrip_(clone_(op.value)) });
 }
 
 /* после правок SOP-менеджера: пароли из карточек — в учётные записи (в состоянии их не храним), смена логина,
@@ -849,13 +919,8 @@ function retest_(s, req) {
    уже закрытый данными турникета, повторно отметить приход или отметить уход раньше прихода. */
 function pad2_(n) { return (n < 10 ? '0' : '') + n; }
 function tashkent_() { return new Date(now_() + 5 * 36e5); }   // UTC+5
-/* фото при отметке — просто снимок, не биометрия (распознавания и сверки лиц нет): data:-картинка уходит файлом
-   на Диск, в записи остаётся ссылка lmsfile. Фото видит сам сотрудник (своя запись в attend) и CEO/SOP-менеджер;
-   доступ к файлу сервер проверяет (file_). Нет согласия/камеры — отметка проходит по времени, без фото. */
-function clockPhoto_(v, uid) {
-  if (typeof v !== 'string' || !/^data:image\/(jpeg|jpg|png|webp)[;,]/.test(v) || v.length > 400000) return null;
-  return storeFiles_(v, uid, 'ishga-kelish');
-}
+/* снимка при отметке нет (v17, решение владельца «delete face control»): поле photo от страницы, открытой до v17,
+   сервер не читает — отметка проходит по времени, ничего не сохраняется. Личность подтверждает вход по паролю */
 function clockDay_(d) { return d.getUTCFullYear() + '-' + pad2_(d.getUTCMonth() + 1) + '-' + pad2_(d.getUTCDate()); }
 function clockHm_(d) { return pad2_(d.getUTCHours()) + ':' + pad2_(d.getUTCMinutes()); }
 function clock_(s, req) {
@@ -868,9 +933,8 @@ function clock_(s, req) {
     var a = st.attend[uid] = st.attend[uid] || {}, rec = a[day];
     if (rec && (rec.reason || (rec.src && rec.src !== 'app'))) throw err_('bad', 'За этот день уже есть отметка');
     rec = a[day] = rec || { src: 'app' };
-    var photo = clockPhoto_(req.photo, me.id);
-    if (kind === 'in') { if (rec.in) throw err_('done', 'Приход на сегодня уже отмечен'); rec.in = hm; if (photo) rec.inPhoto = photo; }
-    else { if (!rec.in) throw err_('bad', 'Сначала отметьте приход'); if (rec.out) throw err_('done', 'Уход на сегодня уже отмечен'); rec.out = hm; if (photo) rec.outPhoto = photo; }
+    if (kind === 'in') { if (rec.in) throw err_('done', 'Приход на сегодня уже отмечен'); rec.in = hm; }
+    else { if (!rec.in) throw err_('bad', 'Сначала отметьте приход'); if (rec.out) throw err_('done', 'Уход на сегодня уже отмечен'); rec.out = hm; }
     rec.src = 'app';
     st.rev = (+st.rev || 0) + 1;
     writeState_(st);

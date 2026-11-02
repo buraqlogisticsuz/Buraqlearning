@@ -53,6 +53,9 @@ export async function startServer({ port = 8080, host = '0.0.0.0', dir, env = pr
   // NEW_ADMIN=<любое новое значение> — ещё один вход SOP-менеджера (если пароль потерян); одно значение — один раз
   const na = String(env.NEW_ADMIN || '').trim();
   if (na && g.props.NEW_ADMIN_DONE !== na) { C.newAdmin(); C.PropertiesService.getScriptProperties().setProperty('NEW_ADMIN_DONE', na); }
+  // снимки лица при отметке прихода (до v17) — из данных и с диска, один раз (settings.facePurgedV)
+  try { const fp = C.purgeFaces(); if (fp.purged) log('Снимки при отметке прихода удалены из данных, файлов: ' + fp.files); }
+  catch (e) { log('Очистка снимков не удалась: ' + e.message); }
 
   // версия сайта: коммит, из которого Railway собрал сервис (иначе — время запуска)
   const BUILD = String(env.RAILWAY_GIT_COMMIT_SHA || '').slice(0, 7) || Date.now().toString(36);

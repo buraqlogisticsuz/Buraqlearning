@@ -170,19 +170,26 @@ try {
   step('анкета со сканом паспорта: скан на Диске сервера');
   await shot(E, '5-home');
   await skipTour(E);
-  // ---- приход в программе: модальное окно + простое фото (не биометрия) ----
+  // ---- приход в программе: модальное окно, время ставит сервер; камеры и снимков нет (v17, «delete face control») ----
   setClock(true);
+  // камера не должна понадобиться: getUserMedia только считает вызовы
+  await E.addInitScript(() => { window.__cam = 0; if (navigator.mediaDevices) navigator.mediaDevices.getUserMedia = () => { window.__cam++; return Promise.reject(new Error('cam')); }; });
   await E.reload({ waitUntil: 'networkidle' }); await watchSync(E);
   await E.locator('.clock-banner, .clock-modal').first().waitFor({ timeout: 8000 });   // плашка или само окно
   if (!(await E.locator('.clock-modal').count())) await E.locator('.clock-banner button').click();
   await E.locator('.clock-modal').waitFor({ timeout: 5000 });
   await shot(E, '5b-clock-gate');
-  await E.locator('.clock-modal .clk-nophoto').click();   // отметиться без фото (камеру включаем по кнопке — Safari)
+  assert.equal(await E.locator('.clock-modal video, .clock-modal canvas, .clock-modal img').count(), 0, 'в окне нет камеры и снимков');
+  assert.match(await E.locator('.clock-modal').innerText(), /server belgilaydi/, 'окно говорит, что время ставит сервер');
+  await E.locator('.clock-modal .lor-btn-primary, .clock-modal button:has-text("Ishni boshlash")').first().click();
   await E.waitForTimeout(800);
   assert.equal(await E.locator('.clock-modal').count(), 0, 'после отметки окно закрылось');
+  assert.equal(await E.evaluate(() => window.__cam), 0, 'камера не запрашивалась');
   { const rec = Object.values(srv.g.state().attend[String(emp.id)] || {})[0];
-    assert.ok(rec && rec.in && rec.src === 'app', 'приход отмечен сервером'); }
-  step('приход отмечен через модальное окно (без камеры — без фото)');
+    assert.ok(rec && rec.in && rec.src === 'app', 'приход отмечен сервером');
+    assert.deepEqual(Object.keys(rec).sort(), ['in', 'src'], 'в записи только время — без снимка'); }
+  assert.equal(await E.locator('.at-home button[aria-label*="surat"], .at-home img').count(), 0, 'на карточке «Ishga kelish» снимка нет');
+  step('приход отмечен через модальное окно — без камеры и снимка');
   setClock(false);
   await E.reload({ waitUntil: 'networkidle' }); await watchSync(E); await skipTour(E);
   // урок 4.1 → «Mavzuni yakunlash» → «B: tushundim, testga tayyorman» → тест

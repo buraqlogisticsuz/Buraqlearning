@@ -2708,17 +2708,11 @@ Object.assign(APP_T.ru, { clk_banner_t: 'Вы сегодня не начали �
 Object.assign(APP_T.en, { clk_banner_t: 'You haven’t started work today', clk_banner_sub: 'Press “Start work” to record your arrival time.', clk_not_started: 'You haven’t started work today' });
 Object.assign(APP_T.zh, { clk_banner_t: '您今天还没有开始工作', clk_banner_sub: '点击“开始工作”以记录到岗时间。', clk_not_started: '今天还没有开始工作' });
 
-/* модальное окно отметки прихода + фото (не биометрия): ClockGate, ClockPhoto */
-Object.assign(APP_T.uz, { clk_gate_t: 'Ishni boshlaymizmi?', clk_gate_note: 'Ishga kelganingizni tasdiqlash uchun bitta rasm olinadi. Rasm faqat serverda saqlanadi — uni siz va rahbariyat ko‘radi. Kamera bo‘lmasa, rasmsiz ham belgilash mumkin.', clk_rec: 'Kamera yoniq', clk_cam_wait: 'Kamera ochilmoqda…', clk_cam_off: 'Kamera topilmadi yoki ruxsat berilmadi — rasmsiz belgilashingiz mumkin.', clk_shot_start: 'Suratga olish va boshlash', clk_nocam_start: 'Rasmsiz boshlash', clk_later: 'Keyinroq' });
-Object.assign(APP_T.ru, { clk_gate_t: 'Начинаем работу?', clk_gate_note: 'Для подтверждения прихода будет сделано одно фото. Оно хранится только на сервере — его видите вы и руководство. Если камеры нет, можно отметиться без фото.', clk_rec: 'Камера включена', clk_cam_wait: 'Камера открывается…', clk_cam_off: 'Камера не найдена или доступ не дан — можно отметиться без фото.', clk_shot_start: 'Сфотографировать и начать', clk_nocam_start: 'Начать без фото', clk_later: 'Позже' });
-Object.assign(APP_T.en, { clk_gate_t: 'Start work?', clk_gate_note: 'One photo is taken to confirm your arrival. It is stored on the server only — you and management can see it. No camera? You can clock in without a photo.', clk_rec: 'Camera on', clk_cam_wait: 'Opening the camera…', clk_cam_off: 'No camera or access denied — you can clock in without a photo.', clk_shot_start: 'Take a photo and start', clk_nocam_start: 'Start without a photo', clk_later: 'Later' });
-Object.assign(APP_T.zh, { clk_gate_t: '开始工作？', clk_gate_note: '将拍摄一张照片以确认到岗。照片仅保存在服务器上——您和管理层可以查看。若无摄像头，也可不拍照打卡。', clk_rec: '摄像头已开启', clk_cam_wait: '正在开启摄像头…', clk_cam_off: '未找到摄像头或未授予权限——可不拍照打卡。', clk_shot_start: '拍照并开始', clk_nocam_start: '不拍照开始', clk_later: '稍后' });
-
-/* камера включается по нажатию (Safari): кнопка «включить», ссылка «без фото» */
-Object.assign(APP_T.uz, { clk_cam_on: 'Kamerani yoqish', clk_cam_idle: 'Kamera o‘chiq', clk_nophoto: 'Rasmsiz belgilash' });
-Object.assign(APP_T.ru, { clk_cam_on: 'Включить камеру', clk_cam_idle: 'Камера выключена', clk_nophoto: 'Отметиться без фото' });
-Object.assign(APP_T.en, { clk_cam_on: 'Turn on the camera', clk_cam_idle: 'Camera is off', clk_nophoto: 'Clock in without a photo' });
-Object.assign(APP_T.zh, { clk_cam_on: '开启摄像头', clk_cam_idle: '摄像头已关闭', clk_nophoto: '不拍照打卡' });
+/* модальное окно отметки прихода: ClockGate */
+Object.assign(APP_T.uz, { clk_gate_t: 'Ishni boshlaymizmi?', clk_later: 'Keyinroq' });
+Object.assign(APP_T.ru, { clk_gate_t: 'Начинаем работу?', clk_later: 'Позже' });
+Object.assign(APP_T.en, { clk_gate_t: 'Start work?', clk_later: 'Later' });
+Object.assign(APP_T.zh, { clk_gate_t: '开始工作？', clk_later: '稍后' });
 
 /* «Kontent» → «Tanishuv»: приветствие и обязательное знакомство (settings.welcome) */
 Object.assign(APP_T.uz, { in_tab: 'Tanishuv', in_title: 'Kompaniya bilan tanishuv', in_banner_t: 'Kompaniya bilan tanishuv — majburiy', in_banner_sub: 'Matnni o‘qing, videoni ko‘ring va tasdiqlang.', in_open: 'Ochish', in_open_video: 'Videoni ochish', in_seen: 'Matnni o‘qidim va videoni ko‘rdim', in_seen_on: 'Tasdiqlangan: {d}', in_confirm: 'Tasdiqlash', in_confirmed: 'Tanishuv tasdiqlandi', in_greet_t: 'Salomlashuv', in_greet_hint: 'Yangi xodim birinchi kirganda ko‘radigan birinchi sahifa. Bo‘sh qolsa — standart matn chiqadi.', in_f_title: 'Sarlavha', in_f_text: 'Matn', in_req_t: 'Majburiy tanishuv: matn va video', in_req_hint: 'Yangi xodim buni salomlashuvdan keyin ko‘radi va «o‘qidim, ko‘rdim» deb tasdiqlamaguncha davom eta olmaydi. Ishlayotgan xodimlarga oyna sifatida chiqadi. Matn yoki video o‘zgarsa, hamma qayta tasdiqlaydi. Xatboshilarni bo‘sh qator bilan ajrating.', in_text: 'Tanishuv matni', in_video: 'Video havolasi (YouTube yoki .mp4)', in_video_bad: 'Havola http:// yoki https:// bilan boshlanishi kerak', in_video_title: 'Video nomi', in_ro: 'Ko‘rish rejimi: o‘zgartirishni CEO va SOP menejeri kiritadi.', in_stat_t: 'Kim tanishdi', in_stat: '{m} ta xodimdan {n} tasi tasdiqladi', in_none: 'Tanishuv matni yoki videosi hali qo‘shilmagan — xodimlarga ko‘rsatilmaydi.', in_wait: 'Hali tasdiqlamagan:', in_preview: 'Xodim shunday ko‘radi', in_saved_re: 'Saqlandi — xodimlar tanishuvni qayta tasdiqlaydi', hint_in_t: 'Tanishuv', hint_in: 'Salomlashuv va majburiy tanishuv (matn + video): yangi xodim birinchi kirganda ko‘radi va tasdiqlaydi.', hint_inb_t: 'Majburiy tanishuv', hint_inb: 'Kompaniya bilan tanishuv matni va videosi. Ko‘rib chiqing va tasdiqlang.' });
@@ -3117,3 +3111,9 @@ Object.assign(APP_T.zh, { qn_cons_t: '数据使用同意',
   qn_cons_base_on: '已同意数据处理 · {d}。', qn_cons_base_how: '如需撤回，请联系 SOP 经理。',
   qn_cons_none_emp: '您在同意步骤上线前已填写问卷。如果给予同意，AI 分析和隐藏问题将按您的选择处理；如不同意，您的回答不会发送给 AI。',
   qn_cons_give: '给予同意' });
+
+/* отметка прихода без камеры и снимков (сервер v17, решение владельца «delete face control»): ClockGate */
+Object.assign(APP_T.uz, { clk_gate_time: 'Ishga kelgan vaqtingizni server belgilaydi — kamera va rasm kerak emas.' });
+Object.assign(APP_T.ru, { clk_gate_time: 'Время прихода ставит сервер — камера и фото не нужны.' });
+Object.assign(APP_T.en, { clk_gate_time: 'The server records your arrival time — no camera or photo needed.' });
+Object.assign(APP_T.zh, { clk_gate_time: '到岗时间由服务器记录——无需摄像头或照片。' });

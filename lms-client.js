@@ -9,7 +9,7 @@
 (function (root) {
   'use strict';
   var S = root.LmsSync;
-  var SERVER_V = 16;                      // версия сервера (tools/lms-gs), под которую написана эта страница
+  var SERVER_V = 17;                      // версия сервера (tools/lms-gs), под которую написана эта страница
   var URL_ = String(root.LMS_SERVER || '').trim();
   var DEMO = !URL_;                      // адреса нет — страница пишет «Server ulanmagan» (демо больше нет)
   var K = { token: 'lor-lms-token', cache: 'lor-lms-cache', queue: 'lor-lms-queue', lang: 'lor-lms-lang' };
@@ -162,9 +162,9 @@
       return flushAll().then(function () { return call('retest', { errorId: errorId, answers: answers }); })
         .then(function (r) { sync(); return r; });
     },
-    /* приход/уход: сотрудник отмечает, время ставит сервер (kind — 'in' | 'out'); photo — data:-снимок (необязательно) */
-    clock: function (kind, photo) {
-      return flushAll().then(function () { return call('clock', { kind: kind, photo: photo || undefined }); })
+    /* приход/уход: сотрудник отмечает, время ставит сервер (kind — 'in' | 'out'); снимков нет (сервер v17) */
+    clock: function (kind) {
+      return flushAll().then(function () { return call('clock', { kind: kind }); })
         .then(function (r) { sync(); return r; });
     },
     file: function (id) { return call('file', { id: id }); },
