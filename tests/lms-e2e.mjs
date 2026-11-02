@@ -728,12 +728,15 @@ try {
   await A.waitForFunction(() => document.querySelectorAll('.in-dl-item').length === 2, null, { timeout: 5000 });
   assert.equal(await A.locator('.in-dl-st.is-new').count(), 2, 'до сохранения — «Saqlanmagan»');
   await A.locator('.in-dl-item').nth(1).locator('.in-dl-mv').first().click();   // Word — первым
+  assert.equal(await A.locator('.in-dl-item').nth(1).locator('.in-dl-title').inputValue(), 'Kompaniya qoidalari', 'название — из имени файла');
+  await A.locator('.in-dl-item').nth(1).locator('.in-dl-title').fill('Kompaniya qoidalari (2026)');
   await A.locator('.in-admin .in-actions .lor-btn-primary').click(); await settle(A); await A.waitForTimeout(800);
   { const w = srv.g.state().settings.welcome;
     assert.equal(w.title, 'Xush kelibsiz!');
     assert.ok(w.at && w.video && /youtu/.test(w.video.src) && /Ikkinchi/.test(w.introText), 'приветствие, знакомство и видео — на сервере');
     assert.deepEqual(w.docs.map(d => d.name), ['Ichki tartib.docx', 'Kompaniya qoidalari.pdf'], 'документы — на сервере, в выбранном порядке');
-    assert.ok(w.docs.every(d => /^lmsfile:/.test(d.data)), 'сами файлы — на Диске, в данных только ссылки'); }
+    assert.ok(w.docs.every(d => /^lmsfile:/.test(d.data)), 'сами файлы — на Диске, в данных только ссылки');
+    assert.equal(w.docs[1].title, 'Kompaniya qoidalari (2026)', 'своё название документа'); }
   await A.waitForFunction(() => document.querySelectorAll('.in-dl-st.is-ok').length === 2, null, { timeout: 8000 });
   await A.locator('.in-drop').scrollIntoViewIfNeeded(); await shot(A, 'tanishuv-hujjatlar');
   await A.locator('.lor-tab').filter({ hasText: 'Darslar' }).click();
@@ -753,7 +756,8 @@ try {
   assert.equal(await E.locator('.intro-modal').count(), 1, '…а окно знакомства осталось');
   assert.ok(await E.locator('#in-seen').isDisabled(), 'открыт один документ из двух');
   await E.locator('.intro-modal .in-doc').nth(1).click();
-  await E.locator('.doc-viewer iframe.dv-pdf[src^="blob:"]').waitFor({ timeout: 8000 });
+  // PDF: встроенный просмотр, а где браузер не умеет (headless, Android) — кнопка «Hujjatni ochish» с тем же файлом
+  await E.locator('.doc-viewer iframe.dv-pdf[src^="blob:"], .doc-viewer a.dv-open[href^="blob:"]').waitFor({ timeout: 8000 });
   await E.locator('.doc-viewer .lor-modal-x').click();
   assert.equal(await E.locator('.intro-modal .in-doc.is-seen').count(), 2, 'оба документа отмечены открытыми');
   await shot(E, 'tanishuv-oyna');

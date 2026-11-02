@@ -3621,3 +3621,12 @@ input.org-name:hover, input.org-name:focus { border-color: var(--line); backgrou
 .org-extra { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .org-btn { align-self: center; }
 @media (max-width: 640px) { .org-cols { grid-template-columns: 1fr; } }
+
+/* «Tanishuv»: название документа в редакторе; PDF без встроенного просмотра (телефон) — карточка с кнопкой */
+.in-dl-title { height: 32px; padding: 0 8px; margin-left: -8px; font-weight: 500; font-size: 14px; border-color: transparent; background: transparent; }
+.in-dl-title:hover, .in-dl-title:focus { border-color: var(--line); background: var(--surface-raised); }
+.dv-alt { color: var(--ink); }
+.dv-alt b { font-weight: 500; font-size: 18px; line-height: 24px; }
+.dv-alt p { color: var(--ink-muted); }
+.dv-alt-ext { font-size: 13px; padding: 10px 12px; }
+.dv-open { text-decoration: none; }
