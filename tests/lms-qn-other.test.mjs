@@ -21,7 +21,7 @@ vm.runInContext('function tpl(s, o) { return s.replace(/\\{(\\w+)\\}/g, function
   part('  var QN_TYPES', '  function qnYes(') + part('  var LANG_NAME', '  function stems(') +
   part('  function qnCsv(', '  /* шкалы одного человека') + part('  function qnNew(', '  function docxQnText(') +
   part('  /* AI-вывод по ответам', '  function QnAi(') + part('  /* ответ для CEO и SOP-менеджера: скрытый', '  /* карточка одного сотрудника'), ctx);
-const { qnIsOth, qnOthOpt, qnOthOn, qnOthMiss, qnOthLabel, qnText, qnAnsOut, qnShow, qnCsv, qnAiPrompt, qnTeamPrompt, qnConsSet, qnRetake, qnScore, qnTemperAll, qnFromText } = ctx;
+const { qnIsOth, qnOthOpt, qnOthOn, qnOthMiss, qnOthLabel, qnText, qnAnsOut, qnShow, qnCsv, qnAiPrompt, qnTeamPrompt, qnConsSet, qnRetake, qnScore, qnTemperAll, qnFromText, qnDone } = ctx;
 const J = x => JSON.parse(JSON.stringify(x));
 
 // анкета: один вариант с «Boshqa (yozing)», несколько — с «Other», «Boshqa» с вопросом по условию (как раньше),
@@ -129,4 +129,17 @@ test('без согласия на особые данные свой ответ
   qnRetake(d2, 8, QT, 1, 60);
   assert.deepEqual(J(d2.users[0].qa.answers), { x: 'q' });
   assert.deepEqual(J(d2.users[0].qa.prev.answers), { t1: 'Boshqa', t1__other: 'rasm' });
+});
+
+test('черновик после отправки (qa.dirty) — анкета «к заполнению», пока не «Yuborish»: пустой «Boshqa» не проходит мимо проверки', () => {
+  const answers = { src: 'Boshqa (yozing)', hob: ['Sport'], job: 'Logistika', fam: 'Yolg‘iz' };
+  assert.equal(qnDone(Q, { qa: { at: 1, answers } }), true, 'отправлена — готово');
+  assert.equal(qnDone(Q, { qa: { at: 1, answers, dirty: true } }), false, 'черновик поверх отправленной — «к заполнению»');
+  assert.equal(qnDone(Q, { qa: { answers, dirty: true } }), false);
+  // в app.js: черновик ставит qa.dirty только у отправленной анкеты, «Yuborish» его снимает
+  assert.match(app, /if \(x\.qa\.at\) x\.qa\.dirty = true;/);
+  assert.match(app, /delete x\.qa\.retake; delete x\.qa\.dirty;/);
+  // закрытый пункт теста (анкета отправлена) — «Boshqa» без текста не мешает сохранить остальное
+  assert.match(app, /var oMiss = function \(x\) \{ return !lockT\(x\) && qnOthMiss\(q, x, a\[0\]\); \};/);
+  assert.equal((app.match(/else if \(oMiss\(x\)\) e\[x\.id\] = 'oth';/g) || []).length, 2, 'и в «Yuborish» / «Saqlash», и в «Keyingi bo‘lim»');
 });

@@ -446,8 +446,10 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var v = (a || {})[w.q];
     return Array.isArray(v) ? v.some(function (o) { return w.any.indexOf(o) >= 0; }) : w.any.indexOf(v) >= 0;
   }
-  /* qa.retake — CEO или SOP-менеджер попросил пройти тест ещё раз: пока не отправил снова — «к заполнению» */
-  function qnDone(q, u) { var a = (u.qa && u.qa.answers) || {}, c = qnCons(u); return !!(u.qa && u.qa.at) && !u.qa.retake && qnAsk(q).every(function (x) { return !x.req || !qnShowIf(x, a, c) || qnFilled(x, a[x.id]); }); }
+  /* qa.retake — CEO или SOP-менеджер попросил пройти тест ещё раз: пока не отправил снова — «к заполнению»;
+     qa.dirty — черновик после отправки (анкету дополнили, правки сохранились сами): тоже «к заполнению» до «Yuborish»,
+     иначе черновик снял бы «сначала анкета» без проверок отправки (пустой «Boshqa») */
+  function qnDone(q, u) { var a = (u.qa && u.qa.answers) || {}, c = qnCons(u); return !!(u.qa && u.qa.at) && !u.qa.retake && !u.qa.dirty && qnAsk(q).every(function (x) { return !x.req || !qnShowIf(x, a, c) || qnFilled(x, a[x.id]); }); }
   /* «к заполнению» — и когда анкета отправлена, а согласия нет (анкета до шага согласий), оно старой версии или обработку
      отозвали: тогда первым шагом спросят только согласие, ответы остаются */
   function qnDue(db, u) { var q = qnOf(db); return !!(q && u && u.role === 'employee' && (!qnDone(q, u) || !qnConsOk(u))); }
@@ -902,8 +904,12 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var vis = function (x) { return qnShowIf(x, a[0], cons); };
     var steps = qnVisSteps(q, a[0], cons), num = {}, nn = 0;
     (q.questions || []).forEach(function (x) { if (x.type !== 'section' && x.type !== 'consent' && x.type !== 'note' && vis(x)) num[x.id] = ++nn; });
-    /* отвечен: обязательный с «Boshqa» — когда и свой ответ написан */
-    var full = function (x) { return qnFilled(x, a[0][x.id]) && !qnOthMiss(q, x, a[0]); };
+    /* анкета уже отправлена: ответы теста — только посмотреть. Пройти тест заново — лишь по «Testni qayta topshirishni
+       so‘rash» (qnRetake: первая попытка — в qa.prev), иначе правка обошла бы время ответов, счётчик изменений и повтор */
+    var lockT = function (x) { return !due && qnTestItem(x); };
+    /* отвечен: обязательный с «Boshqa» — когда и свой ответ написан (у закрытого пункта теста поле не правится — не проверяем) */
+    var oMiss = function (x) { return !lockT(x) && qnOthMiss(q, x, a[0]); };
+    var full = function (x) { return qnFilled(x, a[0][x.id]) && !oMiss(x); };
     var all = qnAsk(q), ask = all.filter(vis), got = ask.filter(full).length;
     /* «Javoblar sifati»: время между ответами на пункты теста 1–5 — только пока вкладка видна (скрытое время вычитается),
        паузы длиннее 5 минут не в счёт, первый ответ захода — без времени; сколько раз меняли ответ. Пишется в
@@ -929,9 +935,6 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     }
     function meta(ans) { var s = pd.current, rt = {}; Object.keys(s.rt).forEach(function (k) { if (k in ans) rt[k] = s.rt[k]; }); return { rt: rt, changes: s.ch }; }
     var byId = {}; all.forEach(function (x) { byId[x.id] = x; });
-    /* анкета уже отправлена: ответы теста — только посмотреть. Пройти тест заново — лишь по «Testni qayta topshirishni
-       so‘rash» (qnRetake: первая попытка — в qa.prev), иначе правка обошла бы время ответов, счётчик изменений и повтор */
-    var lockT = function (x) { return !due && qnTestItem(x); };
     /* id + '__other' — свой ответ «Boshqa» вопроса id (тот же замок и та же ошибка); сняли «Boshqa» — свой ответ стирается */
     function set(id, v) {
       var own = id.slice(-QN_OTH.length) === QN_OTH && !byId[id], bid = own ? id.slice(0, -QN_OTH.length) : id, x = byId[bid];
@@ -960,13 +963,13 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       var ans = answers(), js = JSON.stringify(ans);
       if (!due || js === saved.current) return;
       saved.current = js;
-      p.update(function (d) { patchUser(d, u.id, function (x) { x.qa = Object.assign({}, x.qa || {}, { answers: ans }, hasQ ? { meta: meta(ans) } : {}); }); });
+      p.update(function (d) { patchUser(d, u.id, function (x) { x.qa = Object.assign({}, x.qa || {}, { answers: ans }, hasQ ? { meta: meta(ans) } : {}); if (x.qa.at) x.qa.dirty = true; }); });
       draftAt[1](Date.now());
     }
     useEffect(function () { if (!due) return; var tm = setTimeout(draft, 1500); return function () { clearTimeout(tm); }; }, [a[0]]);
     function later() { draft(); if (p.onClose) p.onClose(); }
     function send() {
-      var e = {}; ask.forEach(function (x) { if (x.req && !qnFilled(x, a[0][x.id])) e[x.id] = 1; else if (qnOthMiss(q, x, a[0])) e[x.id] = 'oth'; });
+      var e = {}; ask.forEach(function (x) { if (x.req && !qnFilled(x, a[0][x.id])) e[x.id] = 1; else if (oMiss(x)) e[x.id] = 'oth'; });
       errs[1](e);
       if (Object.keys(e).length) {
         if (p.page) { var bad = steps.map(function (st) { return st.items.some(function (x) { return e[x.id]; }); }).indexOf(true); if (bad >= 0) stp[1](bad); }
@@ -975,7 +978,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       var at = Date.now(), ans = answers(), first = !(u.qa && u.qa.at);
       saved.current = JSON.stringify(ans);
       p.update(function (d) {
-        patchUser(d, u.id, function (x) { var was = x.qa && x.qa.retake; x.qa = Object.assign({}, x.qa || {}, { answers: ans, at: at }, hasQ ? { meta: meta(ans) } : {}); delete x.qa.retake; if (was) x.qa.retakeAt = at; });
+        patchUser(d, u.id, function (x) { var was = x.qa && x.qa.retake; x.qa = Object.assign({}, x.qa || {}, { answers: ans, at: at }, hasQ ? { meta: meta(ans) } : {}); delete x.qa.retake; delete x.qa.dirty; if (was) x.qa.retakeAt = at; });
         if (first) d.audit.unshift({ id: nextId(d), userId: u.id, key: 'qn-done', at: at });
         else if (retake) d.audit.unshift({ id: nextId(d), userId: u.id, key: 'qn-retake-done', at: at });
       });
@@ -1042,7 +1045,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       var stepOk = function (st) { return st.items.every(function (x) { return !x.req || full(x); }); };
       var go = function (i) { stp[1](i); errs[1]({}); window.scrollTo(0, 0); };
       var nextStep = function () {
-        var e = {}; cs.items.forEach(function (x) { if (x.req && !qnFilled(x, a[0][x.id])) e[x.id] = 1; else if (qnOthMiss(q, x, a[0])) e[x.id] = 'oth'; });
+        var e = {}; cs.items.forEach(function (x) { if (x.req && !qnFilled(x, a[0][x.id])) e[x.id] = 1; else if (oMiss(x)) e[x.id] = 'oth'; });
         errs[1](e);
         if (Object.keys(e).length) { setTimeout(function () { var el = document.querySelector('.qn-field.is-err'); if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, 30); return; }
         draft(); go(si + 1);

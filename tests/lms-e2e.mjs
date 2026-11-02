@@ -1470,6 +1470,12 @@ try {
   await fJob.locator('.qn-tile', { hasText: 'Boshqa' }).click();
   assert.equal(await fJob.locator('.qn-oth').count(), 0, '«Boshqa» с [agar: Boshqa] — без поля');
   await E.locator('.qn-field', { hasText: 'Qanday ish edi?' }).locator('input').fill('Bank');
+  // анкета уже была отправлена: черновик (через 1,5 с) с пустым «Boshqa» не снимает «сначала анкета» — qa.dirty, пока не «Yuborish»
+  await E.waitForTimeout(2000); await settle(E);
+  assert.equal(await E.locator('.qn-page .qn-wiz').count(), 1, 'черновик не закрыл страницу анкеты');
+  { const qa = srv.g.state().users.find(u => u.id === emp.id).qa;
+    assert.equal(qa.dirty, true, 'черновик после отправки — qa.dirty');
+    assert.equal(qa.answers[srv.g.state().settings.questionnaire.questions.find(x => x.text.startsWith('Biz haqimizda')).id], 'Boshqa (yozing)', 'черновик на сервере'); }
   // обязательный «Boshqa» без текста — не отправить: «Boshqa variantni yozing»
   await E.locator('.qn-page-foot .lor-btn-primary').click(); await E.waitForTimeout(200);
   assert.equal(await E.locator('.qn-field.is-err').count(), 1, 'ошибка — только у вопроса с пустым «Boshqa»');
@@ -1482,6 +1488,7 @@ try {
   await E.locator('.qn-done').waitFor({ timeout: 5000 }); await settle(E);
   { const q = srv.g.state().settings.questionnaire, by = t => q.questions.find(x => x.text.startsWith(t)), ans = srv.g.state().users.find(u => u.id === emp.id).qa.answers;
     assert.equal(ans[by('Oilaviy').id], 'Oilasiz');
+    assert.equal('dirty' in srv.g.state().users.find(u => u.id === emp.id).qa, false, '«Yuborish» снял qa.dirty');
     assert.deepEqual([ans[by('Biz haqimizda').id], ans[by('Biz haqimizda').id + '__other']], ['Boshqa (yozing)', 'Instagram'], 'свой ответ — рядом с ответом, ключ id + __other');
     assert.deepEqual([ans[by('Qiziqishlaringiz').id], ans[by('Qiziqishlaringiz').id + '__other']], [['Sport', 'Boshqa'], 'shaxmat'], 'без пробелов по краям');
     assert.deepEqual([ans[by('Oldingi').id], by('Oldingi').id + '__other' in ans, ans[by('Qanday ish').id]], ['Boshqa', false, 'Bank'], '[agar: Boshqa] — как раньше'); }
@@ -1496,7 +1503,7 @@ try {
     assert.match(tx, /Oldingi ishingiz\s+Boshqa\s/, 'вариант с вопросом по условию — как есть'); }
   await A.locator('.qn-ans .qn-dl-row', { hasText: 'Qiziqishlaringiz' }).scrollIntoViewIfNeeded(); await shot(A, 'savolnoma-boshqa-ceo');
   await A.locator('.qn-ans .lor-modal-x').click();
-  step('вопрос по условию: «Farzandlaringiz soni» виден только при «Oilali»; с «Oilasiz» анкета отправляется без него. «Boshqa (yozing)» — поле «Yozing…» (снят — текст стёрт, обязательный без текста — «Boshqa variantni yozing»), у SOP — «Boshqa: <текст>»; [agar: Boshqa] — как раньше');
+  step('вопрос по условию: «Farzandlaringiz soni» виден только при «Oilali»; с «Oilasiz» анкета отправляется без него. «Boshqa (yozing)» — поле «Yozing…» (снят — текст стёрт, обязательный без текста — «Boshqa variantni yozing», черновик не снимает страницу анкеты), у SOP — «Boshqa: <текст>»; [agar: Boshqa] — как раньше');
 
   // ---------- анкета, отправленная до шага согласий (как у сотрудника выше, но поля согласий нет, паспорт [maxfiy] сохранён, старый
   // вывод ИИ): вывод ИИ сервер не хранит, у SOP паспорт закрыт; при входе — только шаг согласий; без особых — сначала вопрос ----------
