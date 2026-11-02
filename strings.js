@@ -3254,3 +3254,12 @@ Object.assign(APP_T.zh, { qn_q_sk_order: '相同回答序列（同一量表的�
   qn_cons_base_gone: '已撤回同意——问卷回答已删除',
   qn_cons_off_emp: '您已撤回数据处理同意——问卷回答已删除。如需填写问卷，请重新给予同意。',
   qn_cons_special: '我回答标记为“Maxfiy”的问题（例如护照信息）。这些回答不会发送给 AI。不勾选时，这些问题不显示、不必填写，已填写的回答也会被删除。' });
+/* карточка человека «Savolnoma» → «Natijalar»: согласия плашками, ответы под шкалой — за кнопкой «Javoblar (3)» */
+Object.assign(APP_T.uz, { qn_cons_row: 'Roziliklar', qn_cons_k_base: 'Qayta ishlash', qn_cons_k_ai: 'AI tahlili', qn_cons_k_sp: 'Maxfiy ma’lumotlar',
+  qn_cons_k_true: 'Ma’lumotlar to‘g‘ri', qn_cons_k_proc: 'Qayta ishlashga rozilik', qn_why_n: 'Javoblar ({n})' });
+Object.assign(APP_T.ru, { qn_cons_row: 'Согласия', qn_cons_k_base: 'Обработка данных', qn_cons_k_ai: 'Анализ ИИ', qn_cons_k_sp: 'Особые данные',
+  qn_cons_k_true: 'Данные верны', qn_cons_k_proc: 'Согласие на обработку', qn_why_n: 'Ответы ({n})' });
+Object.assign(APP_T.en, { qn_cons_row: 'Consents', qn_cons_k_base: 'Data processing', qn_cons_k_ai: 'AI analysis', qn_cons_k_sp: 'Special data',
+  qn_cons_k_true: 'Data is correct', qn_cons_k_proc: 'Consent to processing', qn_why_n: 'Answers ({n})' });
+Object.assign(APP_T.zh, { qn_cons_row: '同意事项', qn_cons_k_base: '数据处理', qn_cons_k_ai: 'AI 分析', qn_cons_k_sp: '敏感信息',
+  qn_cons_k_true: '信息属实', qn_cons_k_proc: '同意数据处理', qn_why_n: '回答（{n}）' });

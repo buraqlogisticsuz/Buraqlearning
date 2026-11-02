@@ -3517,42 +3517,61 @@ button.mc-cell.at-cell:hover { outline: 2px solid var(--blue-text); outline-offs
 .qn-person-go { display: flex; align-items: center; justify-content: flex-end; gap: 8px; font-size: 13px; color: var(--red-text); }
 .qn-person-go::after { content: '→'; }
 .qn-ai-chip { padding: 2px 8px; border-radius: var(--radius-pill); background: var(--blue-soft); color: var(--blue-text); font-size: 11px; }
-.qn-res-top { display: grid; grid-template-columns: minmax(0, 240px) minmax(0, 1fr); gap: var(--space-4); align-items: start; }
-.qn-res-top.is-one { grid-template-columns: minmax(0, 1fr); }
-.qn-temper { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border-radius: var(--radius-md); border: var(--hairline) solid var(--line); background: var(--surface-sunken); color: var(--ink); }
-.qn-temper b { font-size: 20px; line-height: 26px; font-weight: 400; }
-.qn-temper-d { font-size: 15px; line-height: 21px; }
-.qn-temper-ms { font-size: 12px; line-height: 17px; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
-.qn-temper p { margin: 0; font-size: 13px; line-height: 19px; }
+/* профиль по шкалам: склонность полосой во всю ширину, шкалы списком — строка «шкала · 4,1 / 5 · вывод», под ней полоса;
+   общая ось 1–5 одна над списком (.qn-ax), засечки 2–3–4 — на каждой полосе; ответы под шкалой — за «Javoblar (3)» */
+.qn-temper { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px var(--space-4); padding: 12px 16px; border-radius: var(--radius-md); border: var(--hairline) solid var(--line); background: var(--surface-sunken); color: var(--ink); }
+.qn-temper-main { flex: 1 1 260px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.qn-temper-t { margin: 0; font-size: 16px; line-height: 22px; }
+.qn-temper-t b { font-weight: 500; }
+.qn-temper-2 { font-size: 13px; line-height: 18px; color: var(--ink-muted); }
+.qn-temper-ms { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.qn-temper-ms li { padding: 2px 10px; border-radius: var(--radius-pill); border: var(--hairline) solid var(--line); background: var(--surface-raised); color: var(--ink-muted); font-size: 12px; line-height: 18px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.qn-temper-ms li b { font-weight: 500; color: var(--ink); }
+.qn-temper-ms li.is-top { border-color: var(--blue-text); color: var(--blue-text); }
+.qn-temper-ms li.is-top b { color: var(--blue-text); }
 .qn-bars { display: flex; flex-direction: column; gap: 14px; }
-.qn-bar { display: flex; flex-direction: column; gap: 4px; }
-.qn-bar-top { display: flex; justify-content: space-between; gap: 8px; font-size: 14px; line-height: 20px; }
-.qn-bar-n { font-variant-numeric: tabular-nums; color: var(--ink-muted); }
-.qn-bar-band { font-size: 13px; line-height: 18px; color: var(--ink); }
-.qn-bar-band small { color: var(--ink-muted); font-size: 12px; }
-/* полоса 1–5: заливка до среднего, черта — среднее, тень — погрешность ±QN_SEM (выходит за дорожку сверху и снизу) */
-.qn-meter { position: relative; display: block; height: 8px; margin: 5px 0 0; border-radius: var(--radius-sm); background: var(--line); }
+.qn-ax { position: relative; height: 14px; margin-bottom: -6px; font-size: 11px; line-height: 14px; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+.qn-ax span { position: absolute; top: 0; transform: translateX(-50%); }
+.qn-ax span:first-child { transform: none; }
+.qn-ax span:last-child { transform: translateX(-100%); }
+.qn-bar { display: flex; flex-direction: column; gap: 7px; }
+.qn-bar-top { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 10px; font-size: 14px; line-height: 20px; color: var(--ink); }
+.qn-bar-n { font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.qn-bar-band { min-width: 0; font-size: 13px; line-height: 20px; color: var(--ink-muted); }
+.qn-bar.is-few .qn-bar-n { font-weight: 400; color: var(--ink-muted); }
+.qn-why-tg { margin-left: auto; display: inline-flex; align-items: center; gap: 2px; height: 24px; padding: 0 6px 0 10px; border: 0; border-radius: var(--radius-pill); background: transparent; color: var(--blue-text); font: inherit; font-size: 12px; line-height: 16px; cursor: pointer; white-space: nowrap; align-self: center; }
+.qn-why-tg:hover { background: var(--blue-soft); }
+.qn-why-tg svg { flex: none; transition: transform var(--t-sm) var(--ease); }
+.qn-bar.is-open .qn-why-tg svg { transform: rotate(180deg); }
+.qn-meter { position: relative; display: block; height: 8px; border-radius: var(--radius-sm); background: var(--line); }
+.qn-meter::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(to right, transparent calc(25% - 1px), var(--surface-raised) calc(25% - 1px) 25%, transparent 25% calc(50% - 1px), var(--surface-raised) calc(50% - 1px) 50%, transparent 50% calc(75% - 1px), var(--surface-raised) calc(75% - 1px) 75%, transparent 75%); }
 .qn-meter i { position: absolute; display: block; }
 .qn-meter-fill { left: 0; top: 0; bottom: 0; border-radius: var(--radius-sm); background: var(--blue-text); opacity: .55; }
 .qn-meter-sem { top: -4px; bottom: -4px; border-radius: var(--radius-sm); background: var(--blue-text); opacity: .22; }
-.qn-meter-dot { top: -5px; bottom: -5px; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--ink); }
-.qn-meter-ax { display: flex; justify-content: space-between; margin-top: 3px; font-size: 11px; line-height: 14px; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
-.qn-bar.is-few .qn-bar-n { color: var(--ink-muted); }
-.qn-why { display: flex; flex-direction: column; gap: 2px; margin-top: 2px; }
+.qn-meter-dot { z-index: 1; top: -5px; bottom: -5px; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--ink); }
+.qn-why { display: flex; flex-direction: column; gap: 4px; padding: 8px 12px; border-radius: var(--radius-sm); background: var(--surface-sunken); }
+.qn-why[hidden] { display: none; }
 .qn-why-h { font-size: 12px; line-height: 16px; color: var(--ink-muted); }
-.qn-why ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.qn-why ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
 .qn-why li { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; gap: 6px; align-items: baseline; font-size: 13px; line-height: 18px; }
 .qn-why-dir { color: var(--ink-muted); }
 .qn-why li small { font-size: 12px; color: var(--ink-muted); text-align: right; }
-/* профиль: шкалы темперамента и отдельно — остальные («Ishonchlilik»), под ними постоянная оговорка */
-.qn-prof { display: flex; flex-direction: column; gap: var(--space-3); }
+.qn-prof { display: flex; flex-direction: column; gap: var(--space-4); }
 .qn-prof-sc { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
-.qn-prof-grp { display: flex; flex-direction: column; gap: 8px; }
+.qn-prof-grp { display: flex; flex-direction: column; gap: 10px; }
 .qn-prof-grp.is-apart { padding-top: var(--space-4); border-top: var(--hairline) dashed var(--border); }
 .qn-prof-hint { margin: 0; }
 .qn-foot { margin: 0; padding: 10px 12px; border-left: 2px solid var(--red); background: var(--surface-sunken); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; font-size: 13px; line-height: 19px; color: var(--ink); }
-.qn-own { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border: var(--hairline) solid var(--line); border-radius: var(--radius-md); background: var(--surface); }
-@media (max-width: 640px) { .qn-why li { grid-template-columns: 14px minmax(0, 1fr); } .qn-why li small { grid-column: 2; text-align: left; } }
+@media (max-width: 640px) {
+  .qn-why li { grid-template-columns: 14px minmax(0, 1fr); } .qn-why li small { grid-column: 2; text-align: left; }
+  .qn-temper { padding: 12px; }
+  /* телефон: «шкала — балл» первой строкой, «вывод — Javoblar (3)» второй */
+  .qn-bar-top { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; }
+  .qn-bar-name { grid-column: 1; grid-row: 1; }
+  .qn-bar-n { grid-column: 2; grid-row: 1; text-align: right; }
+  .qn-bar-band { grid-column: 1; grid-row: 2; }
+  .qn-why-tg { grid-column: 2; grid-row: 2; justify-self: end; margin-right: -6px; }
+}
 .qn-ai { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border: var(--hairline) solid var(--line); border-radius: var(--radius-md); background: var(--surface); }
 .qn-ai-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .qn-ai-body { display: flex; flex-direction: column; gap: 10px; }
@@ -3572,7 +3591,6 @@ button.mc-cell.at-cell:hover { outline: 2px solid var(--blue-text); outline-offs
 .qn-tm-axis { display: flex; flex-direction: column; gap: 4px; }
 .qn-scale-sel { min-width: 170px; }
 @media (max-width: 760px) {
-  .qn-res-top { grid-template-columns: 1fr; }
   .qn-tm-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
@@ -3665,18 +3683,27 @@ input.org-name:hover, input.org-name:focus { border-color: var(--line); backgrou
 .qn-prof-sel { min-width: 200px; }
 .qn-grid-cols { height: 36px; }
 .qn-ans { max-width: 920px; }
-.qn-ans-head { display: flex; align-items: center; gap: var(--space-4); padding-right: 36px; }
-.qn-ans-who { flex: 1; min-width: 0; }
+/* шапка карточки: аватар | имя и строка о человеке | две одинаковые кнопки; под ними — согласия плашками */
+.qn-ans-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "av who acts" ". cons cons"; align-items: center; gap: 10px var(--space-4); padding-right: 36px; }
+.qn-ans-head > .lor-req-av { grid-area: av; }
+.qn-ans-who { grid-area: who; min-width: 0; }
 .qn-ans-who .lor-h { margin: 2px 0; }
-.qn-ans-acts { display: flex; gap: 8px; flex-wrap: wrap; }
+.qn-ans-meta { font-size: 13px; line-height: 18px; color: var(--ink-muted); }
+.qn-ans-meta span { white-space: nowrap; }
+.qn-ans-acts { grid-area: acts; display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.qn-ans-btn { gap: 6px; padding: 0 14px 0 12px; }
+.qn-ans-btn svg { flex: none; }
 .qn-keys { margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
 .qn-key { padding: 10px 12px; border-radius: var(--radius-md); background: var(--surface-sunken); }
 .qn-key dt { font-size: 12px; line-height: 16px; color: var(--ink-muted); }
 .qn-key dd { margin: 2px 0 0; font-size: 14px; line-height: 20px; color: var(--ink); white-space: pre-line; word-break: break-word; }
-.qn-cons { display: flex; flex-direction: column; gap: 2px; }
-.qn-cons p { margin: 0; }
-.qn-cons .is-ok { color: var(--blue-text); }
-.qn-cons .is-no { color: var(--red-text); }
+.qn-cons-who { grid-area: cons; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.qn-cons { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.qn-cons-c { display: inline-flex; align-items: baseline; gap: 5px; max-width: 100%; box-sizing: border-box; padding: 1px 10px 1px 8px; border-radius: var(--radius-pill); background: var(--surface-sunken); color: var(--ink-muted); font-size: 12px; line-height: 18px; white-space: nowrap; cursor: default; }
+.qn-cons-k { overflow: hidden; text-overflow: ellipsis; }
+.qn-cons-mk { flex: none; font-size: 11px; color: var(--blue-text); }
+.qn-cons-c.is-no .qn-cons-mk { color: var(--red-text); }
+.qn-cons-full { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .qn-dl-row.is-secret dd { font-variant-numeric: tabular-nums; }
 .qn-tbl-box { display: flex; flex-direction: column; gap: var(--space-3); }
 .qn-tbl-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
@@ -3700,14 +3727,23 @@ input.org-name:hover, input.org-name:focus { border-color: var(--line); backgrou
   .qn-lv-pill { flex: 1 1 calc(33.33% - 4px); min-width: 0; padding: 0 4px; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .qn-page-head { flex-wrap: wrap; padding: 10px 14px; }
   .qn-page-main .lor-h { font-size: 24px; line-height: 30px; }
-  .qn-ans-head { flex-wrap: wrap; }
+  .qn-ans-head { grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "av who" "acts acts" "cons cons"; gap: 10px var(--space-3); }
+  .qn-ans-acts .lor-btn { flex: 1 1 auto; justify-content: center; }
 }
+@media (max-width: 640px) and (pointer: coarse) { .qn-ans-head { padding-right: 0; } }   /* × на касании — в потоке над шапкой */
 @media print {
   body.qn-printing * { visibility: hidden; }
   body.qn-printing .qn-ans, body.qn-printing .qn-ans * { visibility: visible; }
   body.qn-printing .lor-scrim { position: static; background: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
   body.qn-printing .qn-ans { position: absolute; left: 0; top: 0; width: 100%; max-width: none; max-height: none; overflow: visible; box-shadow: none; background: var(--white); color: var(--navy); }
   body.qn-printing .qn-noprint { display: none !important; }
+  /* в печати — всё раскрыто: ответы под шкалами, согласия полным текстом с датой и логином */
+  body.qn-printing .qn-why[hidden] { display: flex !important; }
+  body.qn-printing .qn-cons { flex-direction: column; gap: 2px; }
+  body.qn-printing .qn-cons-c { white-space: normal; padding: 0; background: none; font-size: 12px; }
+  body.qn-printing .qn-cons-k { display: none; }
+  body.qn-printing .qn-cons-full { position: static; width: auto; height: auto; margin: 0; overflow: visible; clip: auto; white-space: normal; }
+  body.qn-printing .qn-bar, body.qn-printing .qn-temper, body.qn-printing .qn-q { break-inside: avoid; }
 }
 
 /* ---------- «Savolnoma» интерактивно: плитки вариантов, уровни, согласие, шаги по разделам, «Rahmat!» ---------- */
@@ -3852,7 +3888,6 @@ input.org-name:hover, input.org-name:focus { border-color: var(--line); backgrou
 .qn-scale.has-labels .qn-sc b { font-size: 16px; line-height: 18px; font-weight: 500; }
 .qn-scale.has-labels .qn-sc small { font-size: 11px; line-height: 14px; opacity: .85; text-align: center; }
 .qn-scale.has-labels .qn-sc.is-on { transform: none; }
-.qn-temper-2 { font-size: 13px; line-height: 18px; opacity: .85; }
 .qn-tm-scn { min-width: 160px; font-size: 14px; color: var(--ink); }
 @media (max-width: 640px) {
   .qn-scale.has-labels .qn-sc-row { gap: 4px; }

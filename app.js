@@ -2028,7 +2028,11 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     pulse: 'M3 12h4l2-4 3.5 8 2.5-6 1.5 2H21',
     question: 'M12 3a9 9 0 1 0 0 18a9 9 0 0 0 0-18M9.5 9.2a2.6 2.6 0 0 1 5 .8c0 1.8-2.5 2.3-2.5 4M12 17h.01',
     cross: 'M6.5 6.5l11 11M17.5 6.5l-11 11',
-    cal: 'M4 6h16v14H4zM4 10h16M8 3.5V7M16 3.5V7'
+    cal: 'M4 6h16v14H4zM4 10h16M8 3.5V7M16 3.5V7',
+    /* карточка анкеты: «показать скрытое», «печать», раскрыть */
+    eye: 'M2.5 12s3.5-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12zM12 9.2a2.8 2.8 0 1 0 0 5.6a2.8 2.8 0 0 0 0-5.6',
+    print: 'M7 8V3.5h10V8M7 17H4.5V9.5A1.5 1.5 0 0 1 6 8h12a1.5 1.5 0 0 1 1.5 1.5V17H17M7 13.5h10V21H7z',
+    chev: 'M6.5 9.5l5.5 5.5 5.5-5.5'
   };
   /* иконка раздела анкеты — по словам в названии (uz / ru / en) */
   var QN_SEC_ICO = [[/rozilik|tasdiq|соглас|consent/i, 'shieldok'], [/kartoch|карточ|card/i, 'pass'], [/shaxsiy|личн|personal/i, 'user'], [/nomzod|vakans|кандидат|candidat/i, 'case'],
@@ -7781,59 +7785,71 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     });
     return '﻿' + rows.map(function (r) { return r.map(cell).join(';'); }).join('\r\n');
   }
-  /* шкалы одного человека: полоса 1–5 — среднее и затенённая погрешность ±QN_SEM, вывод границы, сколько отвечено;
-     why — под шкалой 2–3 ответа, сильнее всего сдвинувших балл (чтобы проверить вывод в разговоре) */
+  /* шкалы одного человека — компактный список: строка «шкала · 4,1 / 5 · вывод границы», под ней полоса 1–5 (черта —
+     среднее, тень — погрешность ±QN_SEM, засечки 2–3–4); общая ось 1–5 — одна над списком (ax). why — 2–3 ответа,
+     сильнее всего сдвинувших балл (проверить вывод в разговоре), — за кнопкой «Javoblar (3)»; в печати раскрыты */
   function QnBars(p) {
-    var t = p.t, pos = function (m) { return Math.max(0, Math.min(100, (m - 1) / 4 * 100)); };
+    var t = p.t, open = useState({}), pos = function (m) { return Math.max(0, Math.min(100, (m - 1) / 4 * 100)); };
     var ans = function (x, v) { var labs = x.type === 'scale' && (x.labels || []).length === 5 ? x.labels : null; return labs ? labs[v - 1] + ' (' + v + ')' : qnText(x, v); };
-    return h('div', { className: 'qn-bars' }, p.res.map(function (r) {
-      var ok = r.n > 0 && !r.few, val = ok ? qnNum(t, r.mean) + ' / 5' : r.n ? t('qn_few') : '—';
-      return h('div', { key: r.s.id, className: cx('qn-bar', !ok && 'is-few') },
-        h('div', { className: 'qn-bar-top' }, h('span', { className: 'qn-bar-name' }, r.s.name), h('span', { className: 'qn-bar-n' }, val)),
-        h('span', { className: 'qn-meter', role: 'img', 'aria-label': r.s.name + ': ' + (ok ? val + ' (±' + qnNum(t, QN_SEM) + ')' : val) },
-          ok ? h('i', { className: 'qn-meter-fill', style: { width: pos(r.mean) + '%' } }) : null,
-          ok ? h('i', { className: 'qn-meter-sem', style: { left: pos(r.mean - QN_SEM) + '%', right: (100 - pos(r.mean + QN_SEM)) + '%' } }) : null,
-          ok ? h('i', { className: 'qn-meter-dot', style: { left: pos(r.mean) + '%' } }) : null),
-        h('span', { className: 'qn-meter-ax', 'aria-hidden': true }, [1, 2, 3, 4, 5].map(function (n) { return h('span', { key: n }, n); })),
-        ok ? h('span', { className: 'qn-bar-band' }, r.band || '', r.n < r.total ? h('small', null, (r.band ? ' · ' : '') + tpl(t('qn_answered'), { n: r.n, m: r.total })) : null)
-          : h('span', { className: 'qn-bar-band lor-muted' }, r.n ? tpl(t('qn_few_n'), { n: r.n, m: r.total }) : t('qn_res_noans')),
-        p.why && ok && r.top.length ? h('div', { className: 'qn-why' },
-          h('span', { className: 'qn-why-h' }, t('qn_why')),
-          h('ul', null, r.top.map(function (z) {
-            var s = String(z.x.text || ''), up = z.v > 3;
-            return h('li', { key: z.x.id },
-              h('span', { className: 'qn-why-dir', 'aria-hidden': true }, up ? '↑' : '↓'),
-              h('span', { className: 'qn-why-t' }, s.length > 110 ? s.slice(0, 108) + '…' : s),
-              h('small', null, ans(z.x, z.a) + (z.x.rev ? ' · ' + t('qn_rev') : '')));
-          }))) : null);
-    }));
+    return h('div', { className: 'qn-bars' },
+      p.ax ? h('div', { className: 'qn-ax', 'aria-hidden': true }, [1, 2, 3, 4, 5].map(function (n) { return h('span', { key: n, style: { left: (n - 1) * 25 + '%' } }, n); })) : null,
+      p.res.map(function (r) {
+        var ok = r.n > 0 && !r.few, val = ok ? qnNum(t, r.mean) + ' / 5' : '—', why = !!p.why && ok && r.top.length > 0, on = why && !!open[0][r.s.id], wid = 'qn-why-' + r.s.id;
+        var band = ok ? [r.band, r.n < r.total ? tpl(t('qn_answered'), { n: r.n, m: r.total }) : ''].filter(Boolean).join(' · ') : r.n ? tpl(t('qn_few_n'), { n: r.n, m: r.total }) : t('qn_res_noans');
+        return h('div', { key: r.s.id, className: cx('qn-bar', !ok && 'is-few', on && 'is-open') },
+          h('div', { className: 'qn-bar-top' },
+            h('span', { className: 'qn-bar-name' }, r.s.name),
+            h('span', { className: 'qn-bar-n' }, val),
+            band ? h('span', { className: 'qn-bar-band' }, band) : null,
+            why ? h('button', { type: 'button', className: 'qn-why-tg qn-noprint', 'aria-expanded': on, 'aria-controls': wid, title: t('qn_why'),
+              onClick: function () { var o = Object.assign({}, open[0]); o[r.s.id] = !on; open[1](o); } },
+              tpl(t('qn_why_n'), { n: r.top.length }), h(Ico, { name: 'chev', size: 14, w: 2 })) : null),
+          h('span', { className: 'qn-meter', role: 'img', 'aria-label': r.s.name + ': ' + (ok ? val + ' (±' + qnNum(t, QN_SEM) + ')' + (band ? ', ' + band : '') : band) },
+            ok ? h('i', { className: 'qn-meter-fill', style: { width: pos(r.mean) + '%' } }) : null,
+            ok ? h('i', { className: 'qn-meter-sem', style: { left: pos(r.mean - QN_SEM) + '%', right: (100 - pos(r.mean + QN_SEM)) + '%' } }) : null,
+            ok ? h('i', { className: 'qn-meter-dot', style: { left: pos(r.mean) + '%' } }) : null),
+          why ? h('div', { id: wid, className: 'qn-why', hidden: !on },
+            h('span', { className: 'qn-why-h' }, t('qn_why')),
+            h('ul', null, r.top.map(function (z) {
+              var s = String(z.x.text || ''), up = z.v > 3;
+              return h('li', { key: z.x.id },
+                h('span', { className: 'qn-why-dir', 'aria-hidden': true }, up ? '↑' : '↓'),
+                h('span', { className: 'qn-why-t' }, s.length > 110 ? s.slice(0, 108) + '…' : s),
+                h('small', null, ans(z.x, z.a) + (z.x.rev ? ' · ' + t('qn_rev') : '')));
+            }))) : null);
+      }));
   }
-  /* склонность по тесту словами: «Yetakchi moyillik — ko‘proq xolerik uslubi», «Aralash profil — …», без «он — холерик» */
+  /* склонность по тесту — полосой во всю ширину над шкалами: «Aralash profil — sangvinik va xolerik uslublari» (без «он —
+     холерик»), «hech bir moyillik kuchli emas», справа средние четырёх шкал плашками (ведущие — выделены) */
   function TemperCard(p) {
     var t = p.t, ta = p.ta;
     if (!ta) return null;
-    var x = qnTmParts(t, ta);
+    var x = qnTmParts(t, ta), top = ta.kind === 'lead' ? [ta.main] : ta.kind === 'mixed' ? ta.pair : [];
     return h('div', { className: cx('qn-temper', 'is-' + ta.kind) },
-      h('span', { className: 'lor-eyebrow' }, t('qn_tm_card')),
-      h('b', null, x.kind),
-      x.detail ? h('span', { className: 'qn-temper-d' }, x.detail) : null,
-      x.weak ? h('span', { className: 'qn-temper-2' }, x.weak) : null,
-      ta.kind !== 'few' && ta.list.length > 1 ? h('span', { className: 'qn-temper-ms' }, ta.list.map(function (z) { return t('qn_tma_' + z.k) + ' ' + qnNum(t, z.m); }).join(' · ')) : null);
+      h('div', { className: 'qn-temper-main' },
+        h('span', { className: 'lor-eyebrow' }, t('qn_tm_card')),
+        h('p', { className: 'qn-temper-t' }, h('b', null, x.kind), x.detail ? h('span', { className: 'qn-temper-d' }, ' — ' + x.detail) : null),
+        x.weak ? h('span', { className: 'qn-temper-2' }, x.weak) : null),
+      ta.kind !== 'few' && ta.list.length > 1 ? h('ul', { className: 'qn-temper-ms' }, ta.list.map(function (z) {
+        return h('li', { key: z.k, className: top.indexOf(z.k) >= 0 ? 'is-top' : '' }, t('qn_tma_' + z.k) + ' ', h('b', null, qnNum(t, z.m)));
+      })) : null);
   }
-  /* профиль по шкалам — руководителю (карточка) и самому сотруднику (окно анкеты): склонность, полосы шкал темперамента,
-     отдельно — остальные шкалы («Ishonchlilik»), пояснение к полосам и постоянная оговорка */
+  /* профиль по шкалам — руководителю (карточка) и самому сотруднику (окно анкеты): сверху склонность полосой, затем mid
+     (в карточке — «Javoblar sifati»), шкалы темперамента и отдельно остальные («Ishonchlilik») — одним списком с общей
+     осью 1–5, пояснение к полосам и постоянная оговорка */
   function QnProfile(p) {
     var t = p.t, tp = p.q && p.q.temper, res = p.res.filter(function (r) { return r.total; });
     if (!res.length && !p.ta) return null;
     var isTm = function (r) { return !!tp && (tp.mode === 'max' ? !!(tp.map || {})[r.s.id] : r.s.id === tp.e || r.s.id === tp.n); };
     var tm = qnHasTemper(p.q) ? res.filter(isTm) : [], other = res.filter(function (r) { return tm.indexOf(r) < 0; }), two = tm.length && other.length;
+    var grp = function (list, k, first) { return h('div', { className: cx('qn-prof-grp', two && !first && 'is-apart') }, two ? h('span', { className: 'lor-eyebrow' }, t(k)) : null, h(QnBars, { t: t, res: list, why: p.why, ax: first })); };
     return h('div', { className: 'qn-prof' },
-      h('div', { className: cx('qn-res-top', !p.ta && 'is-one') },
-        p.ta ? h(TemperCard, { t: t, ta: p.ta }) : null,
-        h('div', { className: 'qn-prof-sc' },
-          tm.length ? h('div', { className: 'qn-prof-grp' }, two ? h('span', { className: 'lor-eyebrow' }, t('qn_grp_tm')) : null, h(QnBars, { t: t, res: tm, why: p.why })) : null,
-          other.length ? h('div', { className: cx('qn-prof-grp', two && 'is-apart') }, two ? h('span', { className: 'lor-eyebrow' }, t('qn_grp_other')) : null, h(QnBars, { t: t, res: other, why: p.why })) : null,
-          res.length ? h('p', { className: 'lor-sm lor-muted qn-prof-hint' }, tpl(t('qn_bars_hint'), { d: qnNum(t, QN_SEM) })) : null)),
+      p.ta ? h(TemperCard, { t: t, ta: p.ta }) : null,
+      p.mid || null,
+      res.length ? h('div', { className: 'qn-prof-sc' },
+        tm.length ? grp(tm, 'qn_grp_tm', true) : null,
+        other.length ? grp(other, 'qn_grp_other', !tm.length) : null,
+        h('p', { className: 'lor-sm lor-muted qn-prof-hint' }, tpl(t('qn_bars_hint'), { d: qnNum(t, QN_SEM) }))) : null,
       h('p', { className: 'qn-foot' }, t('qn_foot')));
   }
   /* AI-вывод по ответам: только для CEO, SOP-менеджера и руководителя (сервер не отдаёт users[].qaReport сотруднику).
@@ -8195,6 +8211,47 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('qn_q_calib'))) : null,
       h('p', { className: 'lor-sm lor-muted qn-q-foot' }, t('qn_q_foot')));
   }
+  /* согласия в карточке — одной строкой приглушённых плашек: шаг согласий («✓ Rozilik v1 · 31.10.2026», «✓ AI tahlili»,
+     «✕ Maxfiy ma’lumotlar» — если в анкете есть [maxfiy] или согласие дано) и вопросы-согласия анкеты коротко
+     («✓ Ma’lumotlar to‘g‘ri», «✓ Qayta ishlashga rozilik»: по словам в тексте, иначе — начало фразы). Полный текст с датой,
+     версией и логином — во всплывающей подсказке и для экранного диктора, в печати — вместо коротких подписей */
+  function qnConsKind(s) {
+    s = String(s || '').toLowerCase();
+    if (/qayta ishla|обработ|process|处理/.test(s)) return 'proc';
+    if (/to.?g.?ri\b|haqiqiy|достовер|верн|правдив|correct|accurate|\btrue\b|真实|属实|准确/.test(s)) return 'true';
+    return '';
+  }
+  function qnConsShort(s) {
+    s = String(s || '').trim().replace(/[.。]$/, '');
+    if (s.length <= 34) return s;
+    var cut = s.slice(0, 32), sp = cut.lastIndexOf(' ');
+    return (sp > 16 ? cut.slice(0, sp) : cut) + '…';
+  }
+  function QnConsRow(p) {
+    var t = p.t, u = p.u, a = p.a, c = qnCons(u), at = u.qa && u.qa.at, who = u.login ? ' · ' + u.login : '';
+    var chip = function (k, on, label, full, mk) {
+      return h('li', { key: k, className: cx('qn-cons-c', on ? 'is-ok' : 'is-no'), title: full },
+        h('span', { className: 'qn-cons-mk', 'aria-hidden': true }, mk || (on ? '✓' : '✕')),
+        h('span', { className: 'qn-cons-k', 'aria-hidden': true }, label),
+        h('span', { className: 'qn-cons-full' }, full, h('span', { className: 'sr-only' }, ': ' + t(on ? 'qn_cons_yes' : 'qn_cons_no'))));
+    };
+    var sec = qnAsk(p.q).some(function (x) { return x.secret; }), list = [];
+    if (!c) list.push(chip('none', false, t('qn_cons_none'), t('qn_cons_l_none'), '—'));
+    else {
+      var base = c.base === true;
+      list.push(chip('base', base, base ? tpl(t('qn_cons_c_title'), { v: c.v || 1, d: c.at ? fmtDate(c.at) : '—' }) : t('qn_cons_k_base'),
+        t('qn_cons_l_base') + (base && c.at ? ' · ' + fmtDate(c.at) + ' · v' + (c.v || 1) + who : '')));
+      list.push(chip('ai', c.ai === true, t('qn_cons_k_ai'), t('qn_cons_l_ai')));
+      if (sec || c.special === true) list.push(chip('sp', c.special === true, t('qn_cons_k_sp'), t('qn_cons_l_sp')));
+    }
+    p.cons.forEach(function (x) {
+      var on = a[x.id] === true, k = qnConsKind(x.text);
+      list.push(chip('q' + x.id, on, k ? t('qn_cons_k_' + k) : qnConsShort(x.text), String(x.text || '').trim() + (on && at ? ' · ' + fmtDate(at) + who : '')));
+    });
+    return h('div', { className: 'qn-cons-who' },
+      h('ul', { className: 'qn-cons', 'aria-label': t('qn_cons_row') }, list),
+      p.wait ? h('p', { className: 'lor-sm lor-muted qn-sec-wait' }, t('qn_secret_wait')) : null);
+  }
   /* карточка одного сотрудника — CEO, SOP-менеджер, руководитель: главное, согласия, темперамент и шкалы, вывод ИИ,
      все ответы по разделам; скрытые ответы — по кнопке; «Chop etish» — печать или PDF */
   function QnPerson(p) {
@@ -8212,30 +8269,24 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     return h('div', { className: 'lor-scrim', onMouseDown: function (e) { if (e.target === e.currentTarget) p.onClose(); } },
       h('div', { className: 'lor-modal qn-modal qn-ans', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'qa-h' },
         h('button', { type: 'button', className: 'lor-modal-x qn-noprint', 'aria-label': t('close'), onClick: p.onClose }, '×'),
+        /* шапка: аватар, имя и строка «должность · отдел · отправлено», справа — две одинаковые маленькие кнопки (на телефоне —
+           под именем); под ними — согласия плашками */
         h('div', { className: 'qn-ans-head' },
           h(Av, { name: u.name, src: u.avatar, size: 52 }),
           h('div', { className: 'qn-ans-who' },
             h('span', { className: 'lor-eyebrow' }, String(q.title || '').trim() || t('qn_title')),
             h('h2', { className: 'lor-h', id: 'qa-h' }, u.name),
-            h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, [u.position, u.department].filter(Boolean).join(' · ') + ' · ' + (u.qa && u.qa.at ? tpl(t('qn_sent_on'), { d: fmt(u.qa.at, t) }) : t('qn_draft'))),
-            h(QnConsChips, { t: t, u: u })),
+            h('p', { className: 'qn-ans-meta' }, [u.position, u.department].filter(Boolean).concat([u.qa && u.qa.at ? tpl(t('qn_sent_on'), { d: fmt(u.qa.at, t) }) : t('qn_draft')])
+              .map(function (x, i) { return [i ? '\u00a0· ' : '', h('span', { key: i }, x)]; }))),
           h('div', { className: 'qn-ans-acts qn-noprint' },
-            hasSecret ? h(Btn, { variant: 'ghost', size: 'sm', onClick: function () { open[1](!open[0]); } }, t(open[0] ? 'qn_secret_hide' : 'qn_secret_show')) : null,
-            h(Btn, { variant: 'outline', size: 'sm', onClick: print }, t('qn_print')))),
+            hasSecret ? h(Btn, { variant: 'outline', size: 'sm', className: 'qn-ans-btn qn-ans-sec', onClick: function () { open[1](!open[0]); } }, h(Ico, { name: open[0] ? 'lock' : 'eye', size: 16 }), t(open[0] ? 'qn_secret_hide' : 'qn_secret_show')) : null,
+            h(Btn, { variant: 'outline', size: 'sm', className: 'qn-ans-btn', onClick: print }, h(Ico, { name: 'print', size: 16 }), t('qn_print'))),
+          /* согласия: шаг согласий (с датой и версией) и вопросы-согласия анкеты — плашками, полный текст — в подсказке и в печати */
+          h(QnConsRow, { t: t, u: u, q: q, a: a, cons: cons, wait: secAny && !c })),
         keys.length ? h('dl', { className: 'qn-keys' }, keys.map(function (x) { var v = qnShow(x, a[x.id], open[0]); return h('div', { key: x.id, className: 'qn-key' }, h('dt', { title: x.text }, qnShort(x)), h('dd', { className: v ? '' : 'lor-muted' }, v || '—')); })) : null,
-        /* согласия: шаг согласий (base, ai, special — с датой и версией), затем вопросы-согласия анкеты */
-        h('div', { className: 'qn-cons qn-cons-who' },
-          c ? [['base', 'qn_cons_l_base'], ['ai', 'qn_cons_l_ai'], ['special', 'qn_cons_l_sp']].map(function (k) {
-            var ok = c[k[0]] === true;
-            return h('p', { key: k[0], className: cx('lor-sm', ok ? 'is-ok' : 'is-no') }, (ok ? '✓ ' : '— ') + t(k[1]) + (ok && k[0] === 'base' && c.at ? ' · ' + fmtDate(c.at) + ' · v' + (c.v || 1) + (u.login ? ' · ' + u.login : '') : ''));
-          }) : h('p', { className: 'lor-sm is-no' }, '— ' + t('qn_cons_l_none')),
-          secAny && !c ? h('p', { className: 'lor-sm is-no qn-sec-wait' }, '— ' + t('qn_secret_wait')) : null,
-          cons.map(function (x) {
-            var ok = a[x.id] === true;
-            return h('p', { key: x.id, className: cx('lor-sm', ok ? 'is-ok' : 'is-no') }, (ok ? '✓ ' : '— ') + x.text + (ok && u.qa && u.qa.at ? ' · ' + fmtDate(u.qa.at) + (u.login ? ' · ' + u.login : '') : ''));
-          })),
-        h(QnQual, { t: t, q: q, u: u, user: p.user, ro: p.ro, update: p.update, say: p.say }),
-        prof ? h(QnProfile, { t: t, q: q, res: res, ta: ta, why: true }) : null,
+        /* тест: склонность полосой, «Javoblar sifati» — до шкал (можно ли толковать), шкалы списком */
+        prof ? h(QnProfile, { t: t, q: q, res: res, ta: ta, why: true, mid: h(QnQual, { t: t, q: q, u: u, user: p.user, ro: p.ro, update: p.update, say: p.say }) })
+          : h(QnQual, { t: t, q: q, u: u, user: p.user, ro: p.ro, update: p.update, say: p.say }),
         h(QnAi, Object.assign({}, p, { q: q, u: u })),
         prof ? null : h('p', { className: 'lor-sm lor-muted qn-disc' }, t('qn_res_hint')),
         h('h3', { className: 'qn-sec' }, t('qn_answers_t')),

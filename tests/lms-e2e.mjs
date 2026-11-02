@@ -50,6 +50,8 @@ async function signIn(p, login, password) {
   await watchSync(p);
 }
 const click = async (p, name, opts = {}) => { await p.getByRole('button', { name, exact: !!opts.exact }).first().click(); await p.waitForTimeout(opts.wait || 400); };
+// карточка «Savolnoma»: согласия плашками — «✓ короткая подпись | полный текст (подсказка)»
+const consChips = p => p.locator('.qn-ans .qn-cons-c').evaluateAll(els => els.map(e => (e.classList.contains('is-ok') ? '✓ ' : '✕ ') + e.querySelector('.qn-cons-k').textContent + ' | ' + e.title));
 const nav = async (p, hash) => { await p.locator('a[href="#' + hash + '"]:visible').first().click(); await p.waitForTimeout(600); };
 // шапка кабинета на разной ширине: «O‘quv platformasi» — под логотипом, по его левому краю, без черты-разделителя;
 // логотип не искажён; меню 16 px; ни один пункт не обрезан — в строке шапки только целиком, иначе меню своей строкой
@@ -955,7 +957,9 @@ try {
     assert.equal(await A.locator('.qn-ans .qn-ai-go').count(), 0, nm + ': кнопки ИИ нет');
     assert.match(await A.locator('.qn-ans .qn-ai-nocons').innerText(), re, nm + ': почему ИИ нет');
     assert.equal(aiCalls.length, n0, nm + ': в ИИ ничего не ушло');
-    if (nm === 'Xodim 5') { assert.match(await A.locator('.qn-ans .qn-cons-who').innerText(), /✓ Ma’lumotlarni qayta ishlashga rozilik[\s\S]*— AI tahliliga rozilik/, 'в карточке — согласия по пунктам'); await shot(A, 'savolnoma-rozilik-yoq'); }
+    if (nm === 'Xodim 5') { const ch = await consChips(A);
+      assert.match(ch[0], /^✓ Rozilik v1 · \d\d\.\d\d\.\d{4} \| Ma’lumotlarni qayta ishlashga rozilik · \d\d\.\d\d\.\d{4} · v1/, 'в карточке — согласие плашкой, полный текст с датой и версией — в подсказке: ' + ch);
+      assert.match(ch[1], /^✕ AI tahlili \| AI tahliliga rozilik/, '«✕ AI tahlili»: ' + ch); await shot(A, 'savolnoma-rozilik-yoq'); }
     await A.locator('.qn-ans .lor-modal-x').click();
   }
   // временные сотрудники больше не нужны
@@ -1042,7 +1046,11 @@ try {
   assert.ok(!(await A.locator('.qn-ans').innerText()).includes('AA 1234567'), 'паспорт скрыт, пока не нажать «показать»');
   await A.getByRole('button', { name: 'Maxfiy ma’lumotlarni ko‘rsatish' }).click();
   assert.ok((await A.locator('.qn-ans').innerText()).includes('AA 1234567'), '…а после — виден');
-  assert.match(await A.locator('.qn-cons').innerText(), /✓ Ma’lumotlarim to‘g‘ri/, 'согласие — с отметкой');
+  { const ch = await consChips(A);
+    assert.ok(ch.some(x => /^✓ Ma’lumotlar to‘g‘ri \| Ma’lumotlarim to‘g‘ri ekanini tasdiqlayman · \d\d\.\d\d\.\d{4}/.test(x)), 'согласие анкеты — короткой плашкой, полный текст с датой — в подсказке: ' + ch);
+    assert.ok(ch.some(x => /^✓ Maxfiy ma’lumotlar \|/.test(x)), 'в анкете есть [maxfiy] — плашка особых данных');
+    assert.equal(await A.locator('.qn-ans .qn-ans-acts .lor-btn').count(), 2, 'в шапке — две кнопки одного вида');
+    assert.deepEqual(await A.locator('.qn-ans .qn-ans-acts .lor-btn').evaluateAll(b => b.map(x => x.className.includes('lor-btn-outline') && x.className.includes('lor-btn-sm'))), [true, true]); }
   await A.waitForTimeout(400); await shot(A, 'anketa-5-ceo');
   await A.locator('.qn-ans .lor-modal-x').click();
   await A.locator('.lor-tab').filter({ hasText: 'Darslar' }).click();
@@ -1088,7 +1096,19 @@ try {
   assert.equal(await A.locator('.qn-ans .qn-prof-grp').count(), 2, 'шкалы темперамента и остальные — двумя группами');
   assert.match(await A.locator('.qn-ans .qn-prof-grp').first().innerText(), /Muloqot[\s\S]*5,0 \/ 5[\s\S]*Liderlik/, 'шкалы темперамента — средним 1–5');
   assert.match(await A.locator('.qn-ans .qn-prof-grp.is-apart').innerText(), /Ishonchlilik[\s\S]*3,0 \/ 5/, 'надёжность — отдельно от шкал темперамента');
-  assert.match(await A.locator('.qn-ans .qn-prof-grp').first().locator('.qn-why').first().innerText(), /Yangi odamlar bilan tez chiqishaman[\s\S]*To‘liq \(5\)/, 'под шкалой — ответ, сильнее всего сдвинувший балл');
+  assert.equal(await A.locator('.qn-ans .qn-ax').count(), 1, 'ось 1–5 — одна над списком шкал');
+  { const grp = A.locator('.qn-ans .qn-prof-grp').first(), tg = grp.locator('.qn-why-tg').first();
+    assert.ok(await grp.locator('.qn-why').first().isHidden(), 'ответы под шкалой свёрнуты');
+    assert.match(await tg.innerText(), /Javoblar \(1\)/, 'кнопка — «Javoblar (n)»');
+    await tg.click();
+    assert.equal(await tg.getAttribute('aria-expanded'), 'true');
+    assert.match(await grp.locator('.qn-why').first().innerText(), /Yangi odamlar bilan tez chiqishaman[\s\S]*To‘liq \(5\)/, 'под шкалой — ответ, сильнее всего сдвинувший балл');
+    await tg.click(); assert.ok(await grp.locator('.qn-why').first().isHidden(), 'свернуть обратно');
+    // «Chop etish / PDF» — в печати всё раскрыто: ответы под шкалами, согласия полным текстом
+    await A.evaluate(() => document.body.classList.add('qn-printing')); await A.emulateMedia({ media: 'print' });
+    assert.ok(await grp.locator('.qn-why').first().isVisible(), 'в печати ответы под шкалой раскрыты');
+    assert.ok(await A.locator('.qn-ans .qn-cons-full').first().evaluate(e => e.getBoundingClientRect().width > 50), 'в печати согласия — полным текстом');
+    await A.emulateMedia({ media: 'screen' }); await A.evaluate(() => document.body.classList.remove('qn-printing')); }
   assert.ok(await A.locator('.qn-ans .qn-meter-sem').count() >= 3, 'у полос — затенённая погрешность');
   await A.waitForTimeout(400); await shot(A, 'savolnoma-profil');
   await A.locator('.qn-ans .lor-modal-x').click();
