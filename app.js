@@ -522,13 +522,41 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     return o;
   }
   /* что из анкеты подставить в профиль (поля, которые сотрудник ещё не заполнял) */
+  /* «Familiya Ism Otasining ismi» или «Ism Familiya»: фамилия — слово на -ov/-ev/-ova/-eva/-yev/-yeva…; иначе первое — имя */
+  function splitFio(s) {
+    var w = String(s || '').trim().split(/\s+/).filter(Boolean), sur = function (x) { return /(ov|ev|yev|ova|eva|yeva|iy|aya|in|ina|xon|bek)$/i.test(String(x || '').replace(/[‘’'`]/g, '')); };
+    if (w.length < 2) return { firstName: w[0] || '', lastName: '' };
+    if (sur(w[0]) || !sur(w[1])) return { lastName: w[0], firstName: w[1], middleName: w.slice(2).join(' ') };
+    return { firstName: w[0], lastName: w[1], middleName: w.slice(2).join(' ') };
+  }
+  /* то же, плюс ма’лумот и языки из анкеты: вопрос «Ma’lumotingiz» (вариант) и таблица уровней языков (кроме «Bilmayman») */
+  function qnProfileX(db, u) {
+    var o = qnProfile(db, u), q = qnOf(db) || (db.settings && db.settings.questionnaire), a = (u.qa && u.qa.answers) || {};
+    qnAsk(q).forEach(function (x) {
+      var v = a[x.id];
+      if (!o.education && x.type === 'one' && typeof v === 'string' && /ma.?lumot|образовани|education/i.test(x.text)) {
+        var m = /magistr|магистр|master/i.test(v) ? 'Oliy (magistr)' : /bakalavr|бакалавр|bachelor/i.test(v) ? 'Oliy (bakalavr)' : /maxsus|kollej|texnikum|колледж|техникум/i.test(v) ? 'O‘rta maxsus' : '';
+        if (m) o.education = m;
+      }
+      if (!o.languages && x.type === 'grid' && v && typeof v === 'object' && (x.options || []).some(function (r) { return /tili|язык|language/i.test(r); })) {
+        var none = (x.cols || [])[0], known = [], other = [];
+        (x.options || []).forEach(function (r) {
+          var lv = v[r]; if (!lv || lv === none) return;
+          var base = r.replace(/\s*(tili|язык|language)\s*$/i, '').trim(), std = LANG_OPTS.filter(function (L) { return L.toLowerCase() === base.toLowerCase(); })[0];
+          if (std) known.push(std); else other.push(base.toLowerCase());
+        });
+        if (known.length || other.length) o.languages = LANG_OPTS.filter(function (L) { return known.indexOf(L) >= 0; }).concat(other).join(', ');
+      }
+    });
+    return o;
+  }
   function qnProfile(db, u) {
     var q = qnOf(db) || (db.settings && db.settings.questionnaire), a = (u.qa && u.qa.answers) || {}, o = {};
     qnAsk(q).forEach(function (x) {
       var v = a[x.id]; if (!x.prof || !qnHas(v) || typeof v !== 'string') return;
       v = v.trim();
       var ph = v.match(/\+?\d[\d\s()-]{6,}\d/g) || [];
-      if (x.prof === 'name') { var w = v.split(/\s+/); o.firstName = w[0] || ''; o.lastName = w.slice(1).join(' '); }
+      if (x.prof === 'name') Object.assign(o, splitFio(v));
       else if (x.prof === 'phone') { o.phone = (ph[0] || v).trim(); if (ph[1]) o.phone2 = ph[1].trim(); }
       else if (x.prof === 'emg') { if (ph[0]) o.emgPhone = ph[0].trim(); o.emgName = v.replace(ph[0] || '', '').replace(/[\s,;:–-]+$/, '').trim(); }
       else if (x.prof === 'telegram') o.telegram = /^@/.test(v) || /\s/.test(v) ? v : '@' + v;
@@ -9114,10 +9142,20 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   function ProfilePage(p) {
     var t = p.t, u = p.user, only = !!u.profileComplete;   /* profile already filled earlier → only the new property step is left */
     /* что уже написано в анкете (Savolnoma), подставляется — второй раз вводить не нужно */
-    var sv = useState(function () { var n = u.name.split(' '), pf = u.profile || {}, qp = qnProfile(p.db, u), o = Object.assign({ firstName: n[0] || '', lastName: n[1] || '' }, pf); Object.keys(qp).forEach(function (k) { if (!String(pf[k] || '').trim() && qp[k]) o[k] = qp[k]; }); return o; }), vals = sv[0];
-    var ss = useState(only ? LAST_STEP : 0), step = ss[0]; var se = useState({}), errs = se[0];
+    var sv = useState(function () { var pf = u.profile || {}, qp = qnProfileX(p.db, u), o = Object.assign(splitFio(u.name), pf); Object.keys(qp).forEach(function (k) { if (!String(pf[k] || '').trim() && qp[k]) o[k] = qp[k]; }); return o; }), vals = sv[0];
+    /* второй раз не спрашиваем: после отправленной анкеты скрыто то, что в ней уже есть (и необязательное — оно тоже в
+       анкете); шаг, где ничего не осталось, пропускается. Набор считается один раз — поля не исчезают во время ввода */
+    var hid = useState(function () {
+      var o = {}, qp = qnProfileX(p.db, u); if (only || !(u.qa && u.qa.at)) return o;
+      PROFILE_STEPS.forEach(function (st) { (st.fields || []).forEach(function (f) { if (!f[2] || String(qp[f[0]] || '').trim()) o[f[0]] = 1; }); });
+      return o;
+    })[0];
+    var steps = PROFILE_STEPS.map(function (st) { return Object.assign({}, st, { fields: (st.fields || []).filter(function (f) { return !hid[f[0]]; }) }); })
+      .filter(function (st) { return st.assets || st.fields.length || (st.passportFile && askPassport(p.db)); });
+    var LAST = steps.length - 1;
+    var ss = useState(only ? LAST : 0), step = Math.min(ss[0], LAST); var se = useState({}), errs = se[0];
     var as = useState({ rows: [], hr: {}, none: false, ack: false }), tried = useRef(null);
-    var cur = PROFILE_STEPS[step];
+    var cur = steps[step];
     function set(k, v) { var o = Object.assign({}, vals); o[k] = v; sv[1](o); if (errs[k]) { var e = Object.assign({}, errs); delete e[k]; se[1](e); } }
     /* after the first submit, errors update live — but a row added later is only checked on the next submit */
     function setAssets(v) {
@@ -9143,9 +9181,10 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       ss[1](step + 1); window.scrollTo(0, 0);
     }
     return h('section', { className: 'lor-profile app-profile' },
-      h('div', null, h('span', { className: 'lor-eyebrow' }, (only ? t('as_new_section') : (step + 1) + ' / ' + PROFILE_STEPS.length) + ' · ' + u.position + ' · ' + u.department), h('h1', { className: 'lor-title', style: { marginTop: 4 } }, t('profile_title'))),
+      h('div', null, h('span', { className: 'lor-eyebrow' }, (only ? t('as_new_section') : (step + 1) + ' / ' + steps.length) + ' · ' + u.position + ' · ' + u.department), h('h1', { className: 'lor-title', style: { marginTop: 4 } }, t('profile_title'))),
       h('div', { className: 'lor-lock', role: 'note' }, h(Icon, { name: 'lock' }), only ? t('as_lock_only') : t('profile_lock')),
-      h('ol', { className: 'lor-stepper' }, PROFILE_STEPS.map(function (s, i) { return h('li', { key: i, className: i < step ? 'is-done' : i === step ? 'is-on' : '' }, t(s.key)); })),
+      Object.keys(hid).length ? h('p', { className: 'lor-sm lor-muted pf-from-qn' }, '✓ ' + t('pf_from_qn')) : null,
+      h('ol', { className: 'lor-stepper' }, steps.map(function (s, i) { return h('li', { key: i, className: i < step ? 'is-done' : i === step ? 'is-on' : '' }, t(s.key)); })),
       cur.assets ? h(AssetsStep, { t: t, db: p.db, user: u, lang: p.lang, value: as[0], errors: errs, onChange: setAssets })
         : h('div', { className: 'lor-form-grid' },
           cur.fields.map(function (f) { var o = f[3] || {}; if (o.langs) return h(LangPick, { key: f[0], t: t, label: f[1], required: !!f[2], value: vals[f[0]], error: errs[f[0]], onChange: function (v) { set(f[0], v); } }); return h(Field, Object.assign({ key: f[0], name: f[0], label: f[1], required: !!f[2], value: vals[f[0]], error: errs[f[0]], onChange: function (v) { set(f[0], v); } }, o)); }),
@@ -9154,7 +9193,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         h('span', { className: 'lor-sm lor-muted' }, t('required_note')),
         h('div', { style: { display: 'flex', gap: 8, flexWrap: 'wrap' } },
           only ? null : h(Btn, { variant: 'ghost', disabled: step === 0, onClick: function () { se[1]({}); ss[1](step - 1); window.scrollTo(0, 0); } }, t('back')),
-          h(Btn, { variant: 'primary', arrow: true, onClick: next }, step < LAST_STEP ? t('save_next') : t('finish_profile')))));
+          h(Btn, { variant: 'primary', arrow: true, onClick: next }, step < LAST ? t('save_next') : t('finish_profile')))));
   }
 
   /* ---------------- video (mock player; real one = HLS + DRM) ---------------- */

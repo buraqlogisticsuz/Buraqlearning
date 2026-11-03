@@ -3408,3 +3408,8 @@ Object.assign(APP_T.en, { n_pp: '{name} uploaded a passport scan. Download it wi
   pp_keep_hint: 'The scan stays on the server for 48 hours only: the SOP manager downloads it, then it is deleted.', pp_gone_t: 'Scan sent', pp_gone_s: 'deleted from the server after 48 hours · {d}', pp_dl_done: 'downloaded', pp_left: 'deleted in {n} h', pp_gone_staff: 'Passport deleted · {d}' });
 Object.assign(APP_T.zh, { n_pp: '{name} 上传了护照扫描件。请在 48 小时内下载——将于 {d} 从服务器删除。', n_pp_old: '{name} 的护照扫描件在服务器上：将于 {d} 删除。如需要请下载。', n_pp_warn: '{name} 的护照扫描件将于 {d} 删除——尚未下载。', n_pp_gone: '{name} 的护照扫描件已从服务器删除（已满 48 小时）。', n_pp_gone_dl: '已下载过。', n_pp_gone_nodl: '未曾下载——请让员工重新发送。',
   pp_keep_hint: '扫描件在服务器上仅保存 48 小时：SOP 经理下载后即删除。', pp_gone_t: '扫描件已发送', pp_gone_s: '48 小时后已从服务器删除 · {d}', pp_dl_done: '已下载', pp_left: '{n} 小时后删除', pp_gone_staff: '护照已删除 · {d}' });
+/* профиль после анкеты: то, что уже есть в анкете, второй раз не спрашивается */
+Object.assign(APP_T.uz, { pf_from_qn: 'Anketada yozganlaringiz o‘zi qo‘yildi — qayta so‘ralmaydi. Faqat qolganini to‘ldiring.' });
+Object.assign(APP_T.ru, { pf_from_qn: 'Ответы из анкеты подставлены сами — второй раз не спрашиваем. Заполните только оставшееся.' });
+Object.assign(APP_T.en, { pf_from_qn: 'Your questionnaire answers were filled in for you — we will not ask again. Fill in only what is left.' });
+Object.assign(APP_T.zh, { pf_from_qn: '问卷中的回答已自动填入——不会重复询问。请只填写剩余部分。' });
