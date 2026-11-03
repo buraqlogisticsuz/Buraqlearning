@@ -414,7 +414,7 @@ const pickN = n => ({ userId: n.userId, kind: n.kind, route: n.route, err: n.err
 test('since: та же версия — без данных; после правки — новое состояние', () => {
   const { D, A } = platform();
   const v = D({ action: 'load' });
-  assert.deepEqual(D({ action: 'since', rev: v.rev }), { ok: true, v: 18, ai: false, rev: v.rev, same: true });
+  assert.deepEqual(D({ action: 'since', rev: v.rev }), { ok: true, v: 19, ai: false, rev: v.rev, same: true });
   A({ action: 'patch', ops: [{ op: 'set', path: ['notifications', { id: 9 }], value: { id: 9, userId: 10427, text: 'yangi' }, after: null }] });
   const n = D({ action: 'since', rev: v.rev });
   assert.equal(n.rev, v.rev + 1); assert.equal(n.state.notifications[0].text, 'yangi');
@@ -947,4 +947,38 @@ test('удаление сотрудника (v16): вход закрыт сра�
   assert.ok(st.xtasks.some(x => x.uid === 10427), 'история (задачи) остаётся');
   assert.equal(Z({ action: 'load' }).ok, true, 'остальные работают');
   assert.ok(C({ action: 'load' }).ok);
+});
+
+test('скан паспорта — 48 часов (v19): SOP-менеджеру «загружен», напоминание, «удалён»; сотрудник срок не продлит', () => {
+  const now = { value: Date.UTC(2026, 10, 3, 6) };
+  const pl = platform({ now }), { g, A, D } = pl;
+  const pdf = 'data:application/pdf;base64,' + Buffer.from('%PDF-1.4 ' + 'x'.repeat(3000)).toString('base64');
+  const sopId = g.state().users.find(u => u.role === 'admin').id;
+  const pp = () => g.state().users.find(u => u.id === 10427).profile || {};
+  const notes = k => g.state().notifications.filter(n => n.kind === k && n.pp && n.pp.uid === 10427);
+  assert.deepEqual(rejected(D({ action: 'patch', ops: [{ op: 'set', path: ['users', { id: 10427 }, 'profile'], value: { lastName: 'Karimova', passportFile: { name: 'pasport.pdf', type: 'application/pdf', data: pdf } } }] })), []);
+  const id = pp().passportFile.data.slice(8);
+  assert.equal(pp().passportFile.at, now.value, 'время загрузки ставит сервер');
+  assert.equal(notes('pp').length, 1); assert.equal(notes('pp')[0].userId, sopId, 'уведомление — SOP-менеджеру');
+  assert.equal(notes('pp')[0].pp.until, now.value + 48 * 3600e3);
+  // сотрудник пересохраняет профиль с подправленным временем — сервер возвращает своё
+  now.value += 3600e3;
+  const f0 = Object.assign({}, pp().passportFile, { at: now.value + 999e6, dlAt: 1 });
+  assert.deepEqual(rejected(D({ action: 'patch', ops: [{ op: 'set', path: ['users', { id: 10427 }, 'profile'], value: { lastName: 'Karimova', passportFile: f0 } }] })), []);
+  assert.equal(pp().passportFile.at, now.value - 3600e3, 'срок не продлить'); assert.equal(pp().passportFile.dlAt, undefined, 'отметку скачивания ставит только SOP / CEO');
+  assert.equal(notes('pp').length, 1, 'тот же файл — второго уведомления нет');
+  // 36 часов, не скачан — напоминание (при любой правке или ppSweep)
+  now.value += 35 * 3600e3;
+  assert.equal(g.ctx.ppSweep().changed, 1); assert.equal(notes('pp-warn').length, 1);
+  assert.equal(g.ctx.ppSweep().changed, 0, 'напоминание — один раз');
+  // SOP-менеджер отметил скачивание
+  assert.deepEqual(rejected(A({ action: 'patch', ops: [{ op: 'set', path: ['users', { id: 10427 }, 'profile', 'passportFile', 'dlAt'], value: now.value }] })), []);
+  assert.equal(pp().passportFile.dlAt, now.value);
+  // 48 часов — файл удалён, в профиле отметка, SOP-менеджеру «удалён»
+  now.value += 13 * 3600e3;
+  assert.equal(g.ctx.ppSweep().changed, 1);
+  assert.equal(pp().passportFile, undefined); assert.deepEqual(pp().passportGone, { at: now.value, name: 'pasport.pdf', dl: true });
+  assert.equal(g.files[id], undefined, 'файл — в корзине');
+  assert.equal(notes('pp-gone').length, 1); assert.equal(notes('pp-gone')[0].pp.dl, true);
+  assert.equal(D({ action: 'file', id }).code !== undefined, true, 'файл больше не отдаётся');
 });

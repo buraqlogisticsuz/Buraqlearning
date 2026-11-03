@@ -21,7 +21,7 @@
  *
  * Запрос — POST с JSON { action, token, … }, ответ — JSON { ok, … } или { ok: false, code, error }.
  */
-var LMS_VERSION = 18;          // 2: файлы — отдельно на Диске, действие file; 3: ИИ через Claude API (действие ai);
+var LMS_VERSION = 19;          // 2: файлы — отдельно на Диске, действие file; 3: ИИ через Claude API (действие ai);
                                // 4: адресаты идей — CEO, Project Manager, руководитель компании (свой вход, role 'leader');
                                // 5: у идеи несколько адресатов (to — список), repliedBy — кто ответил;
                                // 6: свой профиль — имя и фото, смена логина и пароля (действие account);
@@ -39,6 +39,7 @@ var LMS_VERSION = 18;          // 2: файлы — отдельно на Дис
                                //     принимает снимок, прежние снимки один раз убираются из данных и с Диска (facePurge_)
                                // 18: очистка снимков (FACE_PURGE_V 2) — и файлы «ishga-kelish» без ссылок; выводы ИИ без согласия
                                //     на ИИ-анализ (users[].qa.consent.ai) не хранятся — aiConsentPurge_ при каждой правке
+                               // 19: скан паспорта хранится 48 часов (ppTrack_ / ppExpire_), SOP-менеджеру — уведомления: загружен, скоро удалится, удалён
 var PBKDF2_ITER = 10000;          // пароль хранится только как PBKDF2-SHA256 с солью
 var SESSION_DAYS = 30;            // вход на устройстве живёт 30 дней с последнего запроса
 var FAIL_MAX = 5, FAIL_LOCK_MIN = 15;  // 5 неверных паролей подряд — логин закрыт на 15 минут
@@ -222,6 +223,76 @@ function faceStrip_(o, refs, depth) {
   Object.keys(o).forEach(function (k) { faceStrip_(o[k], refs, depth + 1); });
   return o;
 }
+/* ---------------- скан паспорта: только 48 часов ----------------
+   profile.passportFile = { name, size, type, data: 'lmsfile:…', at, dlAt, dlBy, warned }: at — когда загружен (ставит
+   сервер), dlAt / dlBy — когда и кто из SOP / CEO скачал (пишет страница при скачивании), warned — напоминание ушло.
+   Через PP_KEEP после загрузки файл уходит в корзину Диска, в профиле остаётся passportGone = { at, name, dl }.
+   SOP-менеджерам (нет SOP — CEO) — уведомления: «загружен, скачайте» (kind 'pp'), за 12 часов, если ещё не скачан
+   ('pp-warn'), «удалён» ('pp-gone'). Сотрудник срок не продлит: при прежнем файле at / warned / dlAt берутся из сервера */
+var PP_KEEP = 48 * 3600e3, PP_WARN = 36 * 3600e3, PP_TRASH = null;
+function ppRef_(u) { var f = u && u.profile && u.profile.passportFile; return f && typeof f.data === 'string' && f.data.indexOf('lmsfile:') === 0 ? f.data : ''; }
+function ppSnap_(st) {
+  var m = {};
+  (st.users || []).forEach(function (u) { var r = ppRef_(u), f = r && u.profile.passportFile; if (r) m[String(u.id)] = { ref: r, at: f.at, dlAt: f.dlAt, dlBy: f.dlBy, warned: f.warned }; });
+  return m;
+}
+function ppNotify_(st, kind, u, extra) {
+  var t = now_(), to = (st.users || []).filter(function (x) { return lvl_(x) === 'sop'; });
+  if (!to.length) to = (st.users || []).filter(function (x) { return lvl_(x) === 'ceo'; });
+  st.notifications = st.notifications || [];
+  to.forEach(function (a, k) {
+    st.notifications.unshift({ id: t * 100 + ((Math.floor(Math.random() * 90) + k) % 100), userId: a.id, kind: kind, text: '', route: 'staff', at: t, read: false, pp: Object.assign({ uid: u.id, name: String(u.name || '') }, extra || {}) });
+  });
+}
+/* после правок: новый файл — время загрузки и уведомление; прежний — служебные поля из сервера (admin может отметить скачивание) */
+function ppTrack_(st, prev, admin) {
+  var n = 0, t = now_();
+  (st.users || []).forEach(function (u) {
+    var r = ppRef_(u); if (!r) return;
+    var f = u.profile.passportFile, p = prev[String(u.id)];
+    if (!p || p.ref !== r) {
+      f.at = t; delete f.dlAt; delete f.dlBy; delete f.warned; delete u.profile.passportGone;
+      ppNotify_(st, 'pp', u, { until: t + PP_KEEP }); n++; return;
+    }
+    ['at', 'warned'].concat(admin ? [] : ['dlAt', 'dlBy']).forEach(function (k) { if (p[k] == null) delete f[k]; else f[k] = p[k]; });
+  });
+  return n;
+}
+/* срок вышел — файл в корзину (после записи), напоминание за 12 часов; файл без времени (загружен до v19) — отсчёт с этой минуты */
+function ppExpire_(st) {
+  var n = 0, t = now_();
+  (st.users || []).forEach(function (u) {
+    var r = ppRef_(u); if (!r) return;
+    var f = u.profile.passportFile;
+    if (!f.at) { f.at = t; ppNotify_(st, 'pp', u, { until: t + PP_KEEP, old: true }); n++; return; }
+    if (t - f.at >= PP_KEEP) {
+      PP_TRASH = (PP_TRASH || []).concat([r.slice(8)]);
+      u.profile.passportGone = { at: t, name: String(f.name || ''), dl: !!f.dlAt };
+      delete u.profile.passportFile;
+      ppNotify_(st, 'pp-gone', u, { dl: !!f.dlAt }); n++;
+    } else if (t - f.at >= PP_WARN && !f.dlAt && !f.warned) { f.warned = t; ppNotify_(st, 'pp-warn', u, { until: f.at + PP_KEEP }); n++; }
+  });
+  return n;
+}
+function ppTrash_(st) {
+  var ids = PP_TRASH, all = null, k = 0; PP_TRASH = null;
+  (ids || []).forEach(function (id) {
+    if (all === null) all = JSON.stringify(st);
+    if (all.indexOf('"lmsfile:' + id + '"') >= 0) return;
+    try { DriveApp.getFileById(id).setTrashed(true); k++; } catch (e) {}
+  });
+  return k;
+}
+/* проверка сроков без правок: сервер на Node — при запуске и раз в час; в Apps Script — триггер по времени на ppSweep */
+function ppSweep() {
+  if (!props_().getProperty('LMS_STATE')) return { changed: 0 };
+  return withLock_(function () {
+    var st = readState_(), n = ppExpire_(st);
+    if (n) { st.rev = (+st.rev || 0) + 1; writeState_(st); }
+    return { changed: n };
+  });
+}
+
 /* один раз (settings.facePurgedV): снимки лица — прочь из записей прихода и карточек. Чистится при каждом чтении,
    пока очистка не записана, — поэтому снимков уже не видно и файл не отдаётся (file_ ищет ссылку в видимом);
    сами файлы уходят в корзину Диска после записи состояния без ссылок на них (writeState_ → faceTrash_) */
@@ -271,6 +342,7 @@ function writeState_(st) {
   DriveApp.getFileById(props_().getProperty('LMS_STATE')).setContent(JSON.stringify(st));
   props_().setProperty('LMS_REV', String(st.rev));
   var faces = faceTrash_(st);
+  ppTrash_(st);
   // сервер на Node (server/telegram.mjs): новые уведомления — в Telegram; в Apps Script этой функции нет
   if (typeof LMS_AFTER_WRITE === 'function') LMS_AFTER_WRITE(st);
   return faces;
@@ -753,7 +825,7 @@ function patch_(s, ops) {
     var st = readState_(), me = me_(st, s), lv = lvl_(me), admin = lv === 'ceo' || lv === 'sop', rejected = [], applied = 0;   // руководитель — как сотрудник: только своё
     // разделы, которых не было в данных прошлых версий (например, зарплата с v9), — пустыми, как у нового сервера
     var empty = emptyState_(); Object.keys(empty).forEach(function (k) { if (st[k] === undefined) st[k] = empty[k]; });
-    var before = admin ? clone_(st.users || []) : null, seen = null;
+    var before = admin ? clone_(st.users || []) : null, seen = null, ppPrev = ppSnap_(st);
     /* ссылка на файл в правке сотрудника — только на файл, который ему и так виден (иначе вписал бы чужой и скачал) */
     function foreignFile(op) {
       var refs = JSON.stringify(op.value === undefined ? null : op.value).match(/"lmsfile:[\w-]+"/g);
@@ -774,8 +846,9 @@ function patch_(s, ops) {
     });
     if (admin) syncCreds_(st, before, me, s, rejected);
     if (applied) aiConsentPurge_(st);
+    var pp = (applied ? ppTrack_(st, ppPrev, admin) : 0) + ppExpire_(st);
     if ((st.audit || []).length > AUDIT_KEEP) st.audit = st.audit.slice(0, AUDIT_KEEP);
-    if (applied) { st.rev = (+st.rev || 0) + 1; writeState_(st); }
+    if (applied || pp) { st.rev = (+st.rev || 0) + 1; writeState_(st); }
     if (admin && applied) dropGoneFiles_(st, before);
     return { ok: true, rev: st.rev, applied: applied, rejected: rejected };
   });

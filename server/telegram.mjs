@@ -84,6 +84,12 @@ export function startTelegram({ token, C, strings, fetch = globalThis.fetch, log
     if (n.kind === 'errfix' && n.err) return tpl(T('n_errfix'), { name: n.err.name, x: n.err.ttl, n: n.err.score });
     if (n.kind === 'sop' && n.sop) return tpl(T('n_sop'), { x: n.sop.ttl });
     if (n.kind === 'ltask' && n.lt) return tpl(T('n_ltask'), { x: (n.lt.x && (n.lt.x.uz || n.lt.x)) || '' });
+    if ((n.kind === 'pp' || n.kind === 'pp-warn' || n.kind === 'pp-gone') && n.pp) {   // скан паспорта: 48 часов (сервер v19)
+      const p = n.pp, d = p.until ? new Date(p.until + 5 * 3600e3).toISOString().slice(0, 16).replace('T', ' ').replace(/^(\d+)-(\d+)-(\d+)/, '$3.$2.$1') : '';
+      if (n.kind === 'pp') return tpl(T(p.old ? 'n_pp_old' : 'n_pp'), { name: p.name || '—', d });
+      if (n.kind === 'pp-warn') return tpl(T('n_pp_warn'), { name: p.name || '—', d });
+      return tpl(T('n_pp_gone'), { name: p.name || '—' }) + ' ' + T(p.dl ? 'n_pp_gone_dl' : 'n_pp_gone_nodl');
+    }
     if (n.kind === 'pay' && n.pay) {
       const [y, mo] = String(n.pay.ym).split('-'), mn = (((strings || {}).months || {}).uz || [])[+mo - 1];
       return tpl(T('n_pay_' + n.pay.s), { m: mn ? mn + ' ' + y : n.pay.ym, x: String(Math.round(n.pay.total || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0') + ' ' + T('pay_cur') }) + (n.pay.reply ? ' — ' + n.pay.reply : '');

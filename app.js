@@ -1830,6 +1830,13 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     d.users.forEach(function (x) { if (x.id === uid) { x.celebrate = { kind: 'level', li: li, fromLi: fromLi, at: Date.now() }; x.lastRank = String(li); if (!keepAt && (!x.levelAt || Date.now() - x.levelAt > 6e4)) x.levelAt = Date.now(); } });
     d.notifications.unshift({ id: nextId(d), userId: uid, promo: { li: li }, text: '', path: true, at: Date.now(), read: false });
   }
+  /* скан паспорта (сервер, v19): загружен — скачайте до …; напоминание; удалён (скачан ли) */
+  function ppNotif(n, t) {
+    var x = n.pp || {}, d = x.until ? fmtDT(x.until) : '';
+    if (n.kind === 'pp') return tpl(t(x.old ? 'n_pp_old' : 'n_pp'), { name: x.name || '—', d: d });
+    if (n.kind === 'pp-warn') return tpl(t('n_pp_warn'), { name: x.name || '—', d: d });
+    return tpl(t('n_pp_gone'), { name: x.name || '—' }) + ' ' + t(x.dl ? 'n_pp_gone_dl' : 'n_pp_gone_nodl');
+  }
   function notifText(n, db, lang, t) {
     if (n.kind === 'ini_in') return t('n_ini_in');
     if (n.kind === 'ini' && n.ini) return tpl(t('n_ini_' + n.ini.s), { x: n.ini.title }) + (n.ini.xp ? ' (+' + n.ini.xp + ' XP)' : '') + (n.ini.reply ? ' — ' + n.ini.reply : '');
@@ -1842,6 +1849,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     if (n.kind === 'late') return lateNotif(n, t);
     if (n.kind === 'xt') return xtNotif(n, t);
     if (n.kind === 'ltask' && n.lt) return tpl(t('n_ltask'), { x: txtOf(n.lt.x, lang) });
+    if ((n.kind === 'pp' || n.kind === 'pp-warn' || n.kind === 'pp-gone') && n.pp) return ppNotif(n, t);
     if (n.kind === 'pay' && n.pay) return tpl(t('n_pay_' + n.pay.s), { m: ymLabel(n.pay.ym, lang, true), x: sumTxt(n.pay.total, t) }) + (n.pay.reply ? ' — ' + n.pay.reply : '');
     if (!n.promo) return n.text;
     var lv = levelsOf(db)[n.promo.li];
@@ -6584,6 +6592,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   }
   /* onClick for <a href="data:…" download>: hands the file to the viewer's save prompt when the link alone cannot */
   function b64Blob(b64, type) { var s = atob(b64), a = new Uint8Array(s.length); for (var i = 0; i < s.length; i++) a[i] = s.charCodeAt(i); return new Blob([a], { type: type || 'application/octet-stream' }); }
+  var PP_KEEP_MS = 48 * 3600e3;   // как PP_KEEP на сервере: скан паспорта хранится 48 часов
   function saveLink(name) {
     return function (e) {
       var ref = e.currentTarget.getAttribute('href') || '';
@@ -9066,6 +9075,14 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   }
   var PP_MAX = 4000000;   /* a passport PDF from My.gov.uz is small; a phone photo can be bigger */
   /* the passport file the employee downloads from My.gov.uz — attached in the personal step */
+  /* профиль сохраняется целиком: скан, который сервер уже удалил (48 часов), не возвращать старой ссылкой; отметка
+     «удалён» — с сервера */
+  function ppKeep(cur, vals) {
+    var v = Object.assign({}, vals), c = cur || {}, f = v.passportFile;
+    if (f && /^lmsfile:/.test(String(f.data || '')) && (!c.passportFile || c.passportFile.data !== f.data)) delete v.passportFile;
+    if (!v.passportFile && c.passportGone) v.passportGone = c.passportGone;
+    return v;
+  }
   function PassportBox(p) {
     var t = p.t, er = useState(''), f = p.value;
     function pick(e) {
@@ -9086,9 +9103,12 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         h('a', { className: 'app-link', href: f.data, download: f.name, target: '_blank', rel: 'noopener', onClick: saveLink(f.name) }, t('pp_open')),
         h('label', { className: 'app-link', htmlFor: 'f-pp' }, t('pp_replace')),
         h('button', { type: 'button', className: 'app-link danger', onClick: function () { p.onChange(null); } }, t('remove')))
+        : p.gone ? h('div', { className: 'pp-file pp-gone' },
+          h('span', { className: 'pp-file-t' }, h('b', null, '✓ ' + t('pp_gone_t')), h('small', null, tpl(t('pp_gone_s'), { d: fmtDT(p.gone.at) }))),
+          h('label', { className: 'app-link', htmlFor: 'f-pp' }, t('pp_replace')))
         : h('label', { className: 'lor-btn lor-btn-outline lor-btn-sm pp-add', htmlFor: 'f-pp' }, '+ ' + t('pp_add')),
       h('input', { id: 'f-pp', type: 'file', className: 'jf-input', accept: '.pdf,.jpg,.jpeg,.png,application/pdf,image/*', onChange: pick }),
-      er[0] || p.error ? h('span', { className: 'lor-field-error' }, er[0] || p.error) : h('span', { className: 'lor-field-hint' }, t('pp_file_hint')));
+      er[0] || p.error ? h('span', { className: 'lor-field-error' }, er[0] || p.error) : h('span', { className: 'lor-field-hint' }, t('pp_file_hint') + ' ' + t('pp_keep_hint')));
   }
 
   function ProfilePage(p) {
@@ -9112,12 +9132,12 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         var ae = assetsStepErrors(p.db, u, as[0], t); se[1](ae);
         if (Object.keys(ae).length) { setTimeout(function () { var el = document.querySelector('.assets-step .lor-field-error'); if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, 30); return; }
         var A = as[0];
-        p.update(function (d) { var x = d.users.filter(function (y) { return y.id === u.id; })[0]; if (!only) x.profile = vals; saveAssetsStep(d, u.id, A); x.profileComplete = true; notify(d, u.id, only ? t('n_assets_saved') : t('n_profile')); });
+        p.update(function (d) { var x = d.users.filter(function (y) { return y.id === u.id; })[0]; if (!only) x.profile = ppKeep(x.profile, vals); saveAssetsStep(d, u.id, A); x.profileComplete = true; notify(d, u.id, only ? t('n_assets_saved') : t('n_profile')); });
         p.say(only ? t('assets_saved') : t('profile_saved'));
         return;
       }
       var e = {}; cur.fields.forEach(function (f) { if (f[2] && !String(vals[f[0]] || '').trim()) e[f[0]] = t('fill_required'); });
-      if (cur.passportFile && askPassport(p.db) && !vals.passportFile) e.passportFile = t('pp_file_req');
+      if (cur.passportFile && askPassport(p.db) && !vals.passportFile && !vals.passportGone) e.passportFile = t('pp_file_req');
       se[1](e);
       if (Object.keys(e).length) { setTimeout(function () { var el = document.querySelector('.app-profile .lor-field-error'); if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, 30); return; }
       ss[1](step + 1); window.scrollTo(0, 0);
@@ -9129,7 +9149,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       cur.assets ? h(AssetsStep, { t: t, db: p.db, user: u, lang: p.lang, value: as[0], errors: errs, onChange: setAssets })
         : h('div', { className: 'lor-form-grid' },
           cur.fields.map(function (f) { var o = f[3] || {}; if (o.langs) return h(LangPick, { key: f[0], t: t, label: f[1], required: !!f[2], value: vals[f[0]], error: errs[f[0]], onChange: function (v) { set(f[0], v); } }); return h(Field, Object.assign({ key: f[0], name: f[0], label: f[1], required: !!f[2], value: vals[f[0]], error: errs[f[0]], onChange: function (v) { set(f[0], v); } }, o)); }),
-          cur.passportFile && askPassport(p.db) ? h(PassportBox, { key: 'pp', t: t, value: vals.passportFile, error: errs.passportFile, onChange: function (v) { set('passportFile', v); } }) : null),
+          cur.passportFile && askPassport(p.db) ? h(PassportBox, { key: 'pp', t: t, value: vals.passportFile, gone: vals.passportGone, error: errs.passportFile, onChange: function (v) { set('passportFile', v); } }) : null),
       h('div', { className: 'lor-form-foot' },
         h('span', { className: 'lor-sm lor-muted' }, t('required_note')),
         h('div', { style: { display: 'flex', gap: 8, flexWrap: 'wrap' } },
@@ -10081,7 +10101,17 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
             h('option', { value: 'probation' }, t('s_probation')), h('option', { value: 'official' }, t('s_official')))),
           h('td', { className: 'sp-td' }, h('button', { type: 'button', className: 'sp-btn', 'aria-expanded': isOpen, onClick: function () { op[1](isOpen ? null : u.id); } }, h(PulseCell, { t: t, m: m }))),
           h('td', null, u.profileComplete ? '✓ ' + t('filled') : h('span', { className: 'lor-muted' }, '○ ' + t('not_filled')),
-            (function () { var pf = (u.profile || {}).passportFile; return pf ? h('a', { className: 'app-link pp-link', href: pf.data, download: pf.name, target: '_blank', rel: 'noopener', onClick: saveLink(pf.name) }, t('pp_staff')) : h('div', { className: 'lor-sm lor-muted' }, '○ ' + t('pp_staff')); })()),
+            (function () {
+              /* скан паспорта хранится 48 часов: ссылка, сколько осталось или «скачан»; скачивание отмечается (dlAt) */
+              var pr = u.profile || {}, pf = pr.passportFile, gone = pr.passportGone;
+              if (pf) {
+                var left = pf.at ? Math.max(0, Math.ceil((pf.at + PP_KEEP_MS - Date.now()) / 3600e3)) : null;
+                return h('div', { className: 'pp-cell' },
+                  h('a', { className: 'app-link pp-link', href: pf.data, download: pf.name, target: '_blank', rel: 'noopener', onClick: function (e) { saveLink(pf.name)(e); if (!pf.dlAt) p.update(function (d) { d.users.forEach(function (x) { if (x.id === u.id && x.profile && x.profile.passportFile) { x.profile.passportFile.dlAt = Date.now(); x.profile.passportFile.dlBy = p.user.id; } }); }); } }, t('pp_staff')),
+                  h('small', { className: cx('lor-sm', pf.dlAt ? 'lor-muted' : left != null && left <= 12 ? 'pp-soon' : 'lor-muted') }, pf.dlAt ? '✓ ' + t('pp_dl_done') : left != null ? tpl(t('pp_left'), { n: left }) : ''));
+              }
+              return h('div', { className: 'lor-sm lor-muted' }, gone ? tpl(t('pp_gone_staff'), { d: fmtDate(gone.at) }) : '○ ' + t('pp_staff'));
+            })()),
           (function () {
             var mineA = assetsOf(db, u.id), live = mineA.filter(function (a) { return a.status !== 'returned'; }).length, attn = mineA.filter(assetAttn).length;
             return h('td', { className: 'nowrap' }, h('button', { type: 'button', className: 'app-link as-staff', onClick: function () { p.goAssets(u.id); } }, live + ' ' + t('pcs'), attn ? h('span', { className: 'app-navcount' }, attn) : null),

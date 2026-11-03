@@ -56,6 +56,10 @@ export async function startServer({ port = 8080, host = '0.0.0.0', dir, env = pr
   // снимки лица при отметке прихода (до v17) — из данных и с диска, один раз (settings.facePurgedV)
   try { const fp = C.purgeFaces(); if (fp.purged) log('Снимки при отметке прихода удалены из данных, файлов: ' + fp.files); }
   catch (e) { log('Очистка снимков не удалась: ' + e.message); }
+  // скан паспорта хранится 48 часов: проверка сроков при запуске и раз в час (уведомления SOP-менеджеру — в ppExpire_)
+  const ppSweep = () => { try { const r = C.ppSweep(); if (r.changed) log('Сканы паспорта: сроки проверены, изменений: ' + r.changed); } catch (e) { log('Проверка сканов паспорта не удалась: ' + e.message); } };
+  ppSweep();
+  const ppTimer = setInterval(ppSweep, 3600e3); if (ppTimer.unref) ppTimer.unref();
 
   // версия сайта: коммит, из которого Railway собрал сервис (иначе — время запуска)
   const BUILD = String(env.RAILWAY_GIT_COMMIT_SHA || '').slice(0, 7) || Date.now().toString(36);

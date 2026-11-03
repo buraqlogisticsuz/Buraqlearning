@@ -289,9 +289,15 @@ try {
 
   // ---------- скан паспорта: SOP-менеджер скачивает с сервера ----------
   await nav(A, 'staff');
+  { const nt = srv.g.state().notifications.filter(n => n.kind === 'pp' && n.pp && n.pp.uid === emp.id);
+    assert.ok(nt.length >= 1 && nt.every(n => srv.g.state().users.find(u => u.id === n.userId).role === 'admin'), 'SOP-менеджеру — «загружен, скачайте за 48 часов»'); }
+  assert.match(await A.locator('.pp-cell').first().innerText(), /soatdan keyin o‘chadi/, 'в таблице — сколько осталось до удаления');
   const [dl] = await Promise.all([A.waitForEvent('download', { timeout: 10000 }), A.locator('a.pp-link').first().click()]);
   assert.equal(dl.suggestedFilename(), 'pasport.pdf');
-  step('SOP-менеджер скачал скан паспорта с сервера');
+  await settle(A);
+  assert.ok((srv.g.state().users.find(u => u.id === emp.id).profile.passportFile || {}).dlAt, 'скачивание отмечено (dlAt)');
+  assert.match(await A.locator('.pp-cell').first().innerText(), /yuklab olindi/, 'в таблице — «скачан»');
+  step('скан паспорта: SOP-менеджеру уведомление, срок 48 часов в таблице; скачал — отмечено');
 
   // ---------- вход на другом устройстве и выход ----------
   const E2 = await device('сотрудник-2');

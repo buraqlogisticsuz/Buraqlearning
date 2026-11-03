@@ -4419,3 +4419,8 @@ select.lor-input.slim:not([multiple]) { background-position: right 10px center; 
 @media print { .qn-ai-iv li { break-inside: avoid; } }
 .qn-ai-sc ul { margin: 4px 0 0; padding-left: 18px; display: grid; gap: 6px; }
 .qn-ai-sc-n { color: var(--ink); font-weight: 500; }
+/* скан паспорта (48 часов): в таблице сотрудников — ссылка и срок; скоро удалится — красным */
+.pp-cell { display: grid; gap: 2px; }
+.pp-cell small { font-size: 12px; line-height: 16px; }
+.pp-soon { color: var(--red-text); }
+.pp-file.pp-gone { border-style: dashed; }
