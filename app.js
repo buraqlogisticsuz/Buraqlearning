@@ -8149,7 +8149,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
      На экране — «AI qoralamasi…»; CEO и SOP-менеджер могут отклонить вывод («Rad etish»: текст удаляется, остаётся отметка).
      QN_AI_V — версия запроса: хранится в выводе (users[].qaReport.v, users[].qaTeam.v); вывод прежней версии — «eskirgan».
      Случайность генерации не снижаем: сервер (действие ai) параметра temperature не принимает */
-  var QN_AI_V = 2;
+  var QN_AI_V = 3;   // 3: «interview» — 4 вопроса о прошлом поведении { q, why, listen }; разница шкал < 0,5 — не различие
   var QN_TEAM_MIN = 5;   /* анализ коллектива — от 5 ответивших с согласием на ИИ: меньше — по сводке легко узнать человека */
   /* можно ли отправлять ответы человека в ИИ: только с согласием на ИИ-анализ — u.qa.consent.ai === true. Анкеты без поля
      согласий (до шага согласий, «rozilik so‘ralmagan») — нельзя. Без согласия вывод не готовится ни сам, ни кнопкой, не
@@ -8230,6 +8230,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   var QN_AI_RULES = 'Ehtiyotkor so‘zlar majburiy: «javoblar ko‘rsatadiki», «ehtimol», «suhbatda tekshirish kerak»; «u shunday odam», «u doim …» kabi qat’iy gaplar yozilmaydi. ' +
     'Taqiqlanadi: tibbiy va psixiatrik so‘zlar va tashxislar (masalan «nevrotik», «beqaror», «depressiv»); yosh, jins, homiladorlik, oilaviy holat, farzandlar va oilaviy rejalar, din, millat, sog‘liq, siyosiy qarashlar haqida har qanday gap; ' +
     'temperament yoki ballar asosida ish natijasi, ishda qancha qolishi, halollik yoki yetakchilik salohiyatini bashorat qilish; odamlarni bir-biri bilan solishtirish; deyarli hammaga to‘g‘ri keladigan umumiy gaplar (masalan «ba’zan o‘ziga ishonmaydi», «yaxshi munosabatlarni qadrlaydi»); ortiqcha maqtov. ' +
+    'Shkalalar orasidagi 0,5 dan kichik farq ahamiyatsiz (xatolik ±0,3): bunday shkalalarni «biri kuchliroq» deb solishtirmang. Lavozim, daraja (Junior/Middle/Senior/Lead) yoki «ideal rol» tavsiya qilinmaydi; charchash (выгорание) bashorat qilinmaydi. ' +
     'Bu — AI qoralamasi: ishga olish, bo‘shatish yoki maosh uchun asos emas, qarorni inson qabul qiladi.';
   /* o — { notes: ['test javoblari juda tez berilgan', …] — готовые пометки о качестве ответов (если есть), now — для возраста } */
   function qnAiPrompt(q, u, res, ta, lang, o) {
@@ -8253,8 +8254,9 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       'SAVOLLAR VA JAVOBLAR:\n' + qa.slice(0, 30000) + '\n\n' +
       'Faqat JSON qaytaring, izohsiz: {"profile": "' + (measured ? 'test natijasini qayta aytish, 1–2 jumla' : '') + '", "summary": "anketada nima aytilgani, 2–3 jumla", "strengths": [' + ev + ' — 2–4 ta], "risks": [' + ev + ' — 0–3 ta, ishga oid], "growth": [' + ev + ' — 1–3 ta], ' +
       '"motivation": "javoblarga ko‘ra nima ruhlantirishi mumkin, 1–2 jumla", "communication": "1–2 jumla", "management": [' + ev + ' — rahbarga 2–3 amaliy maslahat], ' +
-      '"roles": "kuchli tomonlarini qaysi vazifalarda tekshirib ko‘rish mumkin — anketa javoblariga tayanib, 1–2 jumla", "verify": ["tuzilgan suhbatda yoki ishda nimani tekshirish kerak, 2–4 ta"], ' +
-      (emp ? '"plan": ["adaptatsiyada nima yordam berishi mumkin, 2–3 ta"], ' : '') + '"interview": ["suhbatda aniqlashtirish uchun 2–4 savol"]}';
+      (measured ? '"scales": [{"name": "shkala nomi", "text": "ball nimani ko‘rsatishi mumkin — 1 jumla, ehtiyotkor so‘zlar bilan"} — har bir o‘lchangan shkala uchun], ' : '') +
+      '"roles": [' + ev + ' — 2–4 ta: kuchli tomonlari foydali bo‘lishi mumkin bo‘lgan ISH TURLARI va vazifalar (logistika kompaniyasida, masalan «mijozlar bilan telefon orqali ishlash», «hujjatlar va deklaratsiyalarni tekshirish», «yuk kuzatuvi va hisobot»), sinab ko‘rish uchun; lavozim nomi yoki daraja emas], "verify": ["tuzilgan suhbatda yoki ishda nimani tekshirish kerak, 2–4 ta"], ' +
+      (emp ? '"plan": ["adaptatsiyada nima yordam berishi mumkin, 2–3 ta"], ' : '') + '"interview": [{"q": "o‘tgan xatti-harakat haqida savol: «… bo‘lgan holatni aytib bering: nima qildingiz, natija qanday bo‘ldi?»", "why": "nima uchun so‘raladi — qaysi shkala va ball yoki qaysi javob", "listen": "javobda nimaga e’tibor berish kerak (aniq misol, o‘z hissasi, natija)"} — aynan 4 ta: moslashuvchanlik, bir xil (rutin) ishlar, yetakchilik, mas’uliyat mavzularida; eng past yoki noaniq shkala bo‘yicha alohida savol]}';
   }
   /* после генерации: предложения с медицинскими словами и пункты без evidence отбрасываются (dropped — сколько) */
   var QN_AI_BAN = /depress|депресс|nevroti|невроти|\bneurotic\b|psixiatr|психиатр|psychiatr|tashxis|диагноз|diagnos|homilador|беремен|pregnan|怀孕|抑郁症|精神病/i;
@@ -8262,6 +8264,15 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var ps = String(s || '').match(/[^.!?。！？]+[.!?。！？]*\s*/g) || [], ok = ps.filter(function (x) { return !QN_AI_BAN.test(x); });
     if (cnt) cnt.n += ps.length - ok.length;
     return ok.join('').trim();
+  }
+  /* вопросы для собеседования: { q, why, listen } (старые выводы — строки); без вопроса — отбрасывается, до 4 */
+  function qnAiIv(x, cnt) {
+    return (Array.isArray(x) ? x : []).map(function (y) {
+      if (typeof y === 'string') { y = qnAiStrip(y.trim(), cnt); return y ? { q: y.slice(0, 400) } : null; }
+      var qq = y && typeof y.q === 'string' ? qnAiStrip(y.q.trim(), cnt) : '';
+      if (!qq) return null;
+      return { q: qq.slice(0, 400), why: y.why ? qnAiStrip(String(y.why).trim(), cnt).slice(0, 200) : '', listen: y.listen ? qnAiStrip(String(y.listen).trim(), cnt).slice(0, 300) : '' };
+    }).filter(Boolean).slice(0, 4);
   }
   /* o — { measured: false — теста нет, «profile» пустой; emp: false — не сотрудник, без «plan» } */
   function qnAiClean(r, o) {
@@ -8280,8 +8291,9 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       }).filter(Boolean).slice(0, 6);
     };
     var x = { profile: o.measured === false ? '' : str(r.profile, 600), summary: str(r.summary, 1200), strengths: ev(r.strengths), risks: ev(r.risks), growth: ev(r.growth),
-      motivation: str(r.motivation, 600), communication: str(r.communication, 600), management: ev(r.management), roles: str(r.roles, 600), verify: arr(r.verify),
-      plan: o.emp === false ? [] : arr(r.plan), interview: arr(r.interview) };
+      motivation: str(r.motivation, 600), communication: str(r.communication, 600), management: ev(r.management), roles: Array.isArray(r.roles) ? ev(r.roles) : str(r.roles, 600), verify: arr(r.verify),
+      scales: o.measured === false ? [] : (Array.isArray(r.scales) ? r.scales : []).map(function (y) { var nm = y && typeof y.name === 'string' ? y.name.trim() : '', tx = y && typeof y.text === 'string' ? qnAiStrip(y.text.trim(), cnt) : ''; return nm && tx ? { name: nm.slice(0, 80), text: tx.slice(0, 300) } : null; }).filter(Boolean).slice(0, 8),
+      plan: o.emp === false ? [] : arr(r.plan), interview: qnAiIv(r.interview, cnt) };
     x.dropped = cnt.n;
     return x;
   }
@@ -8337,6 +8349,15 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       return h('li', { key: i }, o ? x.text : x, o && x.evidence ? h('small', { className: 'qn-ai-ev' }, t('qn_ai_ev') + ': ' + x.evidence) : null);
     }))) : null;
   }
+  /* «Suhbat uchun savollar»: нумерованный список — вопрос, ниже «Nima uchun» и «Nimaga e’tibor bering» */
+  function qnAiIvList(t, items) {
+    return items && items.length ? h('div', { className: 'qn-ai-sec qn-ai-iv' }, h('b', null, t('qn_ai_interview')), h('ol', null, items.map(function (x, i) {
+      x = typeof x === 'string' ? { q: x } : x;
+      return h('li', { key: i }, h('span', { className: 'qn-ai-iv-q' }, x.q),
+        x.why ? h('small', { className: 'qn-ai-ev' }, t('qn_ai_iv_why') + ': ' + x.why) : null,
+        x.listen ? h('small', { className: 'qn-ai-iv-l' }, t('qn_ai_iv_listen') + ': ' + x.listen) : null);
+    }))) : null;
+  }
   function qnAiOne(t, k, x) { return x ? h('div', { className: 'qn-ai-sec' }, h('b', null, t(k)), h('p', null, x)) : null; }
   function QnAi(p) {
     var t = p.t, u = p.u, ok = qnAiAllowed(u), rep = ok ? u.qaReport : null, d = rep && rep.data, busy = useState(false), er = useState(''), ctl = useRef(null), sampler = p.sampler;
@@ -8377,9 +8398,10 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       busy[0] ? h('div', { className: 'qn-ai-wait' }, h('span', { className: 'dv-spin', 'aria-hidden': true }), h('span', null, t('qn_ai_busy_long'))) : null,
       d ? h('div', { className: 'qn-ai-body' },
         h('p', { className: 'qn-ai-draft' }, t('qn_ai_draft')),
-        qnAiOne(t, 'qn_ai_profile', d.profile), qnAiOne(t, 'qn_ai_summary', d.summary), qnAiList(t, 'qn_ai_strengths', d.strengths), qnAiList(t, 'qn_ai_risks', d.risks), qnAiList(t, 'qn_ai_growth', d.growth),
-        qnAiOne(t, 'qn_ai_motivation', d.motivation), qnAiOne(t, 'qn_ai_comm', d.communication), qnAiList(t, 'qn_ai_mgmt', d.management), qnAiOne(t, 'qn_ai_roles', d.roles),
-        qnAiList(t, 'qn_ai_verify', d.verify), qnAiList(t, 'qn_ai_plan', d.plan), qnAiList(t, 'qn_ai_interview', d.interview),
+        qnAiOne(t, 'qn_ai_profile', d.profile), qnAiOne(t, 'qn_ai_summary', d.summary), (d.scales || []).length ? h('div', { className: 'qn-ai-sec qn-ai-sc' }, h('b', null, t('qn_ai_scales')), h('ul', null, d.scales.map(function (x, k) { return h('li', { key: k }, h('span', { className: 'qn-ai-sc-n' }, x.name + ': '), x.text); }))) : null,
+        qnAiList(t, 'qn_ai_strengths', d.strengths), qnAiList(t, 'qn_ai_risks', d.risks), qnAiList(t, 'qn_ai_growth', d.growth),
+        qnAiOne(t, 'qn_ai_motivation', d.motivation), qnAiOne(t, 'qn_ai_comm', d.communication), qnAiList(t, 'qn_ai_mgmt', d.management), Array.isArray(d.roles) ? qnAiList(t, 'qn_ai_roles', d.roles) : qnAiOne(t, 'qn_ai_roles', d.roles),
+        qnAiList(t, 'qn_ai_verify', d.verify), qnAiList(t, 'qn_ai_plan', d.plan), qnAiIvList(t, d.interview),
         d.dropped ? muted(tpl(t('qn_ai_dropped'), { n: d.dropped })) : null,
         muted(tpl(t('qn_ai_made_by'), { d: fmt(rep.at, t), who: userOf(p.db, rep.by).name, v: rep.v || 1 }) + ' · ' + t('qn_ai_hidden'))) :
         rep && rep.off && !busy[0] ? muted(tpl(t('qn_ai_off'), { who: userOf(p.db, rep.offBy).name, d: fmt(rep.off, t) }) + (ok ? ' ' + t('qn_ai_off_again') : '')) :

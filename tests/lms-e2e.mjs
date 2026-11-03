@@ -25,7 +25,7 @@ const srv = await startDevServer({ fetch: (url, body) => { aiCalls.push(body); c
   // вывод по анкете (HR-psixolog) и анализ коллектива (HR-tahlilchi) — JSON, как просит страница: у пунктов — evidence;
   // пункт без неё («Hammaga yoqadi») страница отбрасывает
   const text = /HR-tahlilchi/.test(q) ? JSON.stringify({ summary: 'Ko‘pchilik o‘zini puxta deb tasvirlaydi', composition: 'Flegmatiklar ko‘p', strengths: ['Puxtalik'], gaps: ['Savdo tajribasi kam — muhokama uchun'], people: [{ n: 1, note: 'Hujjatlar bilan ishlashda tekshirish mumkin' }], risks: ['Sekin qaror'], actions: ['Savdo ko‘nikmasini muhokama qiling'], hiring: 'Faol savdo menejeri' })
-    : /HR-psixolog/.test(q) ? JSON.stringify({ profile: 'Ko‘proq flegmatik uslubi (o‘z-o‘zini baholash)', summary: 'Puxta, barqaror xodim', strengths: [{ text: 'Barqarorlik', evidence: 'Neyrotizm: 4,0 / 5' }, { text: 'Hammaga yoqadi', evidence: '' }], growth: [{ text: 'Tezlik', evidence: '«Qaysi ish formati»: Masofadan' }], motivation: 'Aniq maqsad', communication: 'Xotirjam', management: [{ text: 'Vaqt bering', evidence: '«Tajriba»: 4 / 5' }], roles: 'Hujjatlar bilan ishlash', verify: ['Tig‘iz kunlarda qanday ishlaydi'], plan: ['Murabbiy biriktiring'] }) : 'Javob: ' + q;
+    : /HR-psixolog/.test(q) ? JSON.stringify({ profile: 'Ko‘proq flegmatik uslubi (o‘z-o‘zini baholash)', summary: 'Puxta, barqaror xodim', strengths: [{ text: 'Barqarorlik', evidence: 'Neyrotizm: 4,0 / 5' }, { text: 'Hammaga yoqadi', evidence: '' }], growth: [{ text: 'Tezlik', evidence: '«Qaysi ish formati»: Masofadan' }], motivation: 'Aniq maqsad', communication: 'Xotirjam', management: [{ text: 'Vaqt bering', evidence: '«Tajriba»: 4 / 5' }], scales: [{ name: 'Neyrotizm', text: 'ehtimol, tig‘iz vaziyatda xotirjam' }], roles: [{ text: 'Mijozlar bilan telefon orqali ishlash', evidence: 'Muloqot: 4,1 / 5' }, { text: 'Bosh direktor', evidence: '' }], verify: ['Tig‘iz kunlarda qanday ishlaydi'], plan: ['Murabbiy biriktiring'], interview: [{ q: 'Bir xil ishlarni uzoq bajargan holatingizni aytib bering: nima qildingiz?', why: 'Sabr va barqarorlik: 3,3 / 5', listen: 'aniq misol va natija' }, { q: '' }] }) : 'Javob: ' + q;
   return { body: { model: body.model, stop_reason: 'end_turn', usage: { input_tokens: 10, output_tokens: 5 }, content: [{ type: 'text', text }] } }; } });
 const browser = await pw.chromium.launch();
 const errors = [];
@@ -901,11 +901,16 @@ try {
     assert.match(tx, /Barqarorlik[\s\S]*Asos: Neyrotizm: 4,0 \/ 5/, 'у пункта — основание');
     assert.ok(!/Hammaga yoqadi/.test(tx), 'пункт без основания отброшен');
     assert.match(tx, /Suhbatda yoki ishda nimani tekshirish kerak[\s\S]*Tig‘iz kunlarda/, '«что проверить» вместо «соответствия должности»');
-    assert.match(tx, /Tayyorlagan: .+ · so‘rov v2/, 'кто готовил и версия запроса'); }
+    assert.match(tx, /Tayyorlagan: .+ · so‘rov v3/, 'кто готовил и версия запроса');
+    assert.match(tx, /Shkalalar bo‘yicha izoh[\s\S]*Neyrotizm: /, 'пояснение по шкалам');
+    assert.match(tx, /Mos keladigan ish turlari[\s\S]*Mijozlar bilan telefon orqali ishlash[\s\S]*Asos: Muloqot/, 'виды работ — с основанием');
+    assert.match(tx, /Suhbat uchun savollar[\s\S]*Bir xil ishlarni uzoq bajargan[\s\S]*Nima uchun: Sabr[\s\S]*Javobda nimaga e’tibor bering: aniq misol/, 'вопросы для собеседования'); }
   await settle(A);
+  { const iv = srv.g.state().users.find(u => u.id === emp.id).qaReport;
+    if (iv && iv.data) assert.deepEqual(iv.data.interview, [{ q: 'Bir xil ishlarni uzoq bajargan holatingizni aytib bering: nima qildingiz?', why: 'Sabr va barqarorlik: 3,3 / 5', listen: 'aniq misol va natija' }], 'вопросы для собеседования: вопрос, «почему», «на что смотреть»; пустой — отброшен'); }
   { const rep = srv.g.state().users.find(u => u.id === emp.id).qaReport, pr = lastPrompt(/HR-psixolog/);
-    assert.equal(rep.data.roles, 'Hujjatlar bilan ishlash', 'вывод ИИ — на сервере');
-    assert.deepEqual([rep.v, rep.by, rep.auto, rep.data.dropped, 'fit' in rep.data], [2, sopId, true, 1, false], 'версия запроса (QN_AI_V), кто готовил, сам; отброшен 1 пункт');
+    assert.deepEqual(rep.data.roles, [{ text: 'Mijozlar bilan telefon orqali ishlash', evidence: 'Muloqot: 4,1 / 5' }], 'вывод ИИ — на сервере: виды работ с основанием, без основания — отброшен');
+    assert.deepEqual([rep.v, rep.by, rep.auto, rep.data.dropped, 'fit' in rep.data], [3, sopId, true, 2, false], 'версия запроса (QN_AI_V), кто готовил, сам; отброшено 2 пункта без основания');
     assert.ok(/Kompaniya rivojlanmoqda\. Tel: \[telefon\]/.test(pr) && !/123 45 67|Dilnoza/.test(pr), 'в ИИ — без имени и телефона');
     assert.ok(/TEST \(o‘z-o‘zini baholash/.test(pr) && !/taxmin qiling/.test(pr.replace(/taxmin qilmang/g, '')), 'ИИ пересказывает посчитанное, не угадывает'); }
   assert.equal(await E.evaluate(id => LmsClient.sync().then(() => (LmsClient.initial().users.find(u => u.id === id) || {}).qaReport), emp.id).catch(() => undefined), undefined, 'сотрудник вывода не видит');
@@ -914,7 +919,7 @@ try {
   A.once('dialog', d => d.accept());
   await A.locator('.qn-ans .qn-ai-off').click(); await settle(A);
   { const rep = srv.g.state().users.find(u => u.id === emp.id).qaReport;
-    assert.ok(rep && !rep.data && rep.off && rep.offBy === sopId && rep.by === sopId && rep.v === 2, 'отклонён: текста нет, отметка есть'); }
+    assert.ok(rep && !rep.data && rep.off && rep.offBy === sopId && rep.by === sopId && rep.v === 3, 'отклонён: текста нет, отметка есть'); }
   assert.match(await A.locator('.qn-ans .qn-ai').innerText(), /AI xulosasini .+ rad etgan/, 'в карточке — кто отклонил');
   await A.locator('.qn-ans .lor-modal-x').click();
   await A.reload({ waitUntil: 'networkidle' }); await watchSync(A);
@@ -962,7 +967,7 @@ try {
     assert.ok(/XODIMLAR \(5\)/.test(last), 'без согласия на ИИ — не в анализе (5 из 7)');
     assert.ok(!/Puxta, barqaror|AI xulosasi/.test(last) && !/123 45 67/.test(last), 'прежние выводы ИИ и контакты не идут');
     const sop = srv.g.state().users.find(u => u.login === srv.admin.login);
-    assert.ok(sop.qaTeam && sop.qaTeam.ids[0] === emp.id && sop.qaTeam.v === 2 && !('hiring' in sop.qaTeam.data), 'анализ — в карточке SOP-менеджера'); }
+    assert.ok(sop.qaTeam && sop.qaTeam.ids[0] === emp.id && sop.qaTeam.v === 3 && !('hiring' in sop.qaTeam.data), 'анализ — в карточке SOP-менеджера'); }
   assert.equal(await E.evaluate(() => LmsClient.sync().then(() => LmsClient.initial().users.some(u => u.qaTeam))), false, 'сотрудник анализа коллектива не видит');
   await shot(A, 'savolnoma-jamoa-ai');
   // у кого нет согласия на ИИ — ИИ не предлагается и сам не готовится; плашки согласия в списке и карточке

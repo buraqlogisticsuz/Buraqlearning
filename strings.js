@@ -3389,3 +3389,13 @@ Object.assign(APP_T.uz, { qn_aud: 'Kimga ko‘rsatiladi', qn_aud_hint: 'Bo‘lim
 Object.assign(APP_T.ru, { qn_aud: 'Кому показывать', qn_aud_hint: 'Раздел видят только выбранные: кандидаты — со статусом «Испытательный срок», штатные — со статусом «Штатный». Статус — на странице «Сотрудники».', qn_aud_all: 'Всем', qn_aud_cand: 'Только кандидатам (испытательный срок)', qn_aud_off: 'Только штатным сотрудникам' });
 Object.assign(APP_T.en, { qn_aud: 'Who sees it', qn_aud_hint: 'Only the chosen people see this section: candidates — status “Probation”, staff — status “Official”. Status is on the Staff page.', qn_aud_all: 'Everyone', qn_aud_cand: 'Candidates only (probation)', qn_aud_off: 'Official staff only' });
 Object.assign(APP_T.zh, { qn_aud: '显示对象', qn_aud_hint: '仅所选人员可见本部分：候选人——状态为“试用期”，正式员工——状态为“正式”。状态在“员工”页面设置。', qn_aud_all: '所有人', qn_aud_cand: '仅候选人（试用期）', qn_aud_off: '仅正式员工' });
+/* ИИ-анализ: 4 вопроса для собеседования о прошлом поведении — основание и на что смотреть в ответе */
+Object.assign(APP_T.uz, { qn_ai_interview: 'Suhbat uchun savollar', qn_ai_iv_why: 'Nima uchun', qn_ai_iv_listen: 'Javobda nimaga e’tibor bering' });
+Object.assign(APP_T.ru, { qn_ai_interview: 'Вопросы для собеседования', qn_ai_iv_why: 'Почему', qn_ai_iv_listen: 'На что смотреть в ответе' });
+Object.assign(APP_T.en, { qn_ai_interview: 'Interview questions', qn_ai_iv_why: 'Why', qn_ai_iv_listen: 'What to listen for' });
+Object.assign(APP_T.zh, { qn_ai_interview: '面试问题', qn_ai_iv_why: '原因', qn_ai_iv_listen: '回答中应关注' });
+/* ИИ-анализ: пояснение шкал и подходящие виды работ (не должности) */
+Object.assign(APP_T.uz, { qn_ai_scales: 'Shkalalar bo‘yicha izoh', qn_ai_roles: 'Mos keladigan ish turlari (sinab ko‘rish uchun)' });
+Object.assign(APP_T.ru, { qn_ai_scales: 'Пояснение по шкалам', qn_ai_roles: 'Подходящие виды работ (проверить на деле)' });
+Object.assign(APP_T.en, { qn_ai_scales: 'What the scales suggest', qn_ai_roles: 'Suitable kinds of work (to try out)' });
+Object.assign(APP_T.zh, { qn_ai_scales: '量表说明', qn_ai_roles: '适合的工作类型（供尝试）' });

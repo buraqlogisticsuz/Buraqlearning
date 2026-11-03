@@ -134,7 +134,7 @@ test('разбор ответа: пункты без evidence и с медици
   assert.deepEqual(J(x.risks.map(y => y.text)), ['Ish joyini tez almashtirgan']);
   assert.equal(x.summary, 'Javoblar ko‘rsatadiki, rivojlanishni xohlaydi.', 'предложение с медицинским словом убрано');
   assert.equal(x.dropped, 5, 'без основания (3), с запрещённым словом (1), предложение (1)');
-  assert.deepEqual(J([x.verify, x.plan, x.interview]), [['Tig‘iz kunlarda qanday ishlaydi'], ['Murabbiy biriktirish'], ['Nega omborni tanladingiz?']]);
+  assert.deepEqual(J([x.verify, x.plan, x.interview]), [['Tig‘iz kunlarda qanday ishlaydi'], ['Murabbiy biriktirish'], [{ q: 'Nega omborni tanladingiz?' }]]);
   assert.ok(!('fit' in x) && !('temperament' in x), 'прежних полей нет');
   const y = qnAiClean(r, { measured: false, emp: false });
   assert.deepEqual(J([y.profile, y.plan]), ['', []], 'без теста — без «profile», не сотруднику — без «plan»');

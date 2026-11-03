@@ -4411,3 +4411,11 @@ select.lor-input.slim:not([multiple]) { background-position: right 10px center; 
 @media (max-width: 360px) { .app-header { --logo-h: 22px; } }
 .app-header { --logo-h: 34px; }
 .app-header .lor-header-in { height: 70px; }
+/* ИИ-анализ: вопросы для собеседования — нумерованные, у каждого «почему» и «на что смотреть» */
+.qn-ai-iv ol { margin: 4px 0 0; padding-left: 20px; display: grid; gap: 10px; }
+.qn-ai-iv li { line-height: 20px; }
+.qn-ai-iv-q { display: block; color: var(--ink); }
+.qn-ai-iv-l { display: block; font-size: 12px; line-height: 16px; color: var(--ink-muted); margin-top: 2px; }
+@media print { .qn-ai-iv li { break-inside: avoid; } }
+.qn-ai-sc ul { margin: 4px 0 0; padding-left: 18px; display: grid; gap: 6px; }
+.qn-ai-sc-n { color: var(--ink); font-weight: 500; }
