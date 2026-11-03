@@ -453,7 +453,22 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   /* qa.retake — CEO или SOP-менеджер попросил пройти тест ещё раз: пока не отправил снова — «к заполнению»;
      qa.dirty — черновик после отправки (анкету дополнили, правки сохранились сами): тоже «к заполнению» до «Yuborish»,
      иначе черновик снял бы «сначала анкета» без проверок отправки (пустой «Boshqa») */
-  function qnDone(q, u) { var a = (u.qa && u.qa.answers) || {}, c = qnCons(u); return !!(u.qa && u.qa.at) && !u.qa.retake && !u.qa.dirty && qnAsk(q).every(function (x) { return !x.req || !qnShowIf(x, a, c) || qnFilled(x, a[x.id]); }); }
+  /* раздел только для части людей: section.aud = 'probation' (кандидаты, «sinov muddati») или 'official' (rasmiy xodim) —
+     остальным раздел со всеми вопросами не показывается и не обязателен ([faqat nomzod] / [faqat rasmiy] в тексте) */
+  var QN_AUD = { probation: 1, official: 1 }, QN_AUD_C = typeof WeakMap === 'function' ? new WeakMap() : null;
+  function qnForU(q, u) {
+    if (!q || !(q.questions || []).some(function (x) { return x.aud && QN_AUD[x.aud]; })) return q;
+    var st = (u && u.status) === 'official' ? 'official' : 'probation', m = QN_AUD_C && QN_AUD_C.get(q);
+    if (m && m[st]) return m[st];
+    var on = true, out = (q.questions || []).filter(function (x) {
+      if (x.type === 'section') on = !x.aud || !QN_AUD[x.aud] || x.aud === st;
+      return on && (!x.aud || !QN_AUD[x.aud] || x.type === 'section' || x.aud === st);
+    });
+    var r = Object.assign({}, q, { questions: out });
+    if (QN_AUD_C) { m = m || {}; m[st] = r; QN_AUD_C.set(q, m); }
+    return r;
+  }
+  function qnDone(q, u) { q = qnForU(q, u); var a = (u.qa && u.qa.answers) || {}, c = qnCons(u); return !!(u.qa && u.qa.at) && !u.qa.retake && !u.qa.dirty && qnAsk(q).every(function (x) { return !x.req || !qnShowIf(x, a, c) || qnFilled(x, a[x.id]); }); }
   /* «к заполнению» — и когда анкета отправлена, а согласия нет (анкета до шага согласий), оно старой версии или обработку
      отозвали: тогда первым шагом спросят только согласие, ответы остаются */
   function qnDue(db, u) { var q = qnOf(db); return !!(q && u && u.role === 'employee' && (!qnDone(q, u) || !qnConsOk(u))); }
@@ -948,7 +963,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('qn_cons_later')));
   }
   function QnModal(p) {
-    var t = p.t, u = p.user, q = qnOf(p.db) || { questions: [] }, due = qnDue(p.db, u), prev = (u.qa && u.qa.answers) || {}, cons = qnCons(u);
+    var t = p.t, u = p.user, q = qnForU(qnOf(p.db) || { questions: [] }, u), due = qnDue(p.db, u), prev = (u.qa && u.qa.answers) || {}, cons = qnCons(u);
     /* шаг согласий — перед первым разделом, когда анкету и так нужно заполнить, а согласия нет или оно старой версии */
     var needCons = due && !qnConsOk(u), cv = useState({ base: false, ai: false, special: false }), cErr = useState(false);
     var a = useState(function () { return Object.assign({}, prev); }), errs = useState({}), box = useRef(null), saved = useRef(JSON.stringify(prev)), draftAt = useState(0), stp = useState(function () {
@@ -7822,6 +7837,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           if (/^(shkala|шкала|scale)$/.test(base)) sname = rest || title;
           else if (/^(temperament|темперамент)$/.test(base)) tmk = QN_TM_WORD[rest.toLowerCase()] || null;
           else if (/^(chegaralar|границы|bands)$/.test(base)) bands = qnBands(rest);
+          else if (/^(faqat\s+)?(nomzod|nomzodlar|кандидат\S*|candidates?)$/.test(low)) sec.aud = 'probation';
+          else if (/^(faqat\s+)?(rasmiy|rasmiy xodim\S*|штатн\S*|official)$/.test(low)) sec.aud = 'official';
         });
         sec._scale = sname ? scaleOf(sname, bands).id : null;
         if (sec._scale && tmk) map[sec._scale] = tmk;
@@ -8544,7 +8561,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   /* карточка одного сотрудника — CEO, SOP-менеджер, руководитель: главное, согласия, темперамент и шкалы, вывод ИИ,
      все ответы по разделам; скрытые ответы — по кнопке; «Chop etish» — печать или PDF */
   function QnPerson(p) {
-    var t = p.t, u = p.u, q = p.q, a = (u.qa && u.qa.answers) || {}, n = 0, res = qnScore(q, u), ta = qnTemperAll(q, res), open = useState(false), c = qnCons(u);
+    var t = p.t, u = p.u, q = qnForU(p.q, p.u), a = (u.qa && u.qa.answers) || {}, n = 0, res = qnScore(q, u), ta = qnTemperAll(q, res), open = useState(false), c = qnCons(u);
     var prof = ta || res.some(function (r) { return r.n; });
     /* ответы на [maxfiy] анкеты до шага согласий не открываются, пока человек не дал согласие (на особые данные — или они стёрты) */
     var keys = qnKeys(q), cons = qnAsk(q).filter(function (x) { return x.type === 'consent'; }), secAny = qnSecStored(q, a), hasSecret = secAny && !!c;
@@ -8726,6 +8743,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         if (pq) y.pair = pq.id; else delete y.pair;
         delete y.labelsText;
         if (!y.prof || QN_PROF.indexOf(y.prof) < 0) delete y.prof;
+        if (x.type !== 'section' || !QN_AUD[y.aud]) delete y.aud;
         var wq = x.when && v.questions.slice(0, v.questions.indexOf(x)).filter(function (z) { return z.id === x.when.q && (z.type === 'one' || z.type === 'many'); })[0];
         var wany = wq ? (x.when.any || []).filter(function (o) { return (wq.options || []).map(function (z) { return String(z).trim(); }).indexOf(o) >= 0; }) : [];
         if (wany.length && x.type !== 'section') y.when = { q: wq.id, any: wany }; else delete y.when;
@@ -8826,6 +8844,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
                     h('button', { type: 'button', className: 'in-dl-mv qn-del', 'aria-label': t('remove'), title: t('remove'), onClick: function () { setQs(function (a) { a.splice(i, 1); return a; }); } }, '×'))),
                 h('div', { className: 'qn-item-meta' },
                   h('select', { className: 'lor-input qn-type qn-type-sel', value: x.type, disabled: ro, 'aria-label': t('qn_type'), onChange: function (e) { setQ(i, 'type', e.target.value); } }, TYPES.map(function (o) { return h('option', { key: o[0], value: o[0] }, o[1]); })),
+                  x.type === 'section' ? h('select', { className: 'lor-input qn-type qn-aud-sel', value: x.aud || '', disabled: ro, 'aria-label': t('qn_aud'), title: t('qn_aud_hint'), onChange: function (e) { setQ(i, 'aud', e.target.value || undefined); } },
+                    [['', t('qn_aud_all')], ['probation', t('qn_aud_cand')], ['official', t('qn_aud_off')]].map(function (o) { return h('option', { key: o[0], value: o[0] }, o[1]); })) : null,
                   sec ? null : h('label', { className: 'check' }, h('input', { type: 'checkbox', checked: !!x.req, disabled: ro, onChange: function (e) { setQ(i, 'req', e.target.checked); } }), t('qn_req')),
                   v.scales.length && (choice || (x.type === 'scale' && !x.infreq)) ? h('select', { className: 'lor-input qn-type qn-scale-sel', value: x.scale || '', disabled: ro, 'aria-label': t('qn_scale_l'), onChange: function (e) { setQ(i, 'scale', e.target.value); } }, SCS.map(function (o) { return h('option', { key: o[0], value: o[0] }, o[0] ? t('qn_scale_l') + ': ' + o[1] : o[1]); })) : null,
                   scored && x.type === 'scale' && !x.infreq ? h('label', { className: 'check' }, h('input', { type: 'checkbox', checked: !!x.rev, disabled: ro, onChange: function (e) { setQ(i, 'rev', e.target.checked); } }), t('qn_rev')) : null,
@@ -9828,7 +9848,9 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   function latin(s) { return String(s || '').toLowerCase().split('').map(function (c) { return TRANSLIT[c] != null ? TRANSLIT[c] : c; }).join('').replace(/[‘’'`ʻʼ]/g, '').replace(/[^a-z0-9]/g, ''); }
   /* «Dilnoza Karimova» → d.karimova (as the logins made by hand) */
   function autoLogin(name) { var w = String(name || '').trim().split(/\s+/).map(latin).filter(Boolean); return w.length > 1 ? w[0][0] + '.' + w[w.length - 1] : (w[0] || 'xodim'); }
-  var IMP_COLS = { id: /^id$/i, name: /f\.?\s*i\.?\s*sh|^ism|familiya|фио|имя|^name|full\s*name/i, position: /lavozim|должност|position/i, department: /bo.?lim|отдел|department/i, login: /login|логин/i, password: /parol|пароль|password/i, phone: /^telefon|^телефон|^phone/i, telegram: /telegram|телеграм/i };
+  var IMP_COLS = { id: /^id$/i, name: /f\.?\s*i\.?\s*sh|^ism|familiya|фио|имя|^name|full\s*name/i, position: /lavozim|должност|position/i, department: /bo.?lim|отдел|department/i, login: /login|логин/i, password: /parol|пароль|password/i, phone: /^telefon|^телефон|^phone/i, telegram: /telegram|телеграм/i, status: /^holat|^status|^статус|^maqom/i };
+  /* «Holat»: rasmiy / official / штатный → official; sinov / probation / испытат… → probation; пусто — как было (новый — sinov) */
+  function impStatus(v) { v = String(v || '').trim().toLowerCase(); return /^(rasmiy|official|штат|офиц)/.test(v) ? 'official' : /^(sinov|probation|испыт|nomzod)/.test(v) ? 'probation' : ''; }
   function importRows(rows, db) {
     var head = (rows[0] || []).map(function (x) { return String(x || ''); }), col = {};
     Object.keys(IMP_COLS).forEach(function (k) { head.forEach(function (hv, i) { if (col[k] == null && IMP_COLS[k].test(hv.trim())) col[k] = i; }); });
@@ -9839,7 +9861,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     return body.map(function (r) {
       var g = function (k) { return col[k] == null ? '' : String(r[col[k]] == null ? '' : r[col[k]]).trim(); };
       var id = +g('id'), cur = id ? db.users.filter(function (u) { return u.id === id && u.role === 'employee'; })[0] : null;
-      var x = { name: g('name').replace(/\s+/g, ' '), position: g('position'), department: g('department'), login: g('login').toLowerCase(), password: g('password'), phone: g('phone'), telegram: g('telegram'), err: '' };
+      var x = { name: g('name').replace(/\s+/g, ' '), position: g('position'), department: g('department'), login: g('login').toLowerCase(), password: g('password'), phone: g('phone'), telegram: g('telegram'), status: impStatus(g('status')), err: '' };
       if (!x.name) return null;
       if (x.name.length < 2) x.err = 'imp_x_err_name';
       var free = function (l) { return !used[l] && (owner[l] == null || (cur && owner[l] === cur.id)); };
@@ -9852,6 +9874,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           if (x[f[0]] && x[f[0]] !== (f[1] || '')) ch.push(f[2]);
         });
         if (x.password) ch.push('password');
+        if (x.status && x.status !== cur.status) ch.push('th_status');
         x.changes = ch;
       } else {
         x.position = x.position || posOf(db)[0]; x.department = x.department || depOf(db)[0];
@@ -9952,13 +9975,14 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       p.update(function (d) {
         upd.forEach(function (x) { d.users.forEach(function (u) {
           if (u.id !== x.id) return;
-          ['name', 'login', 'position', 'department'].forEach(function (k) { if (x[k]) u[k] = x[k]; });
+          ['name', 'login', 'position', 'department', 'status'].forEach(function (k) { if (x[k]) u[k] = x[k]; });
           if (x.phone || x.telegram) { u.profile = u.profile || {}; if (x.phone) u.profile.phone = x.phone; if (x.telegram) u.profile.telegram = x.telegram; }
           if (x.password) u.password = x.password;   // the server moves it into the account
         }); });
         var nid = Math.max.apply(null, d.users.map(function (u) { return u.id; }).concat([10000])) + 1;
         ok.forEach(function (x) {
           d.users.push({ id: nid++, role: 'employee', login: x.login, password: x.password, name: x.name, position: x.position, department: x.department, trackId: (tracksOf(d).filter(function (tr) { return (tr.positions || []).indexOf(x.position) >= 0; })[0] || {}).id, status: 'probation', profileComplete: false, createdAt: Date.now(), startedAt: Date.now(), cohort: dayKey(Date.now()).slice(0, 7), reminderTime: '19:00' });
+          if (x.status) d.users[d.users.length - 1].status = x.status;
         });
       });
       done[1]({ list: ok.concat(upd.filter(function (x) { return x.password; })), a: ok.length, b: upd.length }); rs[1](null);
