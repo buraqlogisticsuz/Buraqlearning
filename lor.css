@@ -4400,3 +4400,14 @@ select.lor-input.slim:not([multiple]) { background-position: right 10px center; 
 .sw { background: var(--sw-off); }
 .sw i { background: var(--sw-knob); }
 .hint-sw.is-on .sw { background: var(--red); }
+/* шапка: логотип с подписью — одна аккуратная связка по центру строки: знак 30 px, подпись ровно по его ширине
+   (разрядку подбирает Header), без лишнего воздуха между ними */
+.app-header { --logo-h: 30px; }
+.app-header .lor-header-brand { align-self: center; gap: 6px; min-width: 0; }
+.app-header .lor-header-app { font-size: 10px; line-height: 11px; letter-spacing: 0; overflow: visible; color: rgba(255, 255, 255, .85); }
+@media (max-width: 760px) { .app-header .lor-header-brand { gap: 6px; } .app-header .lor-header-app { font-size: 9px; line-height: 10px; letter-spacing: 0; } }
+@media (max-width: 480px) { .app-header { --logo-h: 26px; } }
+@media (max-width: 420px) { .app-header { --logo-h: 24px; } }
+@media (max-width: 360px) { .app-header { --logo-h: 22px; } }
+.app-header { --logo-h: 34px; }
+.app-header .lor-header-in { height: 70px; }

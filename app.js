@@ -7431,7 +7431,16 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       var el = hdr.current; if (!el) return;
       var nv = el.querySelector('.lor-header-nav'), cp = el.querySelector('.lor-header-app'), sub = el.querySelector('.app-subnav');
       stk[1](!!nv && nv.scrollWidth > nv.clientWidth + 1);
-      cap[1](!cp || cp.scrollWidth <= cp.clientWidth + 1);
+      /* подпись — ровно по ширине логотипа (как «logistics» в самом знаке): разрядка подбирается под текст на любом
+         языке, длинный текст чуть уменьшается; меньше 8 px — подпись прячется */
+      var lg = el.querySelector('.lor-header-logo'), lw = lg ? lg.getBoundingClientRect().width : 0, fit = true;
+      if (cp && lw) {
+        cp.style.letterSpacing = '0px'; cp.style.fontSize = ''; cp.style.width = 'auto';
+        var nat = cp.scrollWidth, len = Math.max(1, (cp.textContent || '').length), fs = parseFloat(getComputedStyle(cp).fontSize) || 10;
+        if (nat > lw) { fs = fs * lw / nat; if (fs < 8) fit = false; else { cp.style.fontSize = fs + 'px'; nat = cp.scrollWidth; } }
+        if (fit) { cp.style.letterSpacing = Math.max(0, (lw - nat) / len) + 'px'; cp.style.width = Math.round(lw) + 'px'; }
+      }
+      cap[1](!cp || (fit && cp.scrollWidth <= cp.clientWidth + 1));
       if (sub && sub.clientWidth !== subW.current) { subW.current = sub.clientWidth; showOn(sub); }   // ширина сменилась
       if (sub) subFade(sub);
       document.documentElement.style.setProperty('--hdr-h', el.offsetHeight + 'px');
