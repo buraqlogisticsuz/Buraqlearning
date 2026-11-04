@@ -279,31 +279,55 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
      запись экрана) — пока окно не вернётся. Снимок на телефоне и фото камерой сайт запретить не может — для них знак */
   var GUARD = false;
   function guardOk(el) { return !!(el && el.closest && el.closest('input, textarea, select, [contenteditable="true"]')); }
+  /* попытка снимка (сервер не меняется: уведомить других о своём действии сотрудник может, from ставит сервер):
+     CEO и SOP-менеджеру — «{name} пытался сделать снимок экрана», самому сотруднику — что попытку увидят CEO и SOP */
+  var SHOT_KEY = { prtsc: 'PrintScreen', win: 'Win+Shift+S', mac: 'Cmd+Shift+3/4/5' };
+  function shotReport(d, u, how) {
+    var at = Date.now(), x = { uid: u.id, name: String(u.name || ''), how: how };
+    d.users.forEach(function (a) { var l = lvlOf(a); if (l === 'ceo' || l === 'sop') d.notifications.unshift({ id: nextId(d), userId: a.id, kind: 'shot', shot: x, route: 'staff', text: '', at: at, read: false }); });
+    d.notifications.unshift({ id: nextId(d), userId: u.id, kind: 'shot-me', shot: { how: how }, text: '', at: at, read: false });
+  }
+  function shotNotif(n, t) { var x = n.shot || {}, k = SHOT_KEY[x.how] || ''; return n.kind === 'shot-me' ? t('n_shot_me') : tpl(t('n_shot'), { name: x.name || '—', k: k }); }
   function Guard(p) {
-    var t = p.t, u = p.user || {}, cv = useState(0), cvRef = useRef(0);   // 0 — открыто, 1 — пока окно не в фокусе, 2 — до нажатия
+    var t = p.t, u = p.user || {}, cv = useState(0), cvRef = useRef(0), sent = useState(false), onShot = useRef(null);   // cv: 0 — открыто, 1 — пока окно не в фокусе, 2 — до нажатия
+    onShot.current = p.onShot;
     function cover(k) { if (k > cvRef.current) { cvRef.current = k; cv[1](k); } }
-    function open(all) { if (all || cvRef.current === 1) { cvRef.current = 0; cv[1](0); } }
+    function open(all) { if (all || cvRef.current === 1) { cvRef.current = 0; cv[1](0); sent[1](false); } }
     useEffect(function () {
-      var root = document.documentElement, mac = /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent || '');
+      var root = document.documentElement, mac = /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent || ''), combo = null, last = 0;
       root.classList.add('emp-guard');
       function wipe() { try { navigator.clipboard.writeText('').catch(function () {}); } catch (e) {} }
       function meta(k) { return k === 'Meta' || k === 'OS'; }
+      /* одна запись в минуту: зажатая клавиша или серия нажатий — одно уведомление */
+      function report(how) { cover(2); sent[1](true); if (Date.now() - last < 60000) return; last = Date.now(); if (onShot.current) onShot.current(how); }
+      /* Win/Cmd+Shift отпущены: третью клавишу забрала система (S, 3, 4, 5 — снимок) — попытка; если до страницы дошла
+         другая клавиша или вкладка скрылась (Cmd+Shift+T, N, [ ]) — это не снимок */
+      function comboEnd() { var c = combo; combo = null; if (c && !c.other && !c.hidden) report(c.how); }
       function kd(e) {
-        var k = e.key || '';
-        if ((e.ctrlKey || e.metaKey) && /^[sp]$/i.test(k)) { e.preventDefault(); e.stopPropagation(); SAY('grd_no_save'); return; }
-        if (k === 'PrintScreen') { cover(2); wipe(); return; }
-        if (e.metaKey && (e.shiftKey || k === 'Shift')) { cover(2); return; }
+        var k = e.key || '', c = e.code || '';
+        if ((e.ctrlKey || (e.metaKey && !e.shiftKey)) && /^[sp]$/i.test(k)) { e.preventDefault(); e.stopPropagation(); SAY('grd_no_save'); return; }
+        if (k === 'PrintScreen') { wipe(); report('prtsc'); return; }
+        if (e.metaKey && e.shiftKey) {
+          cover(2);
+          if (!combo) combo = { how: mac ? 'mac' : 'win', other: false, hidden: false };
+          if (!meta(k) && k !== 'Shift') { combo.other = true; if (mac ? /^Digit[345]$/.test(c) : c === 'KeyS') report(combo.how); }
+          return;
+        }
         if (!mac && meta(k)) cover(1);
       }
       function ku(e) {
         var k = e.key || '';
-        if (k === 'PrintScreen') { e.preventDefault(); cover(2); wipe(); SAY('grd_shot'); return; }
+        if (k === 'PrintScreen') { e.preventDefault(); wipe(); report('prtsc'); return; }
+        if (combo && (meta(k) || k === 'Shift')) comboEnd();
         if (meta(k) && document.hasFocus()) open(false);
       }
-      /* фокус ушёл: другое окно или программа. Клик во встроенное видео (iframe) — не уход */
-      function blur() { setTimeout(function () { var a = document.activeElement; if (a && a.tagName === 'IFRAME') return; if (!document.hasFocus()) cover(1); }, 0); }
-      function focus() { open(false); }
-      function vis() { if (document.hidden) cover(1); else if (document.hasFocus()) open(false); }
+      /* фокус ушёл: другое окно или программа (во время Win+Shift — «Ножницы»: попытка). Клик во встроенное видео — не уход */
+      function blur() {
+        if (combo) { comboEnd(); return; }
+        setTimeout(function () { var a = document.activeElement; if (a && a.tagName === 'IFRAME') return; if (!document.hasFocus()) cover(1); }, 0);
+      }
+      function focus() { if (combo) comboEnd(); open(false); }
+      function vis() { if (document.hidden) { if (combo) combo.hidden = true; cover(1); } else if (document.hasFocus()) open(false); }
       function block(e) { if (!guardOk(e.target)) e.preventDefault(); }
       function bp() { cover(2); }
       var L = [[window, 'keydown', kd, true], [window, 'keyup', ku, true], [window, 'blur', blur, false], [window, 'focus', focus, false], [document, 'visibilitychange', vis, false],
@@ -321,6 +345,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       cv[0] ? h('div', { className: 'grd-cover', role: 'alertdialog', 'aria-modal': true, 'aria-label': t('grd_cover_t'), onClick: function () { if (document.hasFocus()) open(true); } },
         h('img', { src: LOGO_W, alt: 'BURAQ logistics', width: 116, height: 40 }),
         h('b', null, t('grd_cover_t')), h('p', null, t('grd_cover_s')),
+        sent[0] ? h('p', { className: 'grd-cover-sent', role: 'status' }, t('grd_cover_sent')) : null,
         h('span', { className: 'grd-cover-go' }, t('grd_cover_go'))) : null);
   }
   function PdfPages(p) {
@@ -1980,6 +2005,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     if (n.kind === 'xt') return xtNotif(n, t);
     if (n.kind === 'ltask' && n.lt) return tpl(t('n_ltask'), { x: txtOf(n.lt.x, lang) });
     if ((n.kind === 'pp' || n.kind === 'pp-warn' || n.kind === 'pp-gone') && n.pp) return ppNotif(n, t);
+    if ((n.kind === 'shot' || n.kind === 'shot-me') && n.shot) return shotNotif(n, t);
     if (n.kind === 'pay' && n.pay) return tpl(t('n_pay_' + n.pay.s), { m: ymLabel(n.pay.ym, lang, true), x: sumTxt(n.pay.total, t) }) + (n.pay.reply ? ' — ' + n.pay.reply : '');
     if (!n.promo) return n.text;
     var lv = levelsOf(db)[n.promo.li];
@@ -10566,7 +10592,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     return h(F, null, view, tm[0] ? h(TermsModal, { t: t, lang: lang, acceptedAt: user && user.termsAcceptedAt, onClose: function () { tm[1](false); } }) : null,
       user && pf[0] ? h(ProfileModal, Object.assign({}, p, { key: 'pf' + user.id, onClose: function () { pf[1](false); } })) : null,
       user ? h(SyncChip, { t: t, admin: user.role === 'admin', say: p.say }) : null, h(Toast, { toast: toast }),
-      GUARD ? h(Guard, { key: 'g' + user.id, t: t, user: user }) : null);
+      GUARD ? h(Guard, { key: 'g' + user.id, t: t, user: user, onShot: function (how) { update(function (d) { shotReport(d, user, how); }); } }) : null);
   }
 
   /* no server address in config.js: without the server the platform does not work (there is no demo any more) */

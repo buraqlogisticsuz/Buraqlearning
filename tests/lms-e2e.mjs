@@ -838,12 +838,38 @@ try {
     assert.ok(g.cls && g.ctx && g.copy && g.drag && g.save && g.print, 'правая кнопка, копирование, перетаскивание, Ctrl+S / Ctrl+P закрыты: ' + JSON.stringify(g));
     assert.equal(g.ctxInput, false, 'в поле ввода правая кнопка работает');
     assert.ok(g.mark.length === 2 && g.mark.every(x => x.includes(srv.g.state().users.find(u => u.id === emp.id).login)), 'водяной знак с логином: ' + g.mark.join(' | ')); }
-  // PrintScreen — экран закрывается синим до нажатия
-  await E.evaluate(() => window.dispatchEvent(new KeyboardEvent('keyup', { key: 'PrintScreen', bubbles: true })));
+  // Win/Cmd+Shift — экран закрывается до нажатия. До страницы дошла третья клавиша (Win+Shift+T) — не снимок, никому не пишем;
+  // третью забрала система (Win+Shift+S) — попытка: уведомление CEO и SOP-менеджеру, сотруднику — что они увидят
+  const combo = third => E.evaluate(third => {
+    const k = (type, key, o) => window.dispatchEvent(new KeyboardEvent(type, Object.assign({ key, bubbles: true, cancelable: true }, o)));
+    k('keydown', 'Meta', { metaKey: true, code: 'MetaLeft' }); k('keydown', 'Shift', { metaKey: true, shiftKey: true, code: 'ShiftLeft' });
+    if (third) { k('keydown', third, { metaKey: true, shiftKey: true, code: 'Key' + third }); k('keyup', third, { metaKey: true, shiftKey: true, code: 'Key' + third }); }
+    k('keyup', 'Shift', { metaKey: true, code: 'ShiftLeft' }); k('keyup', 'Meta', { code: 'MetaLeft' });
+  }, third);
+  const shotNs = () => (srv.g.state().notifications || []).filter(n => n.kind === 'shot' || n.kind === 'shot-me');
+  await combo('T');
   await E.locator('.grd-cover').waitFor({ timeout: 3000 });
-  await shot(E, 'ekran-yopildi');
+  assert.equal(await E.locator('.grd-cover-sent').count(), 0, 'Win+Shift+T — не снимок');
   await E.locator('.grd-cover').click(); await E.waitForTimeout(150);
   assert.equal(await E.locator('.grd-cover').count(), 0, 'нажал — экран снова открыт');
+  await settle(E); assert.equal(shotNs().length, 0, 'за Win+Shift+T уведомлений нет');
+  await combo('');
+  await E.locator('.grd-cover-sent').waitFor({ timeout: 3000 });
+  assert.match(await E.locator('.grd-cover').innerText(), /CEO va SOP menejeri/, 'сотруднику сказано, что попытку увидят CEO и SOP-менеджер');
+  await shot(E, 'ekran-yopildi');
+  await settle(E);
+  { const st = srv.g.state(), adm = st.users.filter(u => u.role === 'admin' && u.post !== 'boss').map(u => u.id), list = shotNs();
+    const to = list.filter(n => n.kind === 'shot');
+    assert.ok(to.length >= 1 && to.every(n => adm.includes(n.userId) && n.shot.uid === emp.id && n.shot.how === 'win' && n.from === emp.id), 'CEO и SOP-менеджеру: ' + JSON.stringify(to));
+    assert.deepEqual(adm.filter(id => !to.some(n => n.userId === id)), [], 'каждому CEO и SOP-менеджеру');
+    assert.equal(list.filter(n => n.kind === 'shot-me' && n.userId === emp.id).length, 1, 'сотруднику — своё уведомление'); }
+  await E.locator('.grd-cover').click(); await E.waitForTimeout(150);
+  // PrintScreen — то же; повтор в ту же минуту — одно уведомление
+  await E.evaluate(() => window.dispatchEvent(new KeyboardEvent('keyup', { key: 'PrintScreen', bubbles: true })));
+  await E.locator('.grd-cover-sent').waitFor({ timeout: 3000 });
+  await E.locator('.grd-cover').click(); await E.waitForTimeout(150);
+  assert.equal(await E.locator('.grd-cover').count(), 0, 'нажал — экран снова открыт');
+  await settle(E); assert.equal(shotNs().filter(n => n.kind === 'shot-me').length, 1, 'серия попыток в одну минуту — одно уведомление');
   await E.check('#in-seen'); await E.locator('.ir-actions button:has-text("Tasdiqlash")').click(); await settle(E);
   assert.ok(srv.g.state().users.find(u => u.id === emp.id).introSeenAt, 'знакомство подтверждено — на сервере');
   assert.equal(await E.locator('.ir').count(), 0, 'экран знакомства закрылся');

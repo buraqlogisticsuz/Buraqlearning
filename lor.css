@@ -4445,3 +4445,5 @@ button.jf-name { padding: 0; background: none; border: 0; border-bottom: 1px sol
 .grd-cover-go { margin-top: var(--space-2); padding: 10px 22px; border: var(--hairline) solid var(--on-navy); border-radius: var(--radius-pill); font-size: 14px; }
 .grd-cover::after { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 1px; background: var(--red); }
 @media print { html.emp-guard body { display: none !important; } }
+.grd-cover p.grd-cover-sent { display: inline-flex; align-items: center; gap: var(--space-2); opacity: 1; }
+.grd-cover-sent::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--red); flex: none; }

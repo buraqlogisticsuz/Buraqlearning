@@ -90,6 +90,10 @@ export function startTelegram({ token, C, strings, fetch = globalThis.fetch, log
       if (n.kind === 'pp-warn') return tpl(T('n_pp_warn'), { name: p.name || '—', d });
       return tpl(T('n_pp_gone'), { name: p.name || '—' }) + ' ' + T(p.dl ? 'n_pp_gone_dl' : 'n_pp_gone_nodl');
     }
+    if ((n.kind === 'shot' || n.kind === 'shot-me') && n.shot) {   // попытка снимка экрана (Guard в app.js)
+      const k = { prtsc: 'PrintScreen', win: 'Win+Shift+S', mac: 'Cmd+Shift+3/4/5' }[n.shot.how] || '';
+      return n.kind === 'shot-me' ? T('n_shot_me') : tpl(T('n_shot'), { name: n.shot.name || '—', k });
+    }
     if (n.kind === 'pay' && n.pay) {
       const [y, mo] = String(n.pay.ym).split('-'), mn = (((strings || {}).months || {}).uz || [])[+mo - 1];
       return tpl(T('n_pay_' + n.pay.s), { m: mn ? mn + ' ' + y : n.pay.ym, x: String(Math.round(n.pay.total || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0') + ' ' + T('pay_cur') }) + (n.pay.reply ? ' — ' + n.pay.reply : '');
