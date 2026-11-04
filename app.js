@@ -288,7 +288,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           h('span', { className: 'jf-ext' }, fileExt(d.name)),
           h('span', { className: 'dv-name' }, h('b', null, docTitle(d)), d.size ? h('small', null, fileSize(d.size)) : null),
           h('span', { className: 'dv-acts' },
-            k === 'pdf' && x.url ? h('a', { className: 'app-link', href: p.canDl ? x.url : pdfSrc(x.url), target: '_blank', rel: 'noopener' }, t('in_doc_tab')) : null,
+            p.canDl && k === 'pdf' && x.url ? h('a', { className: 'app-link', href: x.url, target: '_blank', rel: 'noopener' }, t('in_doc_tab')) : null,
             p.canDl ? h('button', { type: 'button', className: 'app-link', onClick: function () { docSave(d); } }, t('in_doc_dl')) : null),
           h('button', { type: 'button', className: 'lor-modal-x', 'aria-label': t('close'), onClick: p.onClose }, '×')),
         h('div', { className: cx('dv-body', 'is-' + k) }, docBody(t, d, x, null, p.canDl)))), document.body);
@@ -341,7 +341,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
             h('span', { className: 'jf-ext' }, fileExt(cur.name)),
             h('span', { className: 'ir-doc-name' }, h('b', null, docTitle(cur)), cur.size ? h('small', null, fileSize(cur.size)) : null),
             h('span', { className: 'dv-acts' },
-              kind === 'pdf' && x.url ? h('a', { className: 'app-link', href: p.admin ? x.url : pdfSrc(x.url), target: '_blank', rel: 'noopener', onClick: seen }, t('in_doc_tab')) : null,
+              p.admin && kind === 'pdf' && x.url ? h('a', { className: 'app-link', href: x.url, target: '_blank', rel: 'noopener', onClick: seen }, t('in_doc_tab')) : null,
               p.admin ? h('button', { type: 'button', className: 'app-link', onClick: function () { seen(); docSave(cur); } }, t('in_doc_dl')) : null)),
           h('div', { className: cx('dv-body', 'is-' + kind) }, docBody(t, cur, x, seen, !!p.admin))) : null,
         showVid ? h('aside', { className: 'ir-side' },
