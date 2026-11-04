@@ -311,12 +311,12 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       L.forEach(function (x) { x[0].addEventListener(x[1], x[2], x[3]); });
       return function () { root.classList.remove('emp-guard'); L.forEach(function (x) { x[0].removeEventListener(x[1], x[2], x[3]); }); };
     }, []);
-    /* плитка шире надписи (≈7,5 px на знак при 13 px), чтобы строка не обрезалась краем плитки */
-    var mark = [u.name, u.login, fmtDate(Date.now())].filter(Boolean).join(' · '), tw = Math.max(520, Math.round(mark.length * 7.5 + 60) * 2);
+    /* плитка шире надписи (≈7 px на знак при 12 px), чтобы строка не обрезалась; редко и бледно — глазу почти не видно */
+    var mark = [u.name, u.login, fmtDate(Date.now())].filter(Boolean).join(' · '), tw = Math.max(600, Math.round(mark.length * 7 + 120) * 2);
     return h(F, null,
       h('svg', { className: 'grd-wm', 'aria-hidden': true, focusable: 'false' },
-        h('defs', null, h('pattern', { id: 'grd-wm-p', width: tw, height: 220, patternUnits: 'userSpaceOnUse', patternTransform: 'rotate(-24)' },
-          h('text', { x: 20, y: 60 }, mark), h('text', { x: tw / 2 + 20, y: 170 }, mark))),
+        h('defs', null, h('pattern', { id: 'grd-wm-p', width: tw, height: 340, patternUnits: 'userSpaceOnUse', patternTransform: 'rotate(-24)' },
+          h('text', { x: 20, y: 80 }, mark), h('text', { x: tw / 2 + 20, y: 250 }, mark))),
         h('rect', { width: '100%', height: '100%', fill: 'url(#grd-wm-p)' })),
       cv[0] ? h('div', { className: 'grd-cover', role: 'alertdialog', 'aria-modal': true, 'aria-label': t('grd_cover_t'), onClick: function () { if (document.hasFocus()) open(true); } },
         h('img', { src: LOGO_W, alt: 'BURAQ logistics', width: 116, height: 40 }),
