@@ -186,7 +186,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   function IntroVideo(p) {
     var src = String(p.video.src || '').trim();
     if (ytId(src)) return h(Player, { t: p.t, video: p.video });
-    if (/^https?:\/\/\S+\.(mp4|webm|mov|m4v)(\?\S*)?$/i.test(src)) return h('video', { className: 'intro-mp4', src: src, controls: true, playsInline: true, preload: 'metadata' });
+    if (/^https?:\/\/\S+\.(mp4|webm|mov|m4v)(\?\S*)?$/i.test(src)) return h('video', { className: 'intro-mp4', src: src, controls: true, playsInline: true, preload: 'metadata', controlsList: 'nodownload', disablePictureInPicture: true });
     if (/^https?:\/\//i.test(src)) return h('a', { className: 'app-link intro-link', href: src, target: '_blank', rel: 'noopener noreferrer' }, '▶ ' + p.t('in_open_video'));
     return null;
   }
@@ -257,19 +257,121 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   /* canDl — скачивать может только SOP-менеджер / CEO (редактор, предпросмотр); сотруднику — только смотреть:
      без «Yuklab olish» и без панели встроенного просмотра PDF (#toolbar=0 — значки скачать / печать в Chrome и Edge) */
   function pdfSrc(url) { return url ? url + '#toolbar=0&navpanes=0' : url; }
+  /* PDF у сотрудника — без просмотра браузера (в нём всегда есть «сохранить» и «печать»): страницы рисуются картинками
+     (pdf.js 3.11 из js/vendor, грузится при первом PDF); правая кнопка, выделение, Ctrl+S / Ctrl+P и печать закрывает Guard */
+  var PDFJS = null;
+  function pdfjsLoad() {
+    if (PDFJS) return PDFJS;
+    PDFJS = new Promise(function (ok, no) {
+      if (window.pdfjsLib) { window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'js/vendor/pdf.worker.min.js'; return ok(window.pdfjsLib); }
+      var sc = document.createElement('script'); sc.src = 'js/vendor/pdf.min.js';
+      sc.onload = function () { var L = window.pdfjsLib; if (!L) { PDFJS = null; return no(new Error('pdfjs')); } L.GlobalWorkerOptions.workerSrc = 'js/vendor/pdf.worker.min.js'; ok(L); };
+      sc.onerror = function () { PDFJS = null; no(new Error('pdfjs')); };
+      document.head.appendChild(sc);
+    });
+    return PDFJS;
+  }
+  function noSave(e) { e.preventDefault(); }
+  /* сотрудник (role employee) материалы компании только смотрит: App ставит GUARD и рисует Guard. Закрыты печать, Ctrl+S /
+     Ctrl+P, правая кнопка, копирование и перетаскивание (кроме полей ввода), скачивание файлов. Поверх всего — водяной
+     знак «имя · логин · дата»: снимок или фото экрана сразу показывают, чей это экран. Попытка снимка — PrintScreen,
+     Win/Cmd+Shift (Ножницы, снимок в macOS) — закрывает экран до нажатия; уход в другое окно (Ножницы с задержкой,
+     запись экрана) — пока окно не вернётся. Снимок на телефоне и фото камерой сайт запретить не может — для них знак */
+  var GUARD = false;
+  function guardOk(el) { return !!(el && el.closest && el.closest('input, textarea, select, [contenteditable="true"]')); }
+  function Guard(p) {
+    var t = p.t, u = p.user || {}, cv = useState(0), cvRef = useRef(0);   // 0 — открыто, 1 — пока окно не в фокусе, 2 — до нажатия
+    function cover(k) { if (k > cvRef.current) { cvRef.current = k; cv[1](k); } }
+    function open(all) { if (all || cvRef.current === 1) { cvRef.current = 0; cv[1](0); } }
+    useEffect(function () {
+      var root = document.documentElement, mac = /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent || '');
+      root.classList.add('emp-guard');
+      function wipe() { try { navigator.clipboard.writeText('').catch(function () {}); } catch (e) {} }
+      function meta(k) { return k === 'Meta' || k === 'OS'; }
+      function kd(e) {
+        var k = e.key || '';
+        if ((e.ctrlKey || e.metaKey) && /^[sp]$/i.test(k)) { e.preventDefault(); e.stopPropagation(); SAY('grd_no_save'); return; }
+        if (k === 'PrintScreen') { cover(2); wipe(); return; }
+        if (e.metaKey && (e.shiftKey || k === 'Shift')) { cover(2); return; }
+        if (!mac && meta(k)) cover(1);
+      }
+      function ku(e) {
+        var k = e.key || '';
+        if (k === 'PrintScreen') { e.preventDefault(); cover(2); wipe(); SAY('grd_shot'); return; }
+        if (meta(k) && document.hasFocus()) open(false);
+      }
+      /* фокус ушёл: другое окно или программа. Клик во встроенное видео (iframe) — не уход */
+      function blur() { setTimeout(function () { var a = document.activeElement; if (a && a.tagName === 'IFRAME') return; if (!document.hasFocus()) cover(1); }, 0); }
+      function focus() { open(false); }
+      function vis() { if (document.hidden) cover(1); else if (document.hasFocus()) open(false); }
+      function block(e) { if (!guardOk(e.target)) e.preventDefault(); }
+      function bp() { cover(2); }
+      var L = [[window, 'keydown', kd, true], [window, 'keyup', ku, true], [window, 'blur', blur, false], [window, 'focus', focus, false], [document, 'visibilitychange', vis, false],
+        [document, 'contextmenu', block, true], [document, 'copy', block, true], [document, 'cut', block, true], [document, 'dragstart', block, true], [window, 'beforeprint', bp, false]];
+      L.forEach(function (x) { x[0].addEventListener(x[1], x[2], x[3]); });
+      return function () { root.classList.remove('emp-guard'); L.forEach(function (x) { x[0].removeEventListener(x[1], x[2], x[3]); }); };
+    }, []);
+    /* плитка шире надписи (≈7,5 px на знак при 13 px), чтобы строка не обрезалась краем плитки */
+    var mark = [u.name, u.login, fmtDate(Date.now())].filter(Boolean).join(' · '), tw = Math.max(520, Math.round(mark.length * 7.5 + 60) * 2);
+    return h(F, null,
+      h('svg', { className: 'grd-wm', 'aria-hidden': true, focusable: 'false' },
+        h('defs', null, h('pattern', { id: 'grd-wm-p', width: tw, height: 220, patternUnits: 'userSpaceOnUse', patternTransform: 'rotate(-24)' },
+          h('text', { x: 20, y: 60 }, mark), h('text', { x: tw / 2 + 20, y: 170 }, mark))),
+        h('rect', { width: '100%', height: '100%', fill: 'url(#grd-wm-p)' })),
+      cv[0] ? h('div', { className: 'grd-cover', role: 'alertdialog', 'aria-modal': true, 'aria-label': t('grd_cover_t'), onClick: function () { if (document.hasFocus()) open(true); } },
+        h('img', { src: LOGO_W, alt: 'BURAQ logistics', width: 116, height: 40 }),
+        h('b', null, t('grd_cover_t')), h('p', null, t('grd_cover_s')),
+        h('span', { className: 'grd-cover-go' }, t('grd_cover_go'))) : null);
+  }
+  function PdfPages(p) {
+    var t = p.t, box = useRef(null), st = useState({ st: 'wait', n: 0 }), docRef = useRef(null), tick = useState(0);
+    useEffect(function () {
+      var live = true, task = null;
+      st[1]({ st: 'wait', n: 0 });
+      pdfjsLoad().then(function (L) { task = L.getDocument({ url: p.url, isEvalSupported: false }); return task.promise; })
+        .then(function (doc) { if (!live) return; docRef.current = doc; st[1]({ st: 'ok', n: doc.numPages }); if (p.onSeen) p.onSeen(); })
+        .catch(function () { if (live) st[1]({ st: 'err', n: 0 }); });
+      return function () { live = false; if (task && task.destroy) task.destroy(); };
+    }, [p.url, tick[0]]);
+    /* страницы рисуются, когда подходят к экрану (Ctrl+S / Ctrl+P закрывает Guard) */
+    useEffect(function () {
+      if (st[0].st !== 'ok') return;
+      var el = box.current, doc = docRef.current; if (!el || !doc) return;
+      var done = {};
+      function draw(cv) {
+        var i = +cv.getAttribute('data-p'); if (done[i]) return; done[i] = 1;
+        doc.getPage(i).then(function (pg) {
+          var w = Math.max(280, Math.min(el.clientWidth - 24, 1000)), v1 = pg.getViewport({ scale: 1 }), dpr = Math.min(window.devicePixelRatio || 1, 2), vp = pg.getViewport({ scale: w / v1.width * dpr });
+          cv.width = Math.floor(vp.width); cv.height = Math.floor(vp.height);
+          cv.style.width = Math.round(vp.width / dpr) + 'px'; cv.style.height = Math.round(vp.height / dpr) + 'px'; cv.style.aspectRatio = 'auto';
+          return pg.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
+        }).catch(function () {});
+      }
+      var cvs = [].slice.call(el.querySelectorAll('canvas[data-p]'));
+      if (!window.IntersectionObserver) { cvs.forEach(draw); return; }
+      var io = new IntersectionObserver(function (es) { es.forEach(function (e) { if (e.isIntersecting) draw(e.target); }); }, { root: el, rootMargin: '800px 0px' });
+      cvs.forEach(function (c) { io.observe(c); });
+      return function () { io.disconnect(); };
+    }, [st[0].st, st[0].n]);
+    if (st[0].st === 'wait') return h('div', { className: 'dv-msg' }, h('span', { className: 'dv-spin', 'aria-hidden': true }), t('in_doc_loading'));
+    if (st[0].st === 'err') return h('div', { className: 'dv-msg' }, h('p', null, t('in_doc_err_view')), h(Btn, { variant: 'outline', size: 'sm', onClick: function () { tick[1](tick[0] + 1); } }, t('retry')));
+    var pages = []; for (var i = 1; i <= st[0].n; i++) pages.push(h('canvas', { key: i, 'data-p': i, className: 'pdfv-page', draggable: false, 'aria-label': tpl(t('pdf_page'), { n: i, m: st[0].n }) }));
+    return h('div', { ref: box, className: 'pdfv', onContextMenu: noSave, onDragStart: noSave, onCopy: noSave }, pages);
+  }
   function docBody(t, d, x, onSeen, canDl) {
     var k = docKind(d), seen = function () { if (onSeen) onSeen(); }, dl = function () { seen(); docSave(d); };
     var dlBtn = function (variant) { return canDl ? (variant ? h(Btn, { variant: 'primary', onClick: dl }, t('in_doc_dl')) : h('button', { type: 'button', className: 'app-link', onClick: dl }, t('in_doc_dl'))) : null; };
     if (x.st === 'wait') return h('div', { className: 'dv-msg' }, h('span', { className: 'dv-spin', 'aria-hidden': true }), t('in_doc_loading'));
     if (x.st === 'err') return h('div', { className: 'dv-msg' }, h('p', null, t(canDl ? 'in_doc_err' : 'in_doc_err_view')), dlBtn(true));
-    if (k === 'pdf' && pdfInline()) return h('iframe', { className: 'dv-pdf', src: canDl ? x.url : pdfSrc(x.url), title: docTitle(d) });
+    if (k === 'pdf' && !canDl) return h(PdfPages, { key: x.url, t: t, url: x.url, onSeen: seen });
+    if (k === 'pdf' && pdfInline()) return h('iframe', { className: 'dv-pdf', src: x.url, title: docTitle(d) });
     if (k === 'pdf') return h('div', { className: 'dv-msg dv-alt' },
       h('span', { className: 'jf-ext dv-alt-ext' }, 'PDF'),
       h('b', null, docTitle(d)),
       h('p', null, t(navigator.pdfViewerEnabled === false ? 'in_doc_noinline' : 'in_doc_phone')),
       h('a', { className: 'lor-btn lor-btn-primary dv-open', href: canDl ? x.url : pdfSrc(x.url), target: '_blank', rel: 'noopener', onClick: seen }, t('in_doc_open')),
       dlBtn(false));
-    if (k === 'docx' && x.html) return h('div', { className: 'dv-doc sop-body', dangerouslySetInnerHTML: { __html: x.html } });
+    if (k === 'docx' && x.html) return h('div', { className: cx('dv-doc sop-body', !canDl && 'is-guard'), onContextMenu: canDl ? null : noSave, onCopy: canDl ? null : noSave, onDragStart: canDl ? null : noSave, dangerouslySetInnerHTML: { __html: x.html } });
     return h('div', { className: 'dv-msg' }, h('p', null, t(canDl ? (k === 'docx' ? 'in_doc_empty' : 'in_doc_nopreview') : (k === 'docx' ? 'in_doc_empty_view' : 'in_doc_nopreview_view'))), dlBtn(true));
   }
   function docInline(d, x) { var k = docKind(d); return x.st === 'ok' && (k === 'pdf' ? pdfInline() : k === 'docx' && !!x.html); }
@@ -4285,14 +4387,15 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       }))));
   }
 
-  /* document templates attached to a journal — blank forms the employee downloads */
+  /* document templates attached to a journal — blank forms; the employee (GUARD) only views them: onOpen → DocViewer */
   function TemplateList(p) {
     var t = p.t, files = p.files || [];
     if (!files.length) return p.empty ? h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('jf_none')) : null;
     return h('div', { className: 'jf-list' }, files.map(function (f) {
       return h('div', { key: f.id, className: 'jf-item' },
         h('span', { className: 'jf-ext' }, fileExt(f.name)),
-        h('a', { className: 'jf-name', href: f.data, download: f.name, onClick: saveLink(f.name) }, f.name, h('small', null, fileSize(f.size || 0))),
+        p.onOpen ? h('button', { type: 'button', className: 'jf-name', onClick: function () { p.onOpen(f); } }, f.name, h('small', null, fileSize(f.size || 0)))
+          : h('a', { className: 'jf-name', href: f.data, download: f.name, onClick: saveLink(f.name) }, f.name, h('small', null, fileSize(f.size || 0))),
         p.onDel ? h('button', { type: 'button', className: 'app-link danger', onClick: function () { p.onDel(f.id); } }, t('remove')) : null);
     }));
   }
@@ -4322,7 +4425,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   }
 
   function JournalView(p) {
-    var t = p.t, db = p.db, u = p.user, j = p.j, q = useState(''), add = useState(false);
+    var t = p.t, db = p.db, u = p.user, j = p.j, q = useState(''), add = useState(false), vw = useState(null);
     var rows = (j.rows || []).slice().sort(function (a, b) { return b.at - a.at; })
       .filter(function (r) { return !q[0].trim() || rowText(db, j, r).toLowerCase().indexOf(q[0].trim().toLowerCase()) >= 0; });
     var may = canAddRow(db, u, j);
@@ -4339,7 +4442,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       (j.files || []).length ? h('section', { className: 'box jf-box' },
         h('span', { className: 'lor-eyebrow' }, t('jf_title') + ' · ' + j.files.length),
         h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('jf_sub')),
-        h(TemplateList, { t: t, files: j.files })) : null,
+        h(TemplateList, { t: t, files: j.files, onOpen: GUARD ? vw[1] : null })) : null,
+      vw[0] ? h(DocViewer, { t: t, doc: vw[0], onClose: function () { vw[1](null); } }) : null,
       h('div', { className: 'filters' }, h(Field, { name: 'jr-q-' + j.id, label: t('cs_search'), value: q[0], placeholder: t('jr_search_ph'), onChange: q[1] }),
         may ? h('div', { className: 'jr-add-btn' }, h(Btn, { variant: add[0] ? 'ghost' : 'primary', onClick: function () { add[1](!add[0]); } }, add[0] ? t('cancel') : '+ ' + t('jr_add_row'))) : null),
       add[0] && may ? h(RowForm, Object.assign({}, p, { j: j, onCancel: function () { add[1](false); }, onDone: function () { add[1](false); } })) : null,
@@ -7003,6 +7107,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   }
   function XtFile(p) {
     var f = p.f; if (!f) return null;
+    if (GUARD) return h('span', { className: 'xt-file' }, h(Ico, { name: 'clip', size: 14 }), f.name, h('small', null, fileSize(f.size || 0)));
     return h('a', { className: 'xt-file', href: f.data, download: f.name, target: '_blank', rel: 'noopener', onClick: saveLink(f.name) }, h(Ico, { name: 'clip', size: 14 }), f.name, h('small', null, fileSize(f.size || 0)));
   }
 
@@ -10439,6 +10544,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     useEffect(function () { document.documentElement.lang = lang; }, [lang]);
     var user = db.users.filter(function (u) { return u.id === db.session; })[0];
     SAY = function (k) { ts[1]({ msg: t(k), k: Date.now() }); };
+    GUARD = !!(user && user.role === 'employee');
     /* the 1st of a month (or the first open after it): the closed month's report goes out — from the SOP manager's device */
     var due = monthlyDue(db, Date.now()), canIssue = !!(user && user.role === 'admin');
     useEffect(function () { if (due && canIssue) update(function (d) { if (monthlyDue(d, Date.now()) === due) issueMonthly(d, due); }); }, [due, canIssue]);
@@ -10459,7 +10565,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       : h(EmployeeApp, Object.assign({ key: 'e' + user.id }, p));
     return h(F, null, view, tm[0] ? h(TermsModal, { t: t, lang: lang, acceptedAt: user && user.termsAcceptedAt, onClose: function () { tm[1](false); } }) : null,
       user && pf[0] ? h(ProfileModal, Object.assign({}, p, { key: 'pf' + user.id, onClose: function () { pf[1](false); } })) : null,
-      user ? h(SyncChip, { t: t, admin: user.role === 'admin', say: p.say }) : null, h(Toast, { toast: toast }));
+      user ? h(SyncChip, { t: t, admin: user.role === 'admin', say: p.say }) : null, h(Toast, { toast: toast }),
+      GUARD ? h(Guard, { key: 'g' + user.id, t: t, user: user }) : null);
   }
 
   /* no server address in config.js: without the server the platform does not work (there is no demo any more) */

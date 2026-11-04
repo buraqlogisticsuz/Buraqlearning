@@ -816,15 +816,34 @@ try {
   await E.locator('.ir-lay').nth(0).click();
   assert.deepEqual([await E.locator('.ir-doc').count(), await E.locator('.ir-side').count()], [1, 1], 'снова оба окна');
   await E.locator('.ir-tab').nth(1).click();
-  // PDF: встроенный просмотр, а где браузер не умеет (headless, Android) — кнопка «Hujjatni ochish» с тем же файлом
-  await E.locator('.ir iframe.dv-pdf[src^="blob:"], .ir a.dv-open[href^="blob:"]').waitFor({ timeout: 8000 });
+  // PDF у сотрудника — страницы картинками (pdf.js): ни просмотра браузера (в нём «сохранить» и «печать»), ни ссылки на файл
+  await E.locator('.ir .pdfv canvas.pdfv-page').first().waitFor({ timeout: 15000 });
+  await E.waitForFunction(() => { const c = document.querySelector('.ir .pdfv canvas.pdfv-page'); return c && c.width > 100; }, null, { timeout: 15000 });
+  assert.equal(await E.locator('.ir iframe.dv-pdf, .ir a.dv-open, .ir a[href^="blob:"], .ir a[download]').count(), 0, 'ни встроенного просмотра, ни ссылки на файл');
   assert.equal(await E.getByRole('button', { name: 'Yuklab olish' }).count(), 0, 'сотруднику «Yuklab olish» не показывается');
   assert.equal(await E.locator('.ir .ir-doc-bar a', { hasText: 'Yangi oynada ochish' }).count(), 0, 'и «Yangi oynada ochish» — тоже');
-  { const src = await E.locator('.ir iframe.dv-pdf').getAttribute('src').catch(() => null) || await E.locator('.ir a.dv-open').getAttribute('href');
-    assert.match(src, /#toolbar=0/, 'PDF — без панели встроенного просмотра (скачать / печать)'); }
   assert.ok(await E.locator('.ir-side iframe[src*="dQw4w9WgXcQ"]').count(), 'у PDF своего видео нет — справа общее видео знакомства');
-  if (await E.locator('.ir a.dv-open').count()) { const [tab] = await Promise.all([E.context().waitForEvent('page'), E.locator('.ir a.dv-open').click()]); await tab.close(); }
   assert.equal(await E.locator('.ir-tab.is-seen').count(), 2, 'оба документа отмечены открытыми');
+  // защита: правая кнопка, копирование, Ctrl+S / Ctrl+P — отменены; поля ввода — как обычно; водяной знак с логином
+  { const g = await E.evaluate(() => {
+      const ev = (el, e) => { el.dispatchEvent(e); return e.defaultPrevented; }, cv = document.querySelector('.ir .pdfv canvas');
+      const inp = document.createElement('input'); document.body.appendChild(inp);
+      const r = { cls: document.documentElement.classList.contains('emp-guard'),
+        ctx: ev(cv, new MouseEvent('contextmenu', { bubbles: true, cancelable: true })), ctxInput: ev(inp, new MouseEvent('contextmenu', { bubbles: true, cancelable: true })),
+        copy: ev(cv, new Event('copy', { bubbles: true, cancelable: true })), drag: ev(cv, new Event('dragstart', { bubbles: true, cancelable: true })),
+        save: ev(window, new KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true, cancelable: true })),
+        print: ev(window, new KeyboardEvent('keydown', { key: 'p', ctrlKey: true, bubbles: true, cancelable: true })),
+        mark: [...document.querySelectorAll('.grd-wm text')].map(x => x.textContent) };
+      inp.remove(); return r; });
+    assert.ok(g.cls && g.ctx && g.copy && g.drag && g.save && g.print, 'правая кнопка, копирование, перетаскивание, Ctrl+S / Ctrl+P закрыты: ' + JSON.stringify(g));
+    assert.equal(g.ctxInput, false, 'в поле ввода правая кнопка работает');
+    assert.ok(g.mark.length === 2 && g.mark.every(x => x.includes(srv.g.state().users.find(u => u.id === emp.id).login)), 'водяной знак с логином: ' + g.mark.join(' | ')); }
+  // PrintScreen — экран закрывается синим до нажатия
+  await E.evaluate(() => window.dispatchEvent(new KeyboardEvent('keyup', { key: 'PrintScreen', bubbles: true })));
+  await E.locator('.grd-cover').waitFor({ timeout: 3000 });
+  await shot(E, 'ekran-yopildi');
+  await E.locator('.grd-cover').click(); await E.waitForTimeout(150);
+  assert.equal(await E.locator('.grd-cover').count(), 0, 'нажал — экран снова открыт');
   await E.check('#in-seen'); await E.locator('.ir-actions button:has-text("Tasdiqlash")').click(); await settle(E);
   assert.ok(srv.g.state().users.find(u => u.id === emp.id).introSeenAt, 'знакомство подтверждено — на сервере');
   assert.equal(await E.locator('.ir').count(), 0, 'экран знакомства закрылся');
@@ -1460,8 +1479,8 @@ try {
   assert.equal(await J.getByRole('button', { name: 'O‘tkazib yuborish' }).count(), 0, 'знакомство по программе — после, не поверх');
   await J.locator('.ir .dv-doc').waitFor({ timeout: 8000 });
   await J.locator('.ir-tab').nth(1).click();
-  await J.locator('.ir iframe.dv-pdf[src^="blob:"], .ir a.dv-open[href^="blob:"]').waitFor({ timeout: 8000 });
-  if (await J.locator('.ir a.dv-open').count()) { const [tab] = await Promise.all([J.context().waitForEvent('page'), J.locator('.ir a.dv-open').click()]); await tab.close(); }
+  await J.locator('.ir .pdfv canvas.pdfv-page').first().waitFor({ timeout: 15000 });
+  await J.locator('.ir-tab.is-seen').nth(1).waitFor({ timeout: 8000 });
   await shot(J, 'tanishuv-oxirgi-qadam');
   await J.check('#in-seen'); await J.locator('.ir-actions button:has-text("Tasdiqlash")').click(); await settle(J);
   assert.ok(srv.g.state().users.find(u => u.id === jid).introSeenAt, 'знакомство подтверждено — на сервере');
