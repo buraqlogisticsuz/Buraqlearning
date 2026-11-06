@@ -140,7 +140,7 @@ export function loadServer({ dir, env = process.env, iter, log = console.log } =
     // ночную копию запускает server/index.mjs по своему таймеру
     ScriptApp: {
       getProjectTriggers: () => [], deleteTrigger: () => {},
-      newTrigger: () => { const b = { timeBased: () => b, atHour: () => b, everyDays: () => b, inTimezone: () => b, create: () => ({}) }; return b; }
+      newTrigger: () => { const b = { timeBased: () => b, atHour: () => b, everyDays: () => b, everyHours: () => b, inTimezone: () => b, create: () => ({}) }; return b; }
     },
     Logger: { log: s => log(String(s)) },
     // ИИ на Node идёт мимо UrlFetchApp: server/index.mjs вызывает aiRequest_, fetch и aiResult_

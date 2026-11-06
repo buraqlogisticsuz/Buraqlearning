@@ -21,7 +21,7 @@
  *
  * Запрос — POST с JSON { action, token, … }, ответ — JSON { ok, … } или { ok: false, code, error }.
  */
-var LMS_VERSION = 19;          // 2: файлы — отдельно на Диске, действие file; 3: ИИ через Claude API (действие ai);
+var LMS_VERSION = 20;          // 20: защита правок (id карточек, тест — одна попытка, балл и статусы, минуты учёбы, уведомления другим);  2: файлы — отдельно на Диске, действие file; 3: ИИ через Claude API (действие ai);
                                // 4: адресаты идей — CEO, Project Manager, руководитель компании (свой вход, role 'leader');
                                // 5: у идеи несколько адресатов (to — список), repliedBy — кто ответил;
                                // 6: свой профиль — имя и фото, смена логина и пароля (действие account);
@@ -236,17 +236,34 @@ function ppSnap_(st) {
   (st.users || []).forEach(function (u) { var r = ppRef_(u), f = r && u.profile.passportFile; if (r) m[String(u.id)] = { ref: r, at: f.at, dlAt: f.dlAt, dlBy: f.dlBy, warned: f.warned }; });
   return m;
 }
+/* id нового уведомления: время + случайная часть, но не занятый — одинаковые id ломают правки списка (v20) */
+function nid_(st) {
+  var used = {}; (st.notifications || []).forEach(function (n) { if (n) used[String(n.id)] = 1; });
+  var id = now_() * 100 + Math.floor(Math.random() * 100); while (used[String(id)]) id++;
+  return id;
+}
+/* уведомления с одинаковыми id (от серверов до v20) — разводятся, иначе правка одного переписывала бы весь список */
+function nidFix_(st) {
+  var seen = {}, n = 0;
+  (st.notifications || []).forEach(function (x) { if (!x) return; while (seen[String(x.id)]) { x.id = +x.id + 1; n++; } seen[String(x.id)] = 1; });
+  return n;
+}
 function ppNotify_(st, kind, u, extra) {
   var t = now_(), to = (st.users || []).filter(function (x) { return lvl_(x) === 'sop'; });
   if (!to.length) to = (st.users || []).filter(function (x) { return lvl_(x) === 'ceo'; });
   st.notifications = st.notifications || [];
-  to.forEach(function (a, k) {
-    st.notifications.unshift({ id: t * 100 + ((Math.floor(Math.random() * 90) + k) % 100), userId: a.id, kind: kind, text: '', route: 'staff', at: t, read: false, pp: Object.assign({ uid: u.id, name: String(u.name || '') }, extra || {}) });
+  to.forEach(function (a) {
+    st.notifications.unshift({ id: nid_(st), userId: a.id, kind: kind, text: '', route: 'staff', at: t, read: false, pp: Object.assign({ uid: u.id, name: String(u.name || '') }, extra || {}) });
   });
 }
 /* после правок: новый файл — время загрузки и уведомление; прежний — служебные поля из сервера (admin может отметить скачивание) */
 function ppTrack_(st, prev, admin) {
   var n = 0, t = now_();
+  // прежний скан заменили новым или убрали — прежний файл тоже в корзину (ppTrash_ не тронет файл, на который ещё есть ссылка)
+  Object.keys(prev).forEach(function (id) {
+    var u = (st.users || []).filter(function (x) { return String(x.id) === id; })[0];
+    if (ppRef_(u) !== prev[id].ref) PP_TRASH = (PP_TRASH || []).concat([prev[id].ref.slice(8)]);
+  });
   (st.users || []).forEach(function (u) {
     var r = ppRef_(u); if (!r) return;
     var f = u.profile.passportFile, p = prev[String(u.id)];
@@ -385,7 +402,7 @@ function login_(req) {
   var hash = pbkdf2_(pw, cred ? cred.salt : 'x', cred ? cred.iter : PBKDF2_ITER);
   // пароль, скопированный с пробелом или с точкой после него (так он стоял в старой строке журнала), — ещё одна попытка
   var bare = pw.trim().replace(/\.$/, '');
-  if (cred && hash !== cred.hash && bare && bare !== pw) hash = pbkdf2_(bare, cred.salt, cred.iter);
+  if (bare && bare !== pw) { var h2 = pbkdf2_(bare, cred ? cred.salt : 'x', cred ? cred.iter : PBKDF2_ITER); if (cred && hash !== cred.hash) hash = h2; }   // и без логина — то же время
   var st = cred && hash === cred.hash ? readState_() : null, user = st ? userById_(st, cred.uid) : null;
   if (!user) {
     var n = (f && !f.until ? f.n : 0) + 1;
@@ -489,6 +506,12 @@ function canSee_(u, a) {
   return true;
 }
 
+/* глава видна этому человеку (section.aud / section.users) — для вида и для теста урока (v20) */
+function secSeen_(s, me) {
+  var a = s.aud || ((s.users || []).length ? { users: s.users } : null), uid = String(me.id);
+  if (me.role === 'admin' || !a || !(a.all || (a.positions || []).length || (a.depts || []).length || (a.users || []).length)) return true;
+  return !!(a.all || (a.positions || []).indexOf(me.position) >= 0 || (a.depts || []).indexOf(me.department) >= 0 || (a.users || []).some(function (x) { return String(x) === uid; }));
+}
 /* своя карточка — целиком, кроме вывода руководства по анкете (qaReport): его видят только CEO, SOP-менеджер и руководитель */
 function ownCard_(u) { var c = clone_(u); delete c.qaReport; return c; }
 function viewFor_(st, me) {
@@ -505,9 +528,8 @@ function viewFor_(st, me) {
   // глава для выбранных (section.aud: все, должности, отделы, имена; section.users — имена, v11) — только тем, кто подходит;
   // в списке имён каждый видит только себя
   if (v.course) v.course.sections = (v.course.sections || []).filter(function (s) {
-    var a = s.aud || ((s.users || []).length ? { users: s.users } : null), mine = function (x) { return String(x) === uid; };
-    if (!a || !(a.all || (a.positions || []).length || (a.depts || []).length || (a.users || []).length)) return true;
-    if (!(a.all || (a.positions || []).indexOf(me.position) >= 0 || (a.depts || []).indexOf(me.department) >= 0 || (a.users || []).some(mine))) return false;
+    var mine = function (x) { return String(x) === uid; };
+    if (!secSeen_(s, me)) return false;
     if (s.aud && s.aud.users) s.aud.users = s.aud.users.filter(mine);
     if (s.users) s.users = s.users.filter(mine);
     return true;
@@ -592,11 +614,11 @@ var LOCKED_USER = ['id', 'role', 'post', 'login', 'password', 'tg', 'status', 'p
 var OWN = { requests: 'userId', notifications: 'userId', assets: 'uid', surveys: 'uid', initiatives: 'uid', drills: 'uid', audit: 'userId', errors: 'uid', xtasks: 'uid' };
 // поля своих записей, которые ставит SOP-менеджер или наставник
 var LOCKED_ITEM = {
-  requests: ['verdict', 'reply', 'repliedAt'],
+  requests: ['verdict', 'reply', 'repliedAt', 'score', 'type', 'lessonId', 'unread', 'closedAt'],   // балл теста пишет сервер (quiz_)
   initiatives: ['status', 'reply', 'repliedAt', 'acceptedAt', 'to'],   // ответ ставит адресат, адресата не сменить
   xtasks: ['title', 'desc', 'due', 'xp', 'scale', 'li', 'by', 'at', 'review', 'doneAt'],
-  errors: ['by', 'at', 'lessonId', 'cat', 'sev', 'text', 'impact', 'closedAt'],
-  assets: ['confirmedAt', 'resolved', 'mismatch', 'returnedAt'],   // о проблеме (issue) сотрудник сообщает сам
+  errors: ['by', 'at', 'lessonId', 'cat', 'sev', 'text', 'impact', 'closedAt', 'status', 'retest'],   // повторную проверку закрывает сервер (retest_)
+  assets: ['resolved', 'returnedAt'],   // о проблеме (issue) сотрудник сообщает сам; confirmedAt и mismatch — только в ответ на выданное (ownField_)
   audit: [], notifications: [], surveys: [], drills: []
 };
 var EMP_LESSON_STATUS = ['in-progress', 'question', 'exam-ready'];
@@ -604,6 +626,43 @@ var EMP_LESSON_STATUS = ['in-progress', 'question', 'exam-ready'];
 var DEVICE_KEYS = ['rev', 'session', 'lang'];
 
 function isId_(s) { return LmsSync.isIdSeg(s); }
+
+/* статус своей записи (v20): сверхзадача — «на проверке» / «в работе»; заявка — только закрыть свою открытую;
+   имущество — ответ на выданное (принял / не совпадает) и сообщение о проблеме; самодекларацию подтверждает SOP */
+function ownStatus_(top, item, v) {
+  if (top === 'xtasks') return ['review', 'open'].indexOf(v) >= 0 ? null : 'итог сверхзадачи ставит SOP-менеджер';
+  if (top === 'requests') return item.state === 'open' && v === 'closed' ? null : 'заявку закрывает SOP-менеджер';
+  if (top === 'assets') {
+    if (item.status === 'issued' && (v === 'active' || v === 'mismatch')) return null;
+    if (v === 'issue' && ['active', 'issue'].indexOf(item.status) >= 0) return null;
+    return 'статус имущества меняет SOP-менеджер';
+  }
+  return null;
+}
+/* поле своей записи, которое можно только в ответ на выданное имущество: «принял» (confirmedAt) и «не совпадает» (mismatch) */
+function ownField_(top, item, k) {
+  if (top !== 'assets' || (k !== 'confirmedAt' && k !== 'mismatch')) return null;
+  if (k === 'mismatch') return ['issued', 'mismatch'].indexOf(item.status) >= 0 ? null : 'поле «mismatch» меняет SOP-менеджер';
+  return ['issued', 'active'].indexOf(item.status) >= 0 && !item.confirmedAt ? null : 'поле «confirmedAt» меняет SOP-менеджер';
+}
+
+/* минуты учёбы (v20): день — ГГГГ-ММ-ДД не дальше суток от сегодняшнего по Ташкенту, минут — от 0 до 1440; прошлые дни не правятся */
+function studyDayOk_(k) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(k)) return false;
+  var d = Date.parse(k + 'T00:00:00Z'), today = Date.parse(new Date(now_() + 5 * 3600e3).toISOString().slice(0, 10) + 'T00:00:00Z');
+  return Math.abs(d - today) <= 864e5;
+}
+function studyMinOk_(v) { return typeof v === 'number' && isFinite(v) && v >= 0 && v <= 1440; }
+function checkStudy_(cur, p, op) {
+  if (op.op === 'del') return 'минуты учёбы не удаляются';
+  var bad = function (k, v) { return LmsSync.equal(cur[k], v) ? null : !studyDayOk_(k) ? 'минуты — только за сегодня' : !studyMinOk_(v) ? 'неверное число минут' : null; };
+  if (p.length === 2) {
+    if (!op.value || typeof op.value !== 'object' || Array.isArray(op.value)) return 'неверные минуты учёбы';
+    if (Object.keys(cur).some(function (k) { return !(k in op.value); })) return 'минуты учёбы не удаляются';
+    return Object.keys(op.value).map(function (k) { return bad(k, op.value[k]); }).filter(Boolean)[0] || null;
+  }
+  return p.length === 3 ? bad(String(p[2]), op.value) : 'неверный путь';
+}
 
 /* правка сотрудника: null — можно, иначе причина отказа */
 function checkEmployee_(st, me, op) {
@@ -629,6 +688,7 @@ function checkEmployee_(st, me, op) {
     var cur = (st.progress || {})[uid] || {};
     if (p.length === 2) {
       if (!op.value || typeof op.value !== 'object') return 'неверный прогресс';
+      if (Object.keys(cur).some(function (lid) { return !(lid in op.value); })) return 'прогресс не удаляется';
       return Object.keys(op.value).map(function (lid) { return checkLesson_(cur[lid], op.value[lid]); }).filter(Boolean)[0] || null;
     }
     if (p.length === 3) return checkLesson_(cur[p[2]], op.value);
@@ -636,7 +696,8 @@ function checkEmployee_(st, me, op) {
     return p.length === 4 ? checkLesson_(cur[p[2]], Object.assign({}, cur[p[2]] || {}, patch)) : 'неверный путь прогресса';
   }
 
-  if (top === 'study' || top === 'reminded') return p[1] === uid ? null : 'чужие данные';
+  if (top === 'reminded') return p[1] === uid ? null : 'чужие данные';
+  if (top === 'study') return p[1] !== uid ? 'чужие данные' : checkStudy_(((st.study || {})[uid]) || {}, p, op);
 
   if (top === 'sopUpdates') {
     // «ознакомлен» с новой редакцией стандарта — только своя отметка
@@ -680,12 +741,14 @@ function checkEmployee_(st, me, op) {
     var locked = (LOCKED_ITEM[top] || []).concat([f, 'id']), who = top === 'initiatives' ? 'адресат идеи' : 'SOP-менеджер';
     if (p.length === 2) {
       var bad = locked.filter(function (k) { return !LmsSync.equal(item[k], (op.value || {})[k]); })[0];
-      return bad ? 'поле «' + bad + '» меняет ' + who : null;
+      if (bad) return 'поле «' + bad + '» меняет ' + who;
+      var nv = op.value || {}, sk = top === 'requests' ? 'state' : 'status';
+      if (!LmsSync.equal(item[sk], nv[sk])) { var sb = ownStatus_(top, item, nv[sk]); if (sb) return sb; }
+      return ['confirmedAt', 'mismatch'].filter(function (k) { return !LmsSync.equal(item[k], nv[k]); }).map(function (k) { return ownField_(top, item, k); }).filter(Boolean)[0] || null;
     }
     if (locked.indexOf(p[2]) >= 0) return 'поле «' + p[2] + '» меняет ' + who;
-    if (top === 'xtasks' && p[2] === 'status' && ['review', 'open'].indexOf(op.value) < 0) return 'итог сверхзадачи ставит SOP-менеджер';
-    if (top === 'errors' && p[2] === 'status' && op.value === 'closed') return 'ошибку закрывает наставник';
-    return null;
+    var sk3 = top === 'requests' ? 'state' : 'status';
+    return p[2] === sk3 ? (p.length === 3 && op.op === 'set' ? ownStatus_(top, item, op.value) : 'неверный статус') : ownField_(top, item, p[2]);
   }
 
   return 'нет прав на «' + top + '»';
@@ -791,10 +854,14 @@ function checkLesson_(cur, next) {
   cur = cur || {};
   if (!next || typeof next !== 'object') return 'неверная запись урока';
   if (cur.status === 'passed' && next.status !== 'passed') return 'урок уже сдан';
+  // тест пройден и ждёт итога SOP-менеджера: ни статус, ни балл не трогаются — иначе тест можно было бы пересдать (v20)
+  if (cur.status === 'exam-ready' && cur.score != null && !(next.status === 'exam-ready' && LmsSync.equal(next.score, cur.score))) return 'тест уже пройден — итог ставит SOP-менеджер';
   if (next.status !== cur.status && EMP_LESSON_STATUS.indexOf(next.status) < 0) return 'итог урока ставит SOP-менеджер';
-  var bad = Object.keys(next).filter(function (k) {
+  // и поля, которых в новой записи нет (удаление), — тоже правка
+  var keys = Object.keys(cur).concat(Object.keys(next)).filter(function (k, i, a) { return a.indexOf(k) === i; });
+  var bad = keys.filter(function (k) {
     if (k === 'status' || k === 'at') return false;
-    if (k === 'score' || k === 'comment') return !(next[k] === null || LmsSync.equal(next[k], cur[k]));
+    if (k === 'score' || k === 'comment') return !(next[k] == null || LmsSync.equal(next[k], cur[k]));
     return !LmsSync.equal(next[k], cur[k]);
   })[0];
   if (bad === 'score') return 'балл ставит сервер по ответам теста';
@@ -804,17 +871,46 @@ function checkLesson_(cur, next) {
 function checkNew_(top, me, value) {
   var uid = String(me.id);
   if (!value || typeof value !== 'object') return 'пустая запись';
-  // уведомить SOP-менеджера или наставника о своём действии; поздравление с уровнем (экран с салютом) — только себе
-  if (top === 'notifications') return value.promo && String(value.userId) !== uid ? 'поздравление с уровнем отправляет SOP-менеджер' : null;
-  if (top === 'errors') return me.mentor && String(value.by) === uid ? null : 'ошибку записывает наставник';
+  // себе — любое уведомление; другим (v20) — только о своём действии: идея руководству, попытка снимка экрана,
+  // сверхзадача сдана на проверку, ошибка от наставника, ответ PM / руководителя на идею. Поздравление с уровнем — только себе
+  if (top === 'notifications') {
+    if (String(value.userId) === uid) return null;
+    if (value.promo) return 'поздравление с уровнем отправляет SOP-менеджер';
+    var lead = me.role === 'leader' || lvl_(me) === 'boss';
+    var okKind = value.kind === 'shot' || value.kind === 'ini_in' || (value.kind === 'xt' && value.xt && value.xt.k === 'sub') || (value.kind === 'err' && me.mentor) || (value.kind === 'ini' && lead);
+    return okKind && !value.text ? null : 'уведомление другому — только о своём действии';
+  }
+  if (top === 'errors') {
+    if (!me.mentor || String(value.by) !== uid) return 'ошибку записывает наставник';
+    return ['open', 'assigned'].indexOf(value.status) >= 0 && value.retest == null && value.closedAt == null ? null : 'новая ошибка — «открыта» или «повторная проверка»';
+  }
   if (top === 'xtasks') return 'сверхзадачу выдаёт SOP-менеджер';
   if (String(value[OWN[top]]) !== uid) return 'запись — только от своего имени';
+  // новая запись не приходит с полями, которые ставят SOP-менеджер или сервер (v20)
+  if (top === 'requests' && (value.state !== 'open' || value.score != null || ['verdict', 'reply', 'repliedAt', 'closedAt'].some(function (k) { return value[k] != null; }))) return 'новая заявка — открытая, без балла и ответа';
+  if (top === 'assets' && (value.status !== 'declared' || ['confirmedAt', 'resolved', 'mismatch', 'returnedAt'].some(function (k) { return value[k] != null; }))) return 'новое имущество подтверждает SOP-менеджер';
+  if (top === 'drills' && value.score != null && !(typeof value.score === 'number' && value.score >= 0 && value.score <= 5)) return 'оценка тренировки — от 0 до 5';
   if (top === 'initiatives' && value.status && value.status !== 'new') return 'статус идеи ставит её адресат';
   if (top === 'initiatives') {
     var to = iniTo_(value);
     if (!to.length || to.some(function (k, i) { return INI_TO.indexOf(k) < 0 || to.indexOf(k) !== i; })) return 'выберите, кому отправить идею: CEO, Project Manager и (или) руководителю компании';
     if (['reply', 'repliedAt', 'acceptedAt', 'repliedBy'].some(function (k) { return value[k] != null; })) return 'ответ на идею даёт её адресат';
   }
+  return null;
+}
+
+/* карточки людей (v20): id не меняется и не повторяется — 10901 и «10901» один человек (вход и пароль ищутся по тексту).
+   Иначе «новая карточка» с id CEO в виде строки переписала бы его вход */
+function usersIdBad_(st, op) {
+  var p = op.path, dup = function (list) { var seen = {}; return (list || []).some(function (u) { var k = String(u && u.id); if (seen[k]) return true; seen[k] = 1; return false; }); };
+  if (p.length === 1) return op.op === 'set' && dup(op.value) ? 'повторяющийся id карточки' : null;
+  if (!isId_(p[1])) return null;
+  var exact = LmsSync.get(st, p.slice(0, 2)), same = (st.users || []).some(function (u) { return String(u.id) === String(p[1].id); });
+  if (!exact && same) return 'карточка с таким id уже есть';
+  // новая карточка (вставка в список — с after), а id уже занят: два устройства выдали один номер — вторую не принимаем, иначе она заменила бы первую
+  if (exact && p.length === 2 && op.op === 'set' && op.after !== undefined) return 'карточка с таким id уже есть';
+  if (p.length === 2 && op.op === 'set' && (!op.value || op.value.id !== p[1].id)) return 'id карточки не меняется';
+  if (p.length >= 3 && p[2] === 'id') return 'id карточки не меняется';
   return null;
 }
 
@@ -825,17 +921,21 @@ function patch_(s, ops) {
     var st = readState_(), me = me_(st, s), lv = lvl_(me), admin = lv === 'ceo' || lv === 'sop', rejected = [], applied = 0;   // руководитель — как сотрудник: только своё
     // разделы, которых не было в данных прошлых версий (например, зарплата с v9), — пустыми, как у нового сервера
     var empty = emptyState_(); Object.keys(empty).forEach(function (k) { if (st[k] === undefined) st[k] = empty[k]; });
-    var before = admin ? clone_(st.users || []) : null, seen = null, ppPrev = ppSnap_(st);
+    var before = admin ? clone_(st.users || []) : null, seen = null, ppPrev = ppSnap_(st), fixed = nidFix_(st);
     /* ссылка на файл в правке сотрудника — только на файл, который ему и так виден (иначе вписал бы чужой и скачал) */
     function foreignFile(op) {
-      var refs = JSON.stringify(op.value === undefined ? null : op.value).match(/"lmsfile:[\w-]+"/g);
+      // ссылка на файл — и в значении, и в самом пути (ключ «lmsfile:…» тоже открыл бы файл через file_)
+      var refs = (JSON.stringify(op.value === undefined ? null : op.value) + JSON.stringify(op.path || [])).match(/"lmsfile:[\w-]+"/g);
       if (!refs) return false;
       if (seen === null) seen = JSON.stringify(viewFor_(st, me));
       return refs.some(function (r) { return seen.indexOf(r) < 0; });
     }
     ops.forEach(function (op, i) {
       var top = op && Array.isArray(op.path) ? op.path[0] : '';
-      var why = !top ? 'неверная правка' : DEVICE_KEYS.indexOf(top) >= 0 ? '«' + top + '» хранится только на устройстве' : admin ? checkAdmin_(st, op, me) : checkEmployee_(st, me, op) || (foreignFile(op) ? 'чужой файл' : null);
+      var why = !top ? 'неверная правка' : DEVICE_KEYS.indexOf(top) >= 0 ? '«' + top + '» хранится только на устройстве'
+        : top === 'users' && usersIdBad_(st, op) ? usersIdBad_(st, op)
+        : top === 'notifications' && op.path.length === 1 ? 'список уведомлений целиком не меняется'   // у SOP в нём нет чужих (о зарплате) — стёрлись бы
+        : admin ? checkAdmin_(st, op, me) : checkEmployee_(st, me, op) || (foreignFile(op) ? 'чужой файл' : null);
       if (!why && !admin && top === 'notifications' && op.path.length === 2 && op.op === 'set' && !LmsSync.get(st, op.path)) op = Object.assign({}, op, { value: Object.assign({}, op.value, { from: me.id }) });
       if (!why && (top === 'attend' || top === 'users')) { var fo = faceOp_(op); if (fo) op = fo; else why = 'снимков лица платформа больше не хранит'; }
       if (why) { rejected.push({ i: i, reason: why }); return; }
@@ -848,9 +948,9 @@ function patch_(s, ops) {
     if (applied) aiConsentPurge_(st);
     var pp = (applied ? ppTrack_(st, ppPrev, admin) : 0) + ppExpire_(st);
     if ((st.audit || []).length > AUDIT_KEEP) st.audit = st.audit.slice(0, AUDIT_KEEP);
-    if (applied || pp) { st.rev = (+st.rev || 0) + 1; writeState_(st); }
+    if (applied || pp || fixed) { st.rev = (+st.rev || 0) + 1; writeState_(st); }
     if (admin && applied) dropGoneFiles_(st, before);
-    return { ok: true, rev: st.rev, applied: applied, rejected: rejected };
+    return { ok: true, rev: st.rev, applied: applied, rejected: rejected, more: !!(pp || fixed) || undefined };   // more — сервер поменял и сам: странице — заново взять данные
   });
 }
 
@@ -978,6 +1078,7 @@ function quiz_(s, req) {
     (st.course.sections || []).forEach(function (x) { (x.lessons || []).forEach(function (y) { if (y.id === req.lessonId) { sec = x; l = y; } }); });
     if (!l) throw err_('bad', 'Нет такого урока');
     if (sec.officialOnly && me.status !== 'official' && me.role !== 'admin') throw err_('forbidden', 'Раздел откроется после испытательного срока');
+    if (!secSeen_(sec, me)) throw err_('forbidden', 'Эта глава вам не назначена');
     var qs = l.quiz || [], ans = req.answers;
     if (!qs.length) throw err_('bad', 'У урока нет теста');
     if (!Array.isArray(ans) || ans.length !== qs.length) throw err_('bad', 'Ответьте на все вопросы');
@@ -1011,7 +1112,7 @@ function retest_(s, req) {
     if (sc >= PASS_MARK) {
       x.status = 'done'; x.retest = { score: sc, at: t };
       st.notifications = st.notifications || [];
-      st.notifications.unshift({ id: t * 100 + Math.floor(Math.random() * 100), userId: x.by, kind: 'errfix', text: '', route: 'quality', at: t, read: false, err: { name: me.name, ttl: l.title, score: sc } });
+      st.notifications.unshift({ id: nid_(st), userId: x.by, kind: 'errfix', text: '', route: 'quality', at: t, read: false, err: { name: me.name, ttl: l.title, score: sc } });
       st.rev = (+st.rev || 0) + 1;
       writeState_(st);
     }
@@ -1160,6 +1261,7 @@ function backup() {
 }
 
 function installTriggers() {
-  ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === 'backup') ScriptApp.deleteTrigger(t); });
+  ScriptApp.getProjectTriggers().forEach(function (t) { if (['backup', 'ppSweep'].indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t); });
   ScriptApp.newTrigger('backup').timeBased().atHour(3).everyDays(1).inTimezone('Asia/Tashkent').create();
+  ScriptApp.newTrigger('ppSweep').timeBased().everyHours(1).create();   // скан паспорта удаляется через 48 часов и без чьих-то правок
 }

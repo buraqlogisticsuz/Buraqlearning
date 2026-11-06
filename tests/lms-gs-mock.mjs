@@ -66,7 +66,7 @@ export function loadLms({ now, iter, fetch } = {}) {
     ScriptApp: {
       getProjectTriggers: () => triggers.slice(),
       deleteTrigger: t => { triggers.splice(triggers.indexOf(t), 1); },
-      newTrigger: fn => { const b = { timeBased: () => b, atHour: h => { b.h = h; return b; }, everyDays: () => b, inTimezone: () => b, create: () => { const t = { getHandlerFunction: () => fn, hour: b.h }; triggers.push(t); return t; } }; return b; }
+      newTrigger: fn => { const b = { timeBased: () => b, atHour: h => { b.h = h; return b; }, everyDays: () => b, everyHours: n => { b.every = n; return b; }, inTimezone: () => b, create: () => { const t = { getHandlerFunction: () => fn, hour: b.h, every: b.every }; triggers.push(t); return t; } }; return b; }
     },
     Logger: { log: s => logs.push(String(s)) },
     // внешние запросы (Claude API): fetch(url, body, opts) → { status, body } или Error

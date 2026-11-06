@@ -9,7 +9,7 @@
 (function (root) {
   'use strict';
   var S = root.LmsSync;
-  var SERVER_V = 19;                      // версия сервера (tools/lms-gs), под которую написана эта страница
+  var SERVER_V = 20;                      // версия сервера (tools/lms-gs), под которую написана эта страница
   var URL_ = String(root.LMS_SERVER || '').trim();
   var DEMO = !URL_;                      // адреса нет — страница пишет «Server ulanmagan» (демо больше нет)
   var K = { token: 'lor-lms-token', cache: 'lor-lms-cache', queue: 'lor-lms-queue', lang: 'lor-lms-lang' };
@@ -93,7 +93,9 @@
     inflight = call('patch', { ops: batch }).then(function (r) {
       inflight = null; retryMs = 0; epoch++;
       queue.ops.splice(0, batch.length); saveQueue();
-      var serverTouched = raw.indexOf('"data:') >= 0 || raw.indexOf('"password"') >= 0;   // файл или пароль сервер переделал
+      // файл или пароль сервер переделал; новое уведомление другому — сервер дописал from; r.more — сервер поменял и сам (скан паспорта, id)
+      var serverTouched = raw.indexOf('"data:') >= 0 || raw.indexOf('"password"') >= 0 || !!r.more ||
+        batch.some(function (o) { return o.path && o.path[0] === 'notifications' && o.path.length === 2 && o.op === 'set'; });
       if (r.rejected.length) setStatus({ rejected: r.rejected.map(function (x) { return x.reason; }) });
       if (!r.rejected.length && !serverTouched && r.rev === cache.rev + 1) {
         S.apply(cache.state, batch); cache.rev = r.rev; saveCache();

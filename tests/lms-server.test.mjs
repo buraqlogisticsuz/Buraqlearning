@@ -69,7 +69,7 @@ test('setup: папка и state.json на Диске, вход SOP-менедж
   const st = g.state();
   assert.equal(st.users.length, 1); assert.equal(st.users[0].role, 'admin'); assert.equal(st.users[0].password, undefined);
   assert.ok(!JSON.stringify(st).includes(adm.password));
-  assert.deepEqual(g.triggers.map(t => [t.getHandlerFunction(), t.hour]), [['backup', 3]]);
+  assert.deepEqual(g.triggers.map(t => [t.getHandlerFunction(), t.hour, t.every]), [['backup', 3, undefined], ['ppSweep', undefined, 1]]);
   assert.throws(() => g.ctx.setup(), /уже настроена/);
   const second = g.ctx.newAdmin();
   assert.equal(second.login, 'metodist2');
@@ -176,15 +176,15 @@ test('сотрудник видит только своё: ответы тест
 });
 
 test('сотрудник: свои правки проходят, чужие и «методистские» — нет', () => {
-  const { g, D } = platform();
+  const { g, D } = platform(), today = new Date(Date.now() + 5 * 3600e3).toISOString().slice(0, 10);
   const r = D({ action: 'patch', ops: [
     /* 0 */ { op: 'set', path: ['progress', '10427'], value: { 'b4-1': { status: 'in-progress', at: 5 } } },
     /* 1 */ { op: 'set', path: ['users', { id: 10427 }, 'reminderTime'], value: '20:00' },
     /* 2 */ { op: 'set', path: ['users', { id: 10427 }, 'plan', 'p1'], value: { at: 6, by: 10427 } },
-    /* 3 */ { op: 'set', path: ['study', '10427', '2026-10-10'], value: 40 },
+    /* 3 */ { op: 'set', path: ['study', '10427', today], value: 40 },
     /* 4 */ { op: 'set', path: ['notifications', { id: 2 }, 'read'], value: true },
     /* 5 */ { op: 'set', path: ['requests', { id: 'q1' }], value: { id: 'q1', type: 'question', userId: 10427, lessonId: 'b4-1', text: 'savol', state: 'open' }, after: null },
-    /* 6 */ { op: 'set', path: ['notifications', { id: 3 }], value: { id: 3, userId: 10001, text: 'savol bor' }, after: null },
+    /* 6 */ { op: 'set', path: ['notifications', { id: 3 }], value: { id: 3, userId: 10001, kind: 'shot', shot: { uid: 10427, name: 'Dilnoza Karimova', how: 'prtsc' } }, after: null },
     /* 7 */ { op: 'set', path: ['sopUpdates', { id: 'u1' }, 'acks', '10427'], value: 77 },
     /* 8 */ { op: 'set', path: ['journals', { id: 'j1' }, 'rows', { id: 'r1' }], value: { id: 'r1', by: 10427, v: { a: 1 } }, after: null },
     /* 9 */ { op: 'set', path: ['xtasks', { id: 'x1' }, 'sub'], value: { text: 'bajarildi' } },
@@ -208,8 +208,13 @@ test('сотрудник: свои правки проходят, чужие и 
     /* 26 */ { op: 'set', path: ['sopUpdates', { id: 'u1' }, 'acks', '10391'], value: 1 },
     /* 27 */ { op: 'set', path: ['users', { id: 10427 }], value: { id: 10427, role: 'admin' } },
     /* 28 */ null,
-    /* 29 */ { op: 'set', path: ['notifications', { id: 4 }], value: { id: 4, userId: 10391, promo: { li: 5 } } }] });
-  assert.deepEqual(r.rejected.map(x => x.i), [11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29]);
+    /* 29 */ { op: 'set', path: ['notifications', { id: 4 }], value: { id: 4, userId: 10391, promo: { li: 5 } } },
+    // v20: другому — только уведомление о своём действии, не любой текст; минуты учёбы — только за сегодня и не больше суток
+    /* 30 */ { op: 'set', path: ['notifications', { id: 5 }], value: { id: 5, userId: 10001, text: 'Maoshingiz tasdiqlandi' } },
+    /* 31 */ { op: 'set', path: ['notifications', { id: 6 }], value: { id: 6, userId: 10391, kind: 'pay', pay: { s: 'ok', total: 1 } } },
+    /* 32 */ { op: 'set', path: ['study', '10427', '2025-01-01'], value: 600 },
+    /* 33 */ { op: 'set', path: ['study', '10427', today], value: 99999 }] });
+  assert.deepEqual(r.rejected.map(x => x.i), [11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33]);
   assert.equal(r.applied, 11);
   const st = g.state();
   assert.equal(st.users.find(u => u.id === 10427).reminderTime, '20:00');
@@ -378,8 +383,9 @@ test('наставник записывает ошибку сотруднику 
   assert.deepEqual(M({ action: 'load' }).state.errors.map(e => e.id), ['e1']);
   assert.deepEqual(D({ action: 'load' }).state.errors.map(e => e.id), ['e1']);
   assert.deepEqual(Z({ action: 'load' }).state.errors, []);
-  const fix = D({ action: 'patch', ops: [{ op: 'set', path: ['errors', { id: 'e1' }, 'text'], value: 'yo‘q edi' }, { op: 'set', path: ['errors', { id: 'e1' }, 'retest'], value: { score: 90 } }] });
-  assert.deepEqual(fix.rejected.map(x => x.i), [0]);
+  const fix = D({ action: 'patch', ops: [{ op: 'set', path: ['errors', { id: 'e1' }, 'text'], value: 'yo‘q edi' }, { op: 'set', path: ['errors', { id: 'e1' }, 'retest'], value: { score: 90 } },
+    { op: 'set', path: ['errors', { id: 'e1' }, 'status'], value: 'done' }, { op: 'set', path: ['errors', { id: 'e1' }], value: { id: 'e1', uid: 10427, by: 10288, text: 'PL yo‘q', status: 'closed' } }] });
+  assert.deepEqual(fix.rejected.map(x => x.i), [0, 1, 2, 3], 'повторную проверку закрывает только сервер (v20)');
 });
 
 test('повторная проверка после ошибки: балл считает сервер, сдал — ошибка закрыта, наставнику уведомление', () => {
@@ -414,7 +420,7 @@ const pickN = n => ({ userId: n.userId, kind: n.kind, route: n.route, err: n.err
 test('since: та же версия — без данных; после правки — новое состояние', () => {
   const { D, A } = platform();
   const v = D({ action: 'load' });
-  assert.deepEqual(D({ action: 'since', rev: v.rev }), { ok: true, v: 19, ai: false, rev: v.rev, same: true });
+  assert.deepEqual(D({ action: 'since', rev: v.rev }), { ok: true, v: 20, ai: false, rev: v.rev, same: true });
   A({ action: 'patch', ops: [{ op: 'set', path: ['notifications', { id: 9 }], value: { id: 9, userId: 10427, text: 'yangi' }, after: null }] });
   const n = D({ action: 'since', rev: v.rev });
   assert.equal(n.rev, v.rev + 1); assert.equal(n.state.notifications[0].text, 'yangi');
@@ -981,4 +987,71 @@ test('скан паспорта — 48 часов (v19): SOP-менеджеру 
   assert.equal(g.files[id], undefined, 'файл — в корзине');
   assert.equal(notes('pp-gone').length, 1); assert.equal(notes('pp-gone')[0].pp.dl, true);
   assert.equal(D({ action: 'file', id }).code !== undefined, true, 'файл больше не отдаётся');
+});
+
+test('защита правок (v20): id карточек, тест — одна попытка, балл заявки, статусы, имущество, ссылка на файл в пути', () => {
+  const pf = platform(), { g, A, D } = pf, { C } = chiefs(pf);
+  // SOP-менеджер не создаёт «новую» карточку с id CEO строкой и не меняет id; вход CEO остаётся его
+  const take = A({ action: 'patch', ops: [
+    { op: 'set', path: ['users', { id: '10901' }], value: { id: '10901', role: 'employee', login: 'ceo', password: 'x12345' } },
+    { op: 'set', path: ['users', { id: 10427 }, 'id'], value: 10901 },
+    { op: 'set', path: ['users', { id: 10391 }], value: { id: 10901, role: 'employee', name: 'Aziza' } }] });
+  assert.deepEqual(take.rejected.map(x => x.i), [0, 1, 2]);
+  // два устройства выдали новому сотруднику один и тот же номер: вторая «новая карточка» не заменяет первую
+  const dup = A({ action: 'patch', ops: [{ op: 'set', path: ['users', { id: 10391 }], value: { id: 10391, role: 'employee', name: 'Boshqa odam', login: 'boshqa', password: 'pw-boshqa-1' }, after: 10288 }] });
+  assert.deepEqual(rejected(dup), ['карточка с таким id уже есть']);
+  assert.equal(g.state().users.find(u => u.id === 10391).name, 'Aziza Yusupova');
+  assert.notEqual(g.post({ action: 'login', login: 'ceo', password: 'x12345' }).ok, true, 'чужой пароль к входу CEO не подходит');
+  assert.equal(g.post({ action: 'login', login: 'ceo', password: 'pw-ceo-1' }).ok, true);
+  assert.equal(C({ action: 'load' }).ok, true);
+  // тест: после попытки балл не сбросить и статус не сменить, пока SOP-менеджер не поставил итог
+  D({ action: 'patch', ops: [{ op: 'set', path: ['progress', '10427', 'b4-1'], value: { status: 'exam-ready', score: null } }] });
+  assert.equal(D({ action: 'quiz', lessonId: 'b4-1', answers: [0, 1] }).score, 0);
+  const again = D({ action: 'patch', ops: [
+    { op: 'set', path: ['progress', '10427', 'b4-1', 'score'], value: null },
+    { op: 'set', path: ['progress', '10427', 'b4-1'], value: { status: 'exam-ready' } },
+    { op: 'set', path: ['progress', '10427', 'b4-1', 'status'], value: 'in-progress' },
+    { op: 'set', path: ['progress', '10427'], value: {} }] });
+  assert.deepEqual(again.rejected.map(x => x.i), [0, 1, 2, 3]);
+  assert.equal(D({ action: 'quiz', lessonId: 'b4-1', answers: [1, 0] }).code, 'quiz', 'вторая попытка — нет');
+  // балл в заявке на экзамен пишет только сервер; закрыть свою открытую заявку — можно
+  const req = g.state().requests.find(r => r.userId === 10427);
+  const forge = D({ action: 'patch', ops: [
+    { op: 'set', path: ['requests', { id: 'q9' }], value: { id: 'q9', type: 'exam', userId: 10427, lessonId: 'b4-2', score: 100, state: 'open' } },
+    ...(req ? [{ op: 'set', path: ['requests', { id: req.id }, 'score'], value: 100 }] : [])] });
+  assert.equal(forge.rejected.length, req ? 2 : 1);
+  // сверхзадачу «выполнено» целой записью не поставить
+  assert.deepEqual(D({ action: 'patch', ops: [{ op: 'set', path: ['xtasks', { id: 'x1' }], value: Object.assign({}, g.state().xtasks[0], { status: 'done' }) }] }).rejected.map(x => x.i), [0]);
+  // имущество: выданное — принять или «не совпадает» с пояснением; самодекларацию в «принято» не перевести
+  A({ action: 'patch', ops: [
+    { op: 'set', path: ['assets', { id: 'as1' }], value: { id: 'as1', uid: 10427, type: 'laptop', name: 'Noutbuk', status: 'issued' } },
+    { op: 'set', path: ['assets', { id: 'as2' }], value: { id: 'as2', uid: 10427, type: 'phone', name: 'Telefon', status: 'issued' } }] });
+  const as = D({ action: 'patch', ops: [
+    { op: 'set', path: ['assets', { id: 'as1' }, 'status'], value: 'active' }, { op: 'set', path: ['assets', { id: 'as1' }, 'confirmedAt'], value: 7 },
+    { op: 'set', path: ['assets', { id: 'as2' }, 'status'], value: 'mismatch' }, { op: 'set', path: ['assets', { id: 'as2' }, 'mismatch'], value: 'Seriya raqami boshqa' },
+    { op: 'set', path: ['assets', { id: 'as3' }], value: { id: 'as3', uid: 10427, type: 'other', name: 'Stul', status: 'active' } },
+    { op: 'set', path: ['assets', { id: 'as1' }, 'confirmedAt'], value: 8 }] });
+  assert.deepEqual(as.rejected.map(x => x.i), [4, 5]);
+  const A2 = g.state().assets;
+  assert.equal(A2.find(a => a.id === 'as1').confirmedAt, 7); assert.equal(A2.find(a => a.id === 'as2').mismatch, 'Seriya raqami boshqa');
+  // ссылка на чужой файл в самом пути (ключ) — не проходит
+  const fileRef = 'lmsfile:' + 'x'.repeat(12);
+  assert.deepEqual(rejected(D({ action: 'patch', ops: [{ op: 'set', path: ['users', { id: 10427 }, 'plan', fileRef], value: 1 }] })), ['чужой файл']);
+});
+
+test('уведомления (v20): одинаковые id разводятся, список целиком не меняется; заменённый скан паспорта — тоже в корзину', () => {
+  const now = { value: Date.UTC(2026, 10, 3, 6) };
+  const { g, A, D } = platform({ now });
+  A({ action: 'patch', ops: [{ op: 'set', path: ['notifications', { id: 7 }], value: { id: 7, userId: 10427, text: 'a' } }] });
+  const st = g.state(); st.notifications.push({ id: 7, userId: 10391, text: 'b' }); g.ctx.writeState_(st);
+  assert.deepEqual(rejected(A({ action: 'patch', ops: [{ op: 'set', path: ['notifications'], value: [] }] })), ['список уведомлений целиком не меняется']);
+  const ids = g.state().notifications.map(n => String(n.id));
+  assert.equal(new Set(ids).size, ids.length, 'id уведомлений после правки — без повторов');
+  const pdf = n => 'data:application/pdf;base64,' + Buffer.from('%PDF-1.4 ' + n.repeat(3000)).toString('base64');
+  const pp = () => g.state().users.find(u => u.id === 10427).profile.passportFile;
+  D({ action: 'patch', ops: [{ op: 'set', path: ['users', { id: 10427 }, 'profile'], value: { passportFile: { name: 'a.pdf', type: 'application/pdf', data: pdf('a') } } }] });
+  const first = pp().data.slice(8);
+  D({ action: 'patch', ops: [{ op: 'set', path: ['users', { id: 10427 }, 'profile'], value: { passportFile: { name: 'b.pdf', type: 'application/pdf', data: pdf('b') } } }] });
+  assert.notEqual(pp().data.slice(8), first);
+  assert.equal(g.files[first], undefined, 'прежний скан — в корзине сразу');
 });

@@ -245,12 +245,13 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     useEffect(function () {
       var live = true; s[1]({ st: 'wait' });
       docLoad(d).then(function (r) {
-        if (k !== 'docx') { if (live) s[1]({ st: 'ok', url: r.url }); return; }
-        return docxHtml(r).then(function (html) { if (live) s[1]({ st: 'ok', url: r.url, html: html }); });
-      }).catch(function () { if (live) s[1]({ st: 'err' }); });
+        if (k !== 'docx') { if (live) s[1]({ st: 'ok', url: r.url, key: key }); return; }
+        return docxHtml(r).then(function (html) { if (live) s[1]({ st: 'ok', url: r.url, html: html, key: key }); });
+      }).catch(function () { if (live) s[1]({ st: 'err', key: key }); });
       return function () { live = false; };
     }, [key]);
-    return s[0];
+    /* сменился документ (вкладка) — до загрузки нового состояние прежнего не отдаём: иначе новый считался бы открытым */
+    return s[0].key === key ? s[0] : { st: 'wait' };
   }
   /* содержимое документа: PDF — встроенный просмотр (или карточка «Hujjatni ochish»), .docx — текст, .doc — скачать.
      onSeen — документ на самом деле перед глазами: открыт или скачан с карточки */
@@ -1555,10 +1556,11 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   }
   function ratingRows(db) {
     var total = flat(db.course).length || 1, rows = [];
+    /* у сотрудника — как на главной (mastery): уроки его программы, доступные ему; удалённые уроки не считаются */
     db.users.filter(function (u) { return u.role === 'employee'; }).forEach(function (u) {
-      var pr = prog(db, u.id), passed = 0, sc = [];
-      for (var k in pr) if (pr[k].status === 'passed') { passed++; if (pr[k].score != null) sc.push(pr[k].score); }
-      var rw = mkRow(u.id, u.name, u.position, u.cohort, true, passed, total, sc.length ? sc.reduce(function (a, b) { return a + b; }, 0) / sc.length : 0, avgMinutes(db, u), daysSince(u)); var rk = rankOf(db, u); rw.lvl = rk.li; rw.xp = rk.xp; rows.push(rw);
+      var pr = prog(db, u.id), passed = 0, sc = [], mine = available(db, u);
+      mine.forEach(function (l) { var x = pr[l.id]; if (x && x.status === 'passed') { passed++; if (x.score != null) sc.push(x.score); } });
+      var rw = mkRow(u.id, u.name, u.position, u.cohort, true, passed, mine.length || 1, sc.length ? sc.reduce(function (a, b) { return a + b; }, 0) / sc.length : 0, avgMinutes(db, u), daysSince(u)); var rk = rankOf(db, u); rw.lvl = rk.li; rw.xp = rk.xp; rows.push(rw);
     });
     (db.alumni || []).forEach(function (a) { var rw = mkRow(a.id, a.name, a.position, a.cohort, false, Math.min(a.stats.passed, total), total, a.stats.avgScore, a.stats.avgMinutes, a.stats.days); rw.lvl = a.level || 0; rows.push(rw); });
     rows.sort(function (a, b) { return b.score - a.score || b.mastery - a.mastery; });
@@ -1634,8 +1636,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   /* ---------- my path (report + analysis) ---------- */
   function MyPath(p) {
     var t = p.t, db = p.db, u = p.user, sampler = p.sampler;
-    var all = ratingRows(db), me = all.filter(function (r) { return r.id === u.id; })[0], ls = flat(db.course), pr = prog(db, u.id);
-    var days = daysSince(u), total = ls.length, passed = me ? me.passed : 0;
+    var all = ratingRows(db), me = all.filter(function (r) { return r.id === u.id; })[0], ls = trackFlat(db, u), pr = prog(db, u.id);
+    var days = daysSince(u), total = available(db, u).length, passed = me ? me.passed : 0;
     var alumni = db.alumni || [], pace = alumni.length ? alumni.reduce(function (s, a) { return s + a.stats.passed / a.stats.days; }, 0) / alumni.length : 0;
     var expected = Math.min(total, Math.round(pace * days * 10) / 10), grads = alumni.filter(function (a) { return a.stats.passed >= total; });
     var gradDays = grads.length ? Math.round(grads.reduce(function (s, a) { return s + a.stats.days; }, 0) / grads.length) : null;
@@ -1866,7 +1868,12 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var t = p.t, db = p.db, s = useState(function () { return clone(levelsOf(db)); }), L = s[0], pv = useState(null);
     function preview(li) { var me = p.user; pv[1]({ id: -1, role: 'employee', name: me.name, position: me.position, level: li, levelXpBase: 0, celebrate: { kind: 'level', li: li, fromLi: Math.max(0, li - 1), at: Date.now() } }); }
     function set(i, fn) { var c = clone(L); fn(c[i]); s[1](c); }
-    function save() { p.update(function (d) { var c = clone(L).map(function (x, i) { delete x.silver; delete x.req; delete x.minAvg; delete x.minIni; x.conds = i ? normConds(x.conds) : []; return x; }); c.forEach(function (x, i) { var g = stepXp(c, i); if (g != null) x.gold = g; else if (i < c.length - 1) x.gold = 0; }); d.levels = c; }); p.say(t('lvl_saved')); }
+    function save() { p.update(function (d) { var c = clone(L).map(function (x, i) { delete x.silver; delete x.req; delete x.minAvg; delete x.minIni; x.conds = i ? normConds(x.conds) : []; return x; }); c.forEach(function (x, i) { var g = stepXp(c, i); if (g != null) x.gold = g; else if (i < c.length - 1) x.gold = 0; });
+      /* уровень человека — номер в списке: убрали уровень в середине — номера тех, кто выше, сдвигаются по id уровня */
+      var old = levelsOf(d), at = function (li) { var o = old[li], k = o ? c.findIndex(function (x) { return x.id === o.id; }) : -1; return k >= 0 ? k : Math.min(li, c.length - 1); };
+      d.users.forEach(function (u) { if (u.level != null && u.level !== at(u.level)) u.level = at(u.level); });
+      (d.requests || []).forEach(function (r) { if (r.type === 'level' && r.state === 'open') { if (r.toLevel != null) r.toLevel = at(r.toLevel); if (r.fromLevel != null) r.fromLevel = at(r.fromLevel); } });
+      d.levels = c; }); p.say(t('lvl_saved')); }
     function objOf(v) { return typeof v === 'string' ? { uz: v, ru: v, en: v, zh: v } : Object.assign({}, v || {}); }
     var emps = db.users.filter(function (u) { return u.role === 'employee'; }), LG = ['uz', 'ru', 'en', 'zh'];
     return h('div', { className: 'app-wrap' },
@@ -1925,7 +1932,10 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       var call = json ? sampler.json(prompt, { signal: c.signal }) : sampler(prompt, { signal: c.signal, modelTier: kind === 'intro' ? 'quick' : 'default', onText: isHtml || kind === 'clarify' ? function (x) { res[1]({ kind: kind, text: x.text, streaming: true }); } : undefined });
       call.then(function (r) {
         if (kind === 'quiz') {
-          var qs = (Array.isArray(r) ? r : []).filter(function (x) { return x && typeof x.q === 'string' && Array.isArray(x.options) && x.options.length >= 2 && x.options.every(function (o) { return typeof o === 'string'; }) && +x.answer >= 0 && +x.answer < x.options.length; }).map(function (x) { return { q: x.q.trim(), options: x.options.slice(0, 4).map(String), answer: Math.min(+x.answer, 3) }; });
+          var qs = (Array.isArray(r) ? r : []).filter(function (x) { return x && typeof x.q === 'string' && Array.isArray(x.options) && x.options.length >= 2 && x.options.every(function (o) { return typeof o === 'string'; }) && +x.answer >= 0 && +x.answer < x.options.length && +x.answer % 1 === 0; }).map(function (x) {
+            /* вариантов больше четырёх, а верный — дальше четвёртого: он встаёт четвёртым (а не помечается верным чужой) */
+            var o = x.options.map(String), a = +x.answer; if (a > 3) { o = o.slice(0, 3).concat([o[a]]); a = 3; }
+            return { q: x.q.trim(), options: o.slice(0, 4), answer: a }; });
           if (!qs.length) { err[1](t('ai_bad_json')); return; } res[1]({ kind: kind, quiz: qs });
         } else if (kind === 'steps') {
           var st = (Array.isArray(r) ? r : []).filter(function (x) { return x && typeof x.text === 'string' && x.text.trim(); }).map(function (x) { return { text: x.text.trim(), who: Array.isArray(x.who) ? x.who.map(String).filter(Boolean).slice(0, 5) : [] }; });
@@ -1934,7 +1944,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           var txt = String(r.text || '').replace(/^```(?:html)?\s*/i, '').replace(/```\s*$/, '').trim();
           res[1]({ kind: kind, text: kind === 'intro' ? txt.replace(/^["“]|["”]$/g, '') : txt, html: isHtml ? sanitize(txt) : null, truncated: r.truncated });
         }
-      }).catch(function (e) { if (e && e.code === 'cancelled') return; err[1](e && e.code === 'invalid_json' ? t('ai_bad_json') : aiErr(e, t)); }).then(function () { busy[1](null); });
+      }).catch(function (e) { if (e && e.code === 'cancelled') return; err[1](e && (e.code === 'bad_json' || e.code === 'invalid_json') ? t('ai_bad_json') : aiErr(e, t)); }).then(function () { busy[1](null); });
     }
     function apply(mode) {
       var r = res[0]; if (!r) return;
@@ -2880,9 +2890,13 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         if (top === 'initiatives') return iniTo(find(prev.initiatives, seg.id) || {}).indexOf('boss') >= 0;
         return false;
       });
-      if (ok) p.update(fn); else p.say(t('ro_note'));
+      if (ok) return p.update(fn);
+      RO_BLOCK = Date.now(); p.say(t('ro_note')); return false;
     };
   }
+  /* владелец: после отказа roUpdate «Saqlandi» и прочие «✓» того же нажатия не показываются — остаётся «faqat ko‘rish» */
+  var RO_BLOCK = 0;
+  function roSay(say) { return function (m) { if (Date.now() - RO_BLOCK < 1500) return; say(m); }; }
   /* recipients of an initiative — one or several (an early one may hold a single string) */
   function iniTo(x) { return !x ? [] : Array.isArray(x.to) ? x.to : x.to ? [x.to] : []; }
   function iniToLabel(x, t) { return iniTo(x).map(function (k) { return t('ini_to_s_' + k); }).join(', '); }
@@ -2923,7 +2937,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       sampler.json(prompt, { signal: c.signal }).then(function (r) {
         if (!r || typeof r.title !== 'string' || typeof r.text !== 'string') { aiE[1](t('ai_bad_json')); return; }
         ai[1]({ title: r.title.trim().slice(0, 90), text: r.text.trim().slice(0, 1500), benefit: typeof r.benefit === 'string' ? r.benefit.trim().slice(0, 1000) : v.benefit });
-      }).catch(function (e) { if (e && e.code === 'cancelled') return; aiE[1](e && e.code === 'invalid_json' ? t('ai_bad_json') : aiErr(e, t)); }).then(function () { aiBusy[1](false); });
+      }).catch(function (e) { if (e && e.code === 'cancelled') return; aiE[1](e && (e.code === 'bad_json' || e.code === 'invalid_json') ? t('ai_bad_json') : aiErr(e, t)); }).then(function () { aiBusy[1](false); });
     }
     function submit() {
       var e = {};
@@ -3556,13 +3570,16 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       if (v.text.trim().length < 10) e.text = t('err_text_short');
       er[1](e); if (Object.keys(e).length) return;
       var uid = +v.uid, lid = v.lessonId || null, ttl = lessonTitle(db, lid);
+      /* повторная проверка — только если у урока есть вопросы и урок этому сотруднику доступен (иначе задача повисла бы
+         с закрытой кнопкой); без этого ошибка записывается как обычная, урок — для справки */
+      var re = !!lid && quizFor(db, lid, 3).length > 0 && accessibleLessons(db, userOf(db, uid)).some(function (l) { return l.id === lid; });
       p.update(function (d) {
         d.errors = d.errors || [];
-        d.errors.unshift({ id: 'e' + nextId(d), uid: uid, by: p.user.id, at: Date.now(), lessonId: lid, cat: v.cat, sev: v.sev, text: v.text.trim(), impact: v.impact.trim(), status: lid ? 'assigned' : 'open' });
-        qNotify(d, uid, 'err', { err: { cat: v.cat, ttl: ttl, retrain: !!lid } });
+        d.errors.unshift({ id: 'e' + nextId(d), uid: uid, by: p.user.id, at: Date.now(), lessonId: lid, cat: v.cat, sev: v.sev, text: v.text.trim(), impact: v.impact.trim(), status: re ? 'assigned' : 'open' });
+        qNotify(d, uid, 'err', { err: { cat: v.cat, ttl: ttl, retrain: re } });
       });
       f[1]({ uid: '', cat: 'doc', sev: 'med', lessonId: '', text: '', impact: '' });
-      p.say(lid ? t('err_saved_train') : t('err_saved'));
+      p.say(re ? t('err_saved_train') : t('err_saved'));
       if (p.onDone) p.onDone();
     }
     return h('section', { className: 'box err-form' },
@@ -3679,7 +3696,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       var hist = msgs.filter(function (m) { return m.content; }).map(function (m) { return { role: m.role, content: m.content }; });
       var turns = [{ role: 'user', content: rules(scen, scen.sop) }].concat(hist).concat([{ role: 'user', content: text }]);
       ms[1](msgs.concat([{ role: 'user', content: text }, { role: 'assistant', content: '', streaming: true }]));
-      inp[1](''); busy[1](true);
+      inp[1](''); busy[1](true); err[1]('');
       var c = new AbortController(); ctl.current = c;
       sampler(turns, { signal: c.signal, onText: function (x) { patch(x.text, true); } })
         .then(function (r) { patch(r.text, false); })
@@ -3708,7 +3725,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           d.drills = d.drills || [];
           d.drills.unshift({ id: 'd' + nextId(d), uid: u.id, at: Date.now(), scen: scen.id, lessonId: scen.lid, turns: turnsN, score: score, criteria: cr, summary: out.summary, lang: lang });
         });
-      }).catch(function (e) { if (e && e.code === 'cancelled') return; err[1](e && e.code === 'invalid_json' ? t('ai_bad_json') : aiErr(e, t)); }).then(function () { busy[1](false); });
+      }).catch(function (e) { if (e && e.code === 'cancelled') return; err[1](e && (e.code === 'bad_json' || e.code === 'invalid_json') ? t('ai_bad_json') : aiErr(e, t)); }).then(function () { busy[1](false); });
     }
     function reset() { if (ctl.current) ctl.current.abort(); sc[1](null); ms[1]([]); res[1](null); err[1](''); busy[1](false); }
     var userTurns = msgs.filter(function (m) { return m.role === 'user'; }).length;
@@ -4141,9 +4158,10 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var ed = useState(null), draft = ed[0], er = useState({}), busy = useState(''), aiErrS = useState(''), del = useState(false), tried = useRef(false);
     var ls = flat(db.course);
     /* once a save has been attempted, errors clear as soon as the field is fixed */
-    function setD(fn) { var c = clone(draft); fn(c); ed[1](c); if (tried.current) er[1](caseErrors(c, t)); }
-    function startNew() { ed[1](blankCase()); er[1]({}); tried.current = false; del[1](false); window.scrollTo(0, 0); }
-    function edit(c) { ed[1](clone(c)); er[1]({}); tried.current = false; del[1](false); window.scrollTo(0, 0); }
+    var dRef = useRef(null); dRef.current = draft;   // ответ ИИ приходит позже: правит последний черновик, а не тот, что был при нажатии
+    function setD(fn) { var c = clone(dRef.current); fn(c); dRef.current = c; ed[1](c); if (tried.current) er[1](caseErrors(c, t)); }
+    function startNew() { ed[1](blankCase()); er[1]({}); aiErrS[1](''); tried.current = false; del[1](false); window.scrollTo(0, 0); }
+    function edit(c) { ed[1](clone(c)); er[1]({}); aiErrS[1](''); tried.current = false; del[1](false); window.scrollTo(0, 0); }
     function save(status) {
       var c = clone(draft); c.status = status;
       tried.current = true;
@@ -4183,7 +4201,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           if (Array.isArray(r.tags)) c.tags = r.tags.map(String).slice(0, 5);
         });
         p.say(t('cs_ai_done'));
-      }).catch(function (e) { aiErrS[1](e && e.code === 'invalid_json' ? t('ai_bad_json') : aiErr(e, t)); }).then(function () { busy[1](''); });
+      }).catch(function (e) { aiErrS[1](e && (e.code === 'bad_json' || e.code === 'invalid_json') ? t('ai_bad_json') : aiErr(e, t)); }).then(function () { busy[1](''); });
     }
     if (draft) return h('div', { className: 'cms-case-edit' },
       h('div', { className: 'page-head' },
@@ -4526,7 +4544,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
 
   /* ---------- employee page: Baza (journals + terminology) ---------- */
   function BasePage(p) {
-    var t = p.t, db = p.db, u = p.user, tab = useState('journals'), open = useState(null);
+    /* из поиска: tab и jid — сразу нужная вкладка и журнал */
+    var t = p.t, db = p.db, u = p.user, tab = useState(p.tab === 'terms' ? 'terms' : 'journals'), open = useState(p.jid || null);
     var js = journalsFor(db, u), ts = termsFor(db, u);
     var cur = open[0] ? js.filter(function (x) { return x.id === open[0]; })[0] : null;
     if (cur) return h('div', { className: 'app-wrap' }, h(JournalView, Object.assign({}, p, { j: cur, onBack: function () { open[1](null); } })));
@@ -4554,7 +4573,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   function JournalsAdmin(p) {
     var t = p.t, db = p.db, list = journalsAll(db);
     var ed = useState(null), draft = ed[0], er = useState({}), del = useState(false), prev = useState(null), tried = useRef(false);
-    function setD(fn) { var c = clone(draft); fn(c); ed[1](c); if (tried.current) er[1](journalErrors(c, t)); }
+    var dRef = useRef(null); dRef.current = draft;
+    function setD(fn) { var c = clone(dRef.current); fn(c); dRef.current = c; ed[1](c); if (tried.current) er[1](journalErrors(c, t)); }
     function start(j) { ed[1](j ? clone(j) : blankJournal()); er[1]({}); del[1](false); tried.current = false; window.scrollTo(0, 0); }
     function save(status) {
       var c = clone(draft); c.status = status; tried.current = true;
@@ -4564,7 +4584,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       c.columns = c.columns.map(function (x) { return { key: x.key, label: String(x.label).trim(), type: x.type, opt: !!x.opt, options: x.type === 'select' ? (x.options || []).map(function (o) { return String(o).trim(); }).filter(Boolean) : undefined }; });
       p.update(function (d) {
         d.journals = d.journals || [];
-        if (c.id) d.journals = d.journals.map(function (x) { return x.id === c.id ? Object.assign({}, x, c) : x; });
+        if (c.id) d.journals = d.journals.map(function (x) { return x.id === c.id ? Object.assign({}, x, c, { rows: x.rows }) : x; });   // строки, добавленные, пока редактор был открыт, не теряются
         else { c.id = 'j' + nextId(d); d.journals.unshift(c); }
       });
       ed[1](null); p.say(status === 'published' ? t('jr_published') : t('cs_saved'));
@@ -4604,7 +4624,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         h('h3', { className: 'cms-h' }, t('jf_title')),
         h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('jf_admin_hint')),
         h(TemplateList, { t: t, files: draft.files, empty: true, onDel: function (id) { setD(function (c) { c.files = (c.files || []).filter(function (x) { return x.id !== id; }); }); } }),
-        h(TemplateUpload, { t: t, files: draft.files || [], onAdd: function (f) { setD(function (c) { c.files = (c.files || []).concat([f]); }); } }),
+        h(TemplateUpload, { t: t, files: draft.files || [], onAdd: function (f) { ed[1](function (cur) { var c = clone(cur); c.files = (c.files || []).concat([f]); return c; }); } }),   // несколько файлов разом: каждый — к последнему черновику
         h(AccessEditor, { t: t, db: db, lang: p.lang, name: 'j', withAdd: true, value: draft.access, onChange: function (v) { setD(function (c) { c.access = v; }); } }),
         h('div', { className: 'cms-foot' },
           draft.id ? (del[0] ? h('span', { className: 'cms-confirm' }, t('confirm_del'), ' ', h(Btn, { variant: 'ghost', size: 'sm', onClick: function () { del[1](false); } }, t('cancel')), h(Btn, { variant: 'outline', size: 'sm', onClick: remove }, t('yes_del')))
@@ -4647,7 +4667,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var t = p.t, db = p.db, sampler = p.sampler, list = termsAll(db).sort(function (a, b) { return a.term.localeCompare(b.term); });
     var ed = useState(null), draft = ed[0], er = useState({}), del = useState(false), busy = useState(''), aiE = useState(''), tried = useRef(false);
     var ls = flat(db.course);
-    function setD(fn) { var c = clone(draft); fn(c); ed[1](c); if (tried.current) er[1](termErrors(c, t)); }
+    var dRef = useRef(null); dRef.current = draft;
+    function setD(fn) { var c = clone(dRef.current); fn(c); dRef.current = c; ed[1](c); if (tried.current) er[1](termErrors(c, t)); }
     function start(x) { ed[1](x ? clone(x) : blankTerm()); er[1]({}); del[1](false); aiE[1](''); tried.current = false; window.scrollTo(0, 0); }
     function save(status) {
       var c = clone(draft); c.status = status; tried.current = true;
@@ -4679,7 +4700,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           if (!(c.lessonIds || []).length) c.lessonIds = picks.map(function (l) { return l.id; });
         });
         p.say(t('tm_ai_done'));
-      }).catch(function (e) { aiE[1](e && e.code === 'invalid_json' ? t('ai_bad_json') : aiErr(e, t)); }).then(function () { busy[1](''); });
+      }).catch(function (e) { aiE[1](e && (e.code === 'bad_json' || e.code === 'invalid_json') ? t('ai_bad_json') : aiErr(e, t)); }).then(function () { busy[1](''); });
     }
 
     if (draft) return h('div', { className: 'cms-case-edit' },
@@ -5101,8 +5122,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     if (u.trackId) return trackById(db, u.trackId) || null;
     return tracksOf(db).filter(function (t) { return (t.positions || []).indexOf(u.position) >= 0; })[0] || null;
   }
-  function trackTitle(t, lang) { return !t ? '' : (typeof t.title === 'string' ? t.title : (t.title[lang] || t.title.uz || '')); }
-  function trackDesc(t, lang) { return !t || !t.desc ? '' : (typeof t.desc === 'string' ? t.desc : (t.desc[lang] || t.desc.uz || '')); }
+  function trackTitle(t, lang) { return !t ? '' : anyLang(t.title, lang); }
+  function trackDesc(t, lang) { return !t ? '' : anyLang(t.desc, lang); }
   function trackSecIds(db, u) { var t = trackOf(db, u); return t && (t.sections || []).length ? t.sections : null; }
   /* who studies a chapter (section.aud): everyone, or whoever matches a position, a department or a name (any of them).
      No aud — the programme (tracks) decides, as before; section.users of v11 — names */
@@ -5126,7 +5147,9 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var tr = trackOf(db, u);
     return (db.planTpl || []).filter(function (x) { return !x.track || (tr && x.track === tr.id); });
   }
-  function planText(x, lang) { return typeof x.text === 'string' ? x.text : (x.text[lang] || x.text.uz || ''); }
+  /* текст на нескольких языках: свой, иначе узбекский, иначе любой заполненный (пункт добавили, работая на русском) */
+  function anyLang(o, lang) { if (!o) return ''; if (typeof o === 'string') return o; if (o[lang]) return o[lang]; if (o.uz) return o.uz; for (var k in o) if (o[k]) return o[k]; return ''; }
+  function planText(x, lang) { return anyLang(x.text, lang); }
   function planDue(u, day) { return (u.startedAt || Date.now()) + day * DAY; }
   function planDone(u, id) { return (u.plan || {})[id]; }
   function planStat(db, u) {
@@ -6298,7 +6321,9 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   function fmtK(k) { var a = k.split('-'); return a[2] + '.' + a[1] + '.' + a[0]; }
   function fmtKs(k) { var a = k.split('-'); return a[2] + '.' + a[1]; }
   function shiftK(k, n) { var d = keyDate(k); d.setDate(d.getDate() + n); return dayKey(d.getTime()); }
-  function schedOf(db, u) { var s = (db.settings || {}).schedule || {}; return Object.assign({ start: '09:00', end: '18:00', grace: 10 }, s.def || {}, ((s.dept || {})[u.department]) || {}); }
+  /* пустое поле времени в графике (стёрли и сохранили) не перекрывает значение выше — иначе все приходы считались бы опозданием */
+  function schedFill(o) { var r = {}; for (var k in o || {}) if (o[k] !== '' && o[k] != null) r[k] = o[k]; return r; }
+  function schedOf(db, u) { var s = (db.settings || {}).schedule || {}; return Object.assign({ start: '09:00', end: '18:00', grace: 10 }, schedFill(s.def), schedFill((s.dept || {})[u.department])); }
   function attRec(db, uid, k) { return ((db.attend || {})[uid] || {})[k] || null; }
   function attCovered(db, u, k) { return (((db.attendCover || {})[u.department]) || []).some(function (r) { return k >= r[0] && k <= r[1]; }); }
   function attHas(db, u) { return !!(((db.attendCover || {})[u.department]) || []).length || !!Object.keys((db.attend || {})[u.id] || {}).length; }
@@ -6713,7 +6738,14 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     return { id: id, nrec: nrec, emps: Object.keys(plan.per).length };
   }
   function undoImport(d, id) {
-    Object.keys(d.attend || {}).forEach(function (uid) { var A = d.attend[uid]; Object.keys(A).forEach(function (k) { var r = A[k]; if (r && r.src === id) { if (r.prev) A[k] = r.prev; else delete A[k]; } }); });
+    /* прежняя запись возвращается, только если её загрузку ещё не отменили (отмена в любом порядке) */
+    var gone = {}; (d.attendImports || []).forEach(function (x) { if (x.undone) gone[x.id] = 1; }); gone[id] = 1;
+    function back(r) { while (r && r.src && gone[r.src]) r = r.prev; return r; }
+    Object.keys(d.attend || {}).forEach(function (uid) { var A = d.attend[uid]; Object.keys(A).forEach(function (k) {
+      var r = A[k]; if (!r) return;
+      if (r.src === id) { var pv = back(r.prev); if (pv) A[k] = pv; else delete A[k]; }
+      else if (r.prev && r.prev.src && gone[r.prev.src]) { var q = back(r.prev); if (q) r.prev = q; else delete r.prev; }
+    }); });
     Object.keys(d.attendCover || {}).forEach(function (dp) { d.attendCover[dp] = d.attendCover[dp].filter(function (r) { return r[2] !== id; }); });
     d.attendImports = (d.attendImports || []).map(function (x) { return x.id === id ? Object.assign({}, x, { undone: Date.now() }) : x; });
   }
@@ -6831,6 +6863,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   function clockDue(db, u) {
     if (!(selfClockOn(db) && u && u.role === 'employee')) return false;
     var o = attDay(db, u, dayKey(Date.now()), workWeek(db));
+    if (o.st === 'off' || o.st === 'excused' || o.st === 'before') return false;   // выходной, отпуск, ещё не начал работу — не спрашиваем
     return (!o.rec || o.rec.src === 'app') && !(o.rec && o.rec.in);
   }
   /* заметное напоминание наверху главной: висит, пока сотрудник не отметил приход (не пропадает — «спрашивает постоянно») */
@@ -8013,7 +8046,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         return;
       }
       if (/^>\s*/.test(l)) { var nt = qnNew('note', l.replace(/^>\s*/, '').slice(0, 1500)); nt.req = false; out.push(nt); cur = null; return; }
-      if ((m = /^(?:[-–—•*○◦□▪·●]|[a-zа-я][.)])\s*(.+)$/i.exec(l)) && cur) {
+      if ((m = /^(?:[-–—•*○◦□▪·●]\s*|[a-zа-я]\)\s*|[a-zа-я]\.\s+)(.+)$/i.exec(l)) && cur) {   // «a. Ha», «b) Yo‘q»; «F.I.Sh.» — не вариант, а вопрос
         cur.options.push(m[1].trim().slice(0, 200));
         if (!cur.typed && (cur.type === 'long' || cur.type === 'text')) cur.type = 'one';
         return;
@@ -8143,10 +8176,10 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     /* согласие — словами: «AI: ha · Maxfiy: yo‘q · v1, 02.11.2026» или «rozilik so‘ralmagan» */
     var cons = function (u) { var c = qnCons(u); return !c ? T0('qn_cons_none') : ['base', 'ai', 'sp'].map(function (k) { var on = c[k === 'sp' ? 'special' : k] === true; return T0('qn_cons_c_' + k) + ': ' + T0(on ? 'qn_cons_yes' : 'qn_cons_no'); }).join(' · ') + ' · v' + (c.v || 1) + (c.at ? ', ' + fmtDate(c.at) : ''); };
     /* «Javoblar sifati» — словами и с причинами (для перенастройки порогов нужны все показатели — они в карточке) */
-    var hq = ask.some(qnQItem), qual = function (u) { var r = qnQuality(q, u.qa.answers, u.qa.meta); return !r ? '' : T0('qn_q_lv_' + r.level) + (qnQWhy(T0, r).length ? ': ' + qnQWhy(T0, r).join('; ') : '') + (r.sd && r.sd.flag ? '; ' + tpl(T0('qn_q_sd'), { n: r.sd.n, m: r.sd.k }) : ''); };
+    var hq = ask.some(qnQItem), qual = function (u) { var r = qnQuality(qnForU(q, u), u.qa.answers, u.qa.meta); return !r ? '' : T0('qn_q_lv_' + r.level) + (qnQWhy(T0, r).length ? ': ' + qnQWhy(T0, r).join('; ') : '') + (r.sd && r.sd.flag ? '; ' + tpl(T0('qn_q_sd'), { n: r.sd.n, m: r.sd.k }) : ''); };
     var rows = [['ID', 'Xodim', 'Lavozim', 'Bo‘lim', 'Yuborilgan', T0('qn_cons_box_t')].concat(tm ? [T0('qn_tm_card')] : [], hq ? [T0('qn_q_t')] : [], scs.map(function (s) { return s.name + ' (1–5)'; }), scs.map(function (s) { return s.name; }), ask.map(function (x) { return x.text; }))];
     db.users.filter(function (u) { return u.role === 'employee' && u.qa; }).forEach(function (u) {
-      var a = u.qa.answers || {}, res = qnScore(q, u), ta = qnTemperAll(q, res);
+      var qu = qnForU(q, u), a = u.qa.answers || {}, res = qnScore(qu, u), ta = qnTemperAll(qu, res);   // разделы «только кандидатам / штатным» — как в карточке
       rows.push([u.id, u.name, u.position || '', u.department || '', u.qa.at ? fmtDate(u.qa.at) : '—', cons(u)].concat(tm ? [qnTmText(T0, ta)] : [], hq ? [qual(u)] : [], res.map(function (r) { return !r.n ? '' : r.few ? T0('qn_few') + ' (' + r.n + ' / ' + r.total + ')' : qnNum(T0, r.mean); }), res.map(function (r) { return r.n && !r.few ? r.band : ''; }), ask.map(function (x) { return x.secret && !qnCons(u) ? '' : qnText(x, a[x.id], a[x.id + QN_OTH]); })));
     });
     return '﻿' + rows.map(function (r) { return r.map(cell).join(';'); }).join('\r\n');
@@ -8535,7 +8568,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       if (!sampler || busy[0] || !ok) return;
       var c = new AbortController(); ctl.current = c; busy[1](true); er[1]('');
       qnAiRun({ sampler: sampler, q: p.q, u: u, lang: p.lang, by: p.user.id, auto: auto === true, update: p.update, signal: c.signal })
-        .catch(function (e) { if (e && e.code === 'cancelled') return; er[1](e && e.code === 'invalid_json' ? t('ai_bad_json') : aiErr(e, t)); })
+        .catch(function (e) { if (e && e.code === 'cancelled') return; er[1](e && (e.code === 'bad_json' || e.code === 'invalid_json') ? t('ai_bad_json') : aiErr(e, t)); })
         .then(function () { busy[1](false); });
     }
     /* «Rad etish»: текст вывода удаляется, остаётся отметка — кто готовил, кто и когда отклонил */
@@ -8597,7 +8630,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         var x = qnTeamClean(r, list.length); if (!x) { er[1](t('ai_bad_json')); return; }
         var at = Date.now(), ids = list.map(function (z) { return z.u.id; });
         p.update(function (d) { patchUser(d, p.user.id, function (z) { z.qaTeam = { at: at, by: p.user.id, v: QN_AI_V, lang: p.lang, ids: ids, data: x }; }); });
-      }).catch(function (e) { if (e && e.code === 'cancelled') return; er[1](e && e.code === 'invalid_json' ? t('ai_bad_json') : aiErr(e, t)); }).then(function () { busy[1](false); });
+      }).catch(function (e) { if (e && e.code === 'cancelled') return; er[1](e && (e.code === 'bad_json' || e.code === 'invalid_json') ? t('ai_bad_json') : aiErr(e, t)); }).then(function () { busy[1](false); });
     }
     function dismiss() {
       if (!own || !canOff || !window.confirm(t('qn_ai_dismiss_q'))) return;
@@ -8613,7 +8646,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       (function next() {
         if (i >= list.length) { bat[1](null); p.say(tpl(t('qn_ai_all_done'), { n: ok })); return; }
         var u = list[i++];
-        qnAiRun({ sampler: sampler, q: p.q, u: u, lang: p.lang, by: p.user.id, update: p.update }).then(function () { ok++; }, function () {}).then(function () { bat[1]({ n: i, m: list.length }); next(); });
+        qnAiRun({ sampler: sampler, q: qnForU(p.q, u), u: u, lang: p.lang, by: p.user.id, update: p.update }).then(function () { ok++; }, function () {}).then(function () { bat[1]({ n: i, m: list.length }); next(); });
       })();
     }
     var d = team && team.data, nameOf = function (n) { var id = team && team.ids && team.ids[n - 1]; var u = id != null ? userOf(db, id) : null; return u && u.name ? u.name : '#' + n; };
@@ -8799,7 +8832,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var t = p.t, db = p.db, q = p.q, emps = db.users.filter(function (u) { return u.role === 'employee'; }), qs = useState(''), keys = qnKeys(q);
     var sent = emps.filter(function (u) { return u.qa && u.qa.at; }).sort(function (a, b) { return b.qa.at - a.qa.at; }), wait = emps.filter(function (u) { return !(u.qa && u.qa.at); });
     var needle = qs[0].trim().toLowerCase();
-    var rows = sent.map(function (u) { var res = qnScore(q, u); return { u: u, res: res, ta: qnTemperAll(q, res), qq: qnQuality(q, u.qa.answers, u.qa.meta) }; });
+    var rows = sent.map(function (u) { var qu = qnForU(q, u), res = qnScore(qu, u); return { u: u, res: res, ta: qnTemperAll(qu, res), qq: qnQuality(qu, u.qa.answers, u.qa.meta) }; });
     /* «Javoblar sifati» — маленькой плашкой рядом с результатом (жёлтый / красный, «просили пройти ещё раз»); не сортирует */
     var qChip = function (r) {
       var lv = r.qq && (r.qq.level === 'amber' || r.qq.level === 'red') ? r.qq.level : null, w = r.u.qa.retake;
@@ -9409,8 +9442,10 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       var io = new IntersectionObserver(function (en) { if (en[0].isIntersecting && !asked.current) { asked.current = true; setModal({ step: 'ask' }); } }, { threshold: 1 });
       io.observe(sentinel.current); return function () { io.disconnect(); };
     }, [p.id, needsAsk]);
-    p.leaveRef.current = function (r) { if (needsAsk && !asked.current) { asked.current = true; setModal({ step: 'ask', pending: r }); return true; } return false; };
-    useEffect(function () { return function () { p.leaveRef.current = null; }; }, []);
+    var leave = useRef(null);
+    leave.current = p.leaveRef.current = function (r) { if (needsAsk && !asked.current) { asked.current = true; setModal({ step: 'ask', pending: r }); return true; } return false; };
+    /* переход с урока на урок: новый урок уже поставил свою проверку — старый её не стирает */
+    useEffect(function () { return function () { if (p.leaveRef.current === leave.current) p.leaveRef.current = null; }; }, []);
 
     if (!l) return null;
     if (st === 'locked') return h('div', { className: 'box locked-box' }, h(Icon, { name: 'lock', size: 28 }), h('h2', { className: 'lor-h' }, l.title), h('p', { className: 'lor-muted' }, l.officialOnly && u.status !== 'official' ? t('official_locked') : t('lesson_locked')));
@@ -9427,7 +9462,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     }
     function closeModal() { var pend = modal && modal.pending; setModal(null); if (pend) p.forceGo(pend); }
 
-    var ls = flat(db.course), idx = ls.findIndex(function (x) { return x.id === l.id; }), nxt = ls[idx + 1];
+    var ls = trackFlat(db, u), idx = ls.findIndex(function (x) { return x.id === l.id; }), nxt = idx >= 0 ? ls[idx + 1] : null;
     var statusBox = null;
     if (st === 'exam-ready') statusBox = pr.score == null && !(l.quiz || []).length
       ? h('div', { className: 'status-box is-info' }, h('div', null, h('b', null, t('no_test_t')), h('p', null, t('wait_oral'))), h(Badge, { status: 'exam-ready', lang: p.lang }))
@@ -9616,7 +9651,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
        в самом конце — знакомство с компанией («Tanishuv»); после них — отметка прихода */
     function nextGate(from) {
       var d = dbRef.current;
-      if (from === 'start' && qnDue(d, u)) qn[1]('auto');
+      if (from === 'start' && qnDue(d, u) && !qnGate(d, u)) qn[1]('auto');   // «birinchi navbatda» — анкета уже на всю страницу, окном второй раз не открывается
       else if (from !== 'intro' && introDue(d, u)) intro[1]('auto');
       else if (clockDue(d, u)) gate[1](true);
     }
@@ -9720,8 +9755,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       : route.name === 'tasks' ? h(TasksPage, q)
       : route.name === 'drill' ? h(DrillPage, q)
       : route.name === 'cases' ? h(CasesPage, Object.assign({}, q, { caseId: route.id, key: 'cs' + (route.id || '') }))
-      : route.name === 'base' ? h(BasePage, q)
-      : route.name === 'report' ? h(MonthReport, Object.assign({}, q, { ym: route.ym }))
+      : route.name === 'base' ? h(BasePage, Object.assign({}, q, { tab: route.tab, jid: route.id, key: 'db' + (route.tab || '') + (route.id || '') }))
+      : route.name === 'report' ? h(MonthReport, Object.assign({}, q, { ym: route.ym, key: 'rp' + (route.ym || '') }))   // уведомление о другом месяце — новый месяц на экране
       : route.name === 'pay' ? h(PayPage, q)
       : route.name === 'mentor' && isMentor(u) ? h(MentorPanel, q)
       : route.name === 'help' ? h(HelpPage, Object.assign({}, q, { hint: hint, theme: theme, onTour: function () { tour[1](true); } }))
@@ -9768,7 +9803,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     if (r.type === 'question') actions = h('div', { className: 'inbox-act' },
       h(Field, { name: 'rep' + r.id, label: t('reply'), multiline: true, rows: 2, value: rep[0], onChange: rep[1], placeholder: t('reply_ph') }),
       h('div', { className: 'lor-req-act' },
-        h(Btn, { variant: 'outline', size: 'sm', disabled: !rep[0].trim(), onClick: function () { p.update(function (d) { var x = close(d); x.reply = rep[0].trim(); setProg(d, u.id, r.lessonId, { status: 'in-progress' }); notify(d, u.id, t('n_reply') + ' · ' + (l ? l.title : '') + ': ' + rep[0].trim(), r.lessonId); }); p.say(t('send_reply') + ' ✓'); } }, t('send_reply')),
+        h(Btn, { variant: 'outline', size: 'sm', disabled: !rep[0].trim(), onClick: function () { p.update(function (d) { var x = close(d); x.reply = rep[0].trim(); if (((d.progress[u.id] || {})[r.lessonId] || {}).status === 'question') setProg(d, u.id, r.lessonId, { status: 'in-progress' }); notify(d, u.id, t('n_reply') + ' · ' + (l ? l.title : '') + ': ' + rep[0].trim(), r.lessonId); }); p.say(t('send_reply') + ' ✓'); } }, t('send_reply')),
         p.sampler ? h(Btn, { variant: 'ghost', size: 'sm', disabled: dbusy[0], onClick: draftAI }, dbusy[0] ? t('ai_thinking') : '✦ ' + t('ai_draft')) : null,
         h(Btn, { variant: 'secondary', size: 'sm', onClick: function () { p.goCms(r.lessonId); } }, t('edit_sop'))),
       derr[0] ? h('span', { className: 'lor-field-error' }, derr[0]) : null);
@@ -9902,7 +9937,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       var passers = db.users.filter(function (x) { return x.role === 'employee' && (prog(db, x.id)[clean.id] || {}).status === 'passed'; }).map(function (x) { return x.id; });
       p.update(function (d) {
         d.course.sections.forEach(function (s) { s.lessons = s.lessons.map(function (l) { return l.id === draft.id ? Object.assign({}, l, clean) : l; }); });
-        d.requests.forEach(function (r) { if (r.type === 'question' && r.lessonId === draft.id && r.state === 'open') { r.state = 'closed'; r.unread = false; r.closedAt = Date.now(); setProg(d, r.userId, r.lessonId, { status: 'updated' }); notify(d, r.userId, t('n_updated') + ' · ' + draft.title, draft.id); n++; } });
+        d.requests.forEach(function (r) { if (r.type === 'question' && r.lessonId === draft.id && r.state === 'open') { r.state = 'closed'; r.unread = false; r.closedAt = Date.now(); if (((d.progress[r.userId] || {})[r.lessonId] || {}).status === 'question') setProg(d, r.userId, r.lessonId, { status: 'updated' }); notify(d, r.userId, t('n_updated') + ' · ' + draft.title, draft.id); n++; } });
       });
       baseRef.current = after;
       if (plain(before) !== plain(after) && passers.length) notif[1]({ lessonId: clean.id, title: clean.title, before: before, after: after, passers: passers });
@@ -9960,7 +9995,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         draft && lesson ? h('section', { className: 'box cms-edit' },
           openQ.length ? h('div', { className: 'status-box is-fail' }, h('div', null, h('b', null, '? ' + openQ.length + ' · ' + t('tab_q')), openQ.map(function (r) { return h('p', { key: r.id }, userOf(db, r.userId).name + ': ' + r.text); }))) : null,
           notif[0] ? h(SopNotifyPanel, Object.assign({}, p, { key: notif[0].lessonId + notif[0].title, x: notif[0], onDone: function () { notif[1](null); } })) : null,
-          h(LessonRisk, Object.assign({}, p, { lessonId: draft.id })),
+          h(LessonRisk, Object.assign({}, p, { lessonId: draft.id, key: 'rk' + draft.id })),
           h(CmsAI, { t: t, lang: p.lang, sampler: p.sampler, say: p.say, draft: draft, setD: setD, questions: openQ.map(function (r) { return r.text; }) }),
           h(Field, { name: 'title', label: t('l_title'), required: true, value: draft.title, onChange: function (v) { setD(function (d) { d.title = v; }); } }),
           h(Field, { name: 'intro', label: t('l_intro'), multiline: true, rows: 2, value: draft.intro, onChange: function (v) { setD(function (d) { d.intro = v; }); } }),
@@ -10026,7 +10061,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       p.update(function (d) { d.users.push(Object.assign({ id: nid, login: form.login.trim().toLowerCase(), password: form.password, name: form.name.trim(), position: t('lvl_' + form.kind), department: '', status: 'official', profileComplete: true, tourDone: form.kind === 'pm', createdAt: Date.now() }, ACC_ROLE[form.kind])); });
       made[1]({ login: form.login.trim().toLowerCase(), password: form.password }); f[1](blank());
     }
-    function resetPw(u) { var np = genPw(); p.update(function (d) { d.users.forEach(function (x) { if (x.id === u.id) x.password = np; }); }); var o = Object.assign({}, pw[0]); o[u.id] = np; pw[1](o); }
+    function resetPw(u) { var np = genPw(); if (p.update(function (d) { d.users.forEach(function (x) { if (x.id === u.id) x.password = np; }); }) === false) return; var o = Object.assign({}, pw[0]); o[u.id] = np; pw[1](o); }
     function remove(u) { del[1](null); p.update(function (d) { d.users = d.users.filter(function (x) { return x.id !== u.id; }); }); }
     return h('section', { className: 'box ld-box' },
       h('h2', { className: 'lor-h' }, t(p.first ? 'acc_first_t' : 'acc_title')),
@@ -10289,7 +10324,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           })(),
           h('td', { className: 'nowrap' }, u.termsAcceptedAt ? h('span', { className: 'lor-sm' }, '✓ ' + fmtDate(u.termsAcceptedAt)) : h('span', { className: 'lor-muted' }, '○')),
           h('td', { className: 'nowrap' }, h(Btn, { variant: 'ghost', size: 'sm', onClick: function () { ed[1](u.id); } }, t('ue_edit')),
-            h(Btn, { variant: 'ghost', size: 'sm', onClick: function () { var np = genPw(); p.update(function (d) { d.users.forEach(function (x) { if (x.id === u.id) x.password = np; }); }); var o = Object.assign({}, pw[0]); o[u.id] = np; pw[1](o); } }, t('reset_pw')))),
+            h(Btn, { variant: 'ghost', size: 'sm', onClick: function () { var np = genPw(); if (p.update(function (d) { d.users.forEach(function (x) { if (x.id === u.id) x.password = np; }); }) === false) return; var o = Object.assign({}, pw[0]); o[u.id] = np; pw[1](o); } }, t('reset_pw')))),
         isOpen ? h('tr', { className: 'sp-row' }, h('td', { colSpan: 10 },
           h('div', { className: 'sp-detail' },
             h(XtPanel, Object.assign({}, p, { u: u, key: 'xtp' + u.id })),
@@ -10358,7 +10393,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   /* ---------------- admin shell ---------------- */
   function AdminApp(p) {
     var lv = lvlOf(p.user);
-    if (lv === 'boss') p = Object.assign({}, p, { update: roUpdate(p, p.t) });   // the owner: view only
+    if (lv === 'boss') p = Object.assign({}, p, { update: roUpdate(p, p.t), say: roSay(p.say) });   // the owner: view only
     var t = p.t, db = p.db, r = useHashRoute(ADM_ROUTES, { name: lv === 'boss' ? 'monitor' : 'inbox' }), route = r[0];
     var openN = db.requests.filter(function (x) { return x.state === 'open'; }).length + xtReview(db).length;
     function go(x) { r[1](x); window.scrollTo(0, 0); }
@@ -10376,7 +10411,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var qN = errStats(db, 90).open;
     var nav = [['inbox', t('nav_inbox'), openN], ['monitor', t('nav_monitor')], ['quality', t('nav_quality'), qN], ['rating', t('nav_rating')], ['levels', t('nav_levels')], ['cms', t('nav_cms')], ['staff', t('nav_staff')], ['assets', t('nav_assets'), attnA], ['feedback', t('nav_feedback'), newIni], ['pay', t('nav_pay'), lv === 'ceo' ? (db.payCalcs || []).filter(function (c) { return c.status === 'saved'; }).length : 0]].filter(function (n) { return n[0] !== 'pay' || lv !== 'sop'; }).map(function (n) { return { key: n[0], label: n[1], count: n[2], active: route.name === n[0], onClick: function () { go({ name: n[0] }); } }; });
     var q = Object.assign({}, p, { goCms: function (lid) { go({ name: 'cms', lessonId: lid }); }, goAssets: function (uid) { go({ name: 'assets', uid: uid }); } });
-    var main = route.name === 'monitor' ? h(Monitor, Object.assign({}, q, { tab: route.tab, ym: route.ym })) : route.name === 'rating' ? h(Rating, q) : route.name === 'levels' ? h(LevelsAdmin, q) : route.name === 'cms' ? h(CMS, Object.assign({}, q, { lessonId: route.lessonId, tab: route.tab })) : route.name === 'staff' ? h(Staff, q)
+    var main = route.name === 'monitor' ? h(Monitor, Object.assign({}, q, { tab: route.tab, ym: route.ym, key: 'mn' + (route.tab || '') + (route.ym || '') })) : route.name === 'rating' ? h(Rating, q) : route.name === 'levels' ? h(LevelsAdmin, q) : route.name === 'cms' ? h(CMS, Object.assign({}, q, { lessonId: route.lessonId, tab: route.tab })) : route.name === 'staff' ? h(Staff, q)
       : route.name === 'assets' ? h(AssetsAdmin, Object.assign({}, q, { uid: route.uid, key: 'as' + (route.uid || '') })) : route.name === 'feedback' ? h(FeedbackAdmin, Object.assign({}, q, { tab: route.tab }))
       : route.name === 'quality' ? h(QualityAdmin, Object.assign({}, q, { tab: route.tab }))
       : route.name === 'pay' && lv !== 'sop' ? h(PayAdmin, Object.assign({}, q, { tab: route.tab }))
@@ -10386,7 +10421,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         hint: hint, theme: theme, onSearch: function () { pal[1](true); }, onHelp: function () { go({ name: 'help' }); }, links: [{ key: 'help', label: t('nav_help'), onClick: function () { go({ name: 'help' }); } }, { key: 'export', label: t('exp_btn'), onClick: function () { exportAll(p.say, t); } }],
         notifs: db.notifications.filter(function (n) { return n.userId === p.user.id; }), fmtNotif: function (n) { return notifText(n, db, p.lang, t); },
         onReadAll: function () { p.update(function (d) { d.notifications.forEach(function (n) { if (n.userId === p.user.id) n.read = true; }); }); },
-        onNotif: function (n) { p.update(function (d) { d.notifications.forEach(function (x) { if (x.id === n.id) x.read = true; }); }); go({ name: n.route === 'mentor' ? 'quality' : (n.route || 'inbox'), tab: n.kind === 'errfix' ? 'err' : (n.tab || null), ym: n.ym || null }); } }),
+        onNotif: function (n) { p.update(function (d) { d.notifications.forEach(function (x) { if (x.id === n.id) x.read = true; }); }); go({ name: n.route === 'mentor' ? 'quality' : n.route === 'ideas' ? 'feedback' : (n.route || 'inbox'), tab: n.kind === 'errfix' ? 'err' : (n.tab || null), ym: n.ym || null }); } }),   // идеи у CEO / руководителя — «Fikrlar»
       h('div', { className: 'app-body no-side' }, h('main', { className: 'app-main', id: 'main' },
         lv === 'boss' ? h('div', { className: 'ro-bar', role: 'note' }, h(Ico, { name: 'lock', size: 16 }), h('span', null, t('ro_bar'))) : null,
         h('div', { className: 'page-anim', key: route.name + (route.id || route.uid || route.lessonId || '') + (route.tab || '') + (route.ym || '') }, main), h(Foot, { t: t, onTerms: p.showTerms, admin: true, say: p.say }))),
@@ -10571,11 +10606,14 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var user = db.users.filter(function (u) { return u.id === db.session; })[0];
     SAY = function (k) { ts[1]({ msg: t(k), k: Date.now() }); };
     GUARD = !!(user && user.role === 'employee');
+    /* другой человек в той же вкладке (выход и вход на общем компьютере): отметки «документ открыт» и файлы прежнего — забыть */
+    var lastUid = useRef(user ? user.id : null), uidNow = user ? user.id : null;
+    if (lastUid.current !== uidNow) { DOC_OPENED = {}; DOC_CACHE = {}; lastUid.current = uidNow; }
     /* the 1st of a month (or the first open after it): the closed month's report goes out — from the SOP manager's device */
-    var due = monthlyDue(db, Date.now()), canIssue = !!(user && user.role === 'admin');
+    var lvU = lvlOf(user), due = monthlyDue(db, Date.now()), canIssue = lvU === 'sop' || lvU === 'ceo';   // владелец (boss) только смотрит: его запись monthly сервер отклонит — без этого рассылка шла бы по кругу
     useEffect(function () { if (due && canIssue) update(function (d) { if (monthlyDue(d, Date.now()) === due) issueMonthly(d, due); }); }, [due, canIssue]);
     /* new platform on the server: levels, programmes, adaptation plan and schedule come from the templates */
-    var needTpl = !!(user && user.role === 'admin' && !(db.levels || []).length);
+    var needTpl = (lvU === 'sop' || lvU === 'ceo') && !(db.levels || []).length;
     useEffect(function () { if (needTpl) update(fillTemplates); }, [needTpl]);
     var p = {
       db: db, update: update, t: t, lang: lang, user: user,
