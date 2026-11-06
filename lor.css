@@ -4498,3 +4498,20 @@ button.jf-name { padding: 0; background: none; border: 0; border-bottom: 1px sol
   .pr-ed-row.is-head { grid-template-columns: minmax(0, 1fr) auto; }
   .pr-ed-row.is-head > :first-child, .pr-ed-row.is-head .pr-ed-acts { grid-column: auto; }
 }
+/* «Narxlar» — таблица со своими столбцами */
+.pr-table.is-matrix td.pr-num { white-space: nowrap; }
+.pr-th-wrap { white-space: normal !important; vertical-align: bottom; }
+.pr-cols { display: grid; gap: 10px; }
+.pr-col-list { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.pr-col { display: flex; align-items: center; gap: 2px; padding: 4px; border: var(--hairline) solid var(--line); border-radius: var(--radius-md); background: var(--surface-raised); }
+.pr-col .lor-input { width: 210px; }
+.pr-ed.is-matrix { overflow-x: auto; padding-bottom: 4px; }
+.pr-ed-head .pr-num { text-align: right; }
+@media (max-width: 900px) {
+  .pr-ed.is-matrix .pr-ed-head { display: grid; }
+  .pr-ed.is-matrix .pr-ed-row:not(.is-head) { padding-bottom: 0; border-bottom: 0; }
+  .pr-ed.is-matrix .pr-ed-row:not(.is-head) > :first-child { grid-column: auto; }
+  .pr-ed.is-matrix .pr-ed-row:not(.is-head) .pr-ed-acts { grid-column: auto; justify-content: flex-start; }
+  .pr-col .lor-input { width: 100%; }
+  .pr-col { width: 100%; }
+}

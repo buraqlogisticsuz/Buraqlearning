@@ -1482,44 +1482,52 @@ try {
   step('«Lavozim va bo‘limlar»: CEO добавил должность и отдел; у SOP-менеджера они в форме сотрудника, список — только просмотр');
 
 
-  // ---------- «Narxlar»: SOP-менеджер объявляет цены в «Kontent», сотрудник видит их в «Baza» ----------
+  // ---------- «Narxlar»: SOP-менеджер объявляет прайс-лист (таблица: вес на 1 m³ × тарифы) в «Kontent», сотрудник видит его в «Baza» ----------
   await nav(A, 'cms'); await A.locator('.lor-tab').filter({ hasText: 'Narxlar' }).click(); await A.waitForTimeout(300);
   await A.getByRole('button', { name: 'Yangi narxlar ro‘yxati' }).click();
-  await A.fill('#f-pr-title', 'Xitoy — Toshkent tariflari');
-  await A.fill('#f-pr-note', 'Narxlar QQSsiz, minimal partiya — 10 kg.');
+  assert.equal(await A.locator('#f-pr-kind').inputValue(), 'table', 'по умолчанию — таблица со своими столбцами');
+  await A.fill('#f-pr-title', 'Asosiy price list');
+  await A.fill('#f-pr-note', '2026 yil 05 noyabr sanadan Buraq Logistics kompaniyasi Xitoy omborlaridan Toshkent shahrigacha yuklarni yetkazib berish tariflari.');
+  await A.fill('#f-pr-from', '2026-11-05');
   await A.getByRole('button', { name: '⇪ Jadvaldan qo‘yish' }).click();
-  await A.fill('#f-pr-paste', ['Xizmat\tBirlik\tNarx\tValyuta\tMuddat\tIzoh', 'Avia', 'Guanchjou — Toshkent\tkg\t7,5\tUSD\t5–7 kun\tbatareyasiz', 'Yiwu — Toshkent\tkg\t7\tUSD\t5–7 kun\t', 'Avto', 'Yiwu — Toshkent (sborniy)\tm³\t260\tUSD\t18–22 kun\t', 'Bojxona rasmiylashtiruvi\txizmat\t1 500 000\tso‘m\t1–2 kun\t'].join('\n'));
+  const PL = [['0-100 kg', 125, 145, 95, 115], ['101-150 kg', 135, 155, 105, 125], ['151-200 kg', 145, 165, 115, 135], ['201-250 kg', 165, 185, 135, 155], ['251-300 kg', 185, 205, 155, 175],
+    ['301-400 kg', 195, 215, 165, 185], ['401-500 kg', 205, 225, 175, 195], ['501-700 kg', 245, 265, 215, 235], ['701-1000 kg', 275, 295, 245, 265],
+    ['1000 kg<', '0.395 (kg uchun)', '0.495 (kg uchun)', '0.345 (kg uchun)', '0.445 (kg uchun)']];
+  await A.fill('#f-pr-paste', ['Yukning 1 m³ hajmdagi og‘irligi\tStandart tarif (usd)\tEksklyuziv tarif (usd)\tHorgos Standart tarif (usd)\tHorgos Eksklyuziv tarif (usd)'].concat(PL.map(r => r.join('\t'))).join('\n'));
   await A.getByRole('button', { name: 'Qatorlarni qo‘shish' }).click(); await A.waitForTimeout(200);
-  assert.equal(await A.locator('.pr-ed-row').count(), 6, 'пустая строка ушла: 2 заголовка + 4 цены');
-  assert.equal(await A.locator('.pr-ed-row.is-head').count(), 2);
+  assert.equal(await A.locator('#f-pr-head').inputValue(), 'Yukning 1 m³ hajmdagi og‘irligi', 'первый столбец — из шапки');
+  assert.equal(await A.locator('.pr-col input').count(), 4, 'четыре тарифа — четыре столбца');
+  assert.equal(await A.locator('.pr-ed-row').count(), 10, 'пустая строка ушла: 10 строк веса');
   await A.waitForTimeout(300); await shot(A, 'narxlar-tahrir');
   await A.getByRole('button', { name: 'Nashr qilish' }).click(); await settle(A);
   { const pl = (srv.g.state().prices || [])[0];
-    assert.ok(pl && pl.status === 'published' && pl.upd, 'список объявлен на сервере');
-    assert.deepEqual(pl.items.filter(x => !x.h).map(x => [x.name, x.price, x.cur]), [['Guanchjou — Toshkent', '7,5', 'USD'], ['Yiwu — Toshkent', '7', 'USD'], ['Yiwu — Toshkent (sborniy)', '260', 'USD'], ['Bojxona rasmiylashtiruvi', '1 500 000', 'UZS']]);
+    assert.ok(pl && pl.status === 'published' && pl.kind === 'table' && pl.from === '2026-11-05', 'прайс-лист объявлен на сервере');
+    assert.deepEqual(pl.cols.map(c => c.label), ['Standart tarif (usd)', 'Eksklyuziv tarif (usd)', 'Horgos Standart tarif (usd)', 'Horgos Eksklyuziv tarif (usd)']);
+    assert.deepEqual(pl.items.map(x => [x.name].concat(pl.cols.map(c => x.v[c.id]))), PL.map(r => r.map(String)));
     assert.ok(srv.g.state().notifications.some(n => n.kind === 'price' && n.userId === emp.id), 'сотруднику — уведомление'); }
   assert.deepEqual(await rejected(A), [], 'сервер принял цены');
-  // сотрудник: «Baza» открывается на «Narxlar», поиск по направлению
+  // сотрудник: «Baza» открывается на «Narxlar» — та же таблица, поиск по весу
   await E.reload({ waitUntil: 'networkidle' }); await nav(E, 'base');
-  try { await E.waitForSelector('.pr-card', { timeout: 10000 }); } catch (e) { await E.screenshot({ path: '/tmp/claude-0/-home-user/0389a155-4f5e-5550-9ee3-121de8595e5f/scratchpad/audit/pr-fail.png' }); throw e; }
+  await E.waitForSelector('.pr-card', { timeout: 10000 });
   assert.match(await E.locator('.lor-tab.is-on').innerText(), /Narxlar/, '«Baza» открывается на ценах');
-  assert.match(await E.locator('.pr-card').innerText(), /Guanchjou — Toshkent[\s\S]*7,5 USD/);
-  assert.match(await E.locator('.pr-card').innerText(), /1\s500\s000 UZS/, 'сумма — с разрядами');
-  await E.fill('#f-pr-q', 'sborniy'); await E.waitForTimeout(200);
-  assert.equal(await E.locator('.pr-table tbody tr:not(.pr-group)').count(), 1, 'поиск: одна строка');
-  assert.equal(await E.locator('.pr-group').count(), 1, '…и её заголовок');
+  assert.match(await E.locator('.pr-table thead').innerText(), /Yukning 1 m³ hajmdagi og‘irligi[\s\S]*Standart tarif \(usd\)[\s\S]*Horgos Eksklyuziv tarif \(usd\)/i, 'шапка — первый столбец и тарифы');
+  assert.match(await E.locator('.pr-table tbody tr').first().innerText(), /0-100 kg\s+125\s+145\s+95\s+115/);
+  assert.match(await E.locator('.pr-table tbody tr').last().innerText(), /1000 kg<\s+0\.395 \(kg uchun\)/);
+  assert.match(await E.locator('.pr-card').innerText(), /amal qiladi: 05\.11\.2026 dan/);
+  await E.fill('#f-pr-q', '701'); await E.waitForTimeout(200);
+  assert.equal(await E.locator('.pr-table tbody tr').count(), 1, 'поиск: одна строка');
   await E.fill('#f-pr-q', ''); await E.waitForTimeout(200);
-  // SOP-менеджер меняет цену — у сотрудника рядом прежняя и стрелка
+  // SOP-менеджер меняет тариф — у сотрудника рядом прежний и стрелка
   await A.getByRole('button', { name: 'Tahrirlash' }).first().click();
-  await A.locator('.pr-ed-row:not(.is-head) input.pr-num').first().fill('8');
+  await A.locator('.pr-ed-row:not(.is-head)').first().locator('input.pr-num').first().fill('130');
   await A.getByRole('button', { name: 'Nashr qilish' }).click(); await settle(A);
-  { const it = srv.g.state().prices[0].items.find(x => x.name === 'Guanchjou — Toshkent');
-    assert.equal(it.price, '8'); assert.equal(it.was, '7,5'); assert.ok(it.chAt, 'смена цены отмечена'); }
+  { const pl = srv.g.state().prices[0], it = pl.items.find(x => x.name === '0-100 kg'), c0 = pl.cols[0].id;
+    assert.equal(it.v[c0], '130'); assert.equal(it.was[c0], '125'); assert.ok(it.chAt, 'смена тарифа отмечена'); }
   assert.ok(srv.g.state().notifications.some(n => n.kind === 'price' && n.userId === emp.id && n.price.n === 1), 'уведомление: 1 цена изменилась');
   await E.reload({ waitUntil: 'networkidle' }); await E.waitForSelector('.pr-card', { timeout: 10000 });
-  assert.match(await E.locator('.pr-card').innerText(), /8 USD\s*↑[\s\S]*avval: 7,5/, 'новая цена со стрелкой и прежняя рядом');
+  assert.match(await E.locator('.pr-table tbody tr').first().innerText(), /130\s*↑[\s\S]*avval: 125/, 'новый тариф со стрелкой и прежний рядом');
   await E.waitForTimeout(300); await shot(E, 'narxlar-xodim');
-  step('«Narxlar»: SOP-менеджер вставил цены из Excel (заголовки и строки), объявил — сотруднику уведомление и «Baza → Narxlar» с поиском; смена цены — прежняя рядом и стрелка');
+  step('«Narxlar»: SOP-менеджер вставил прайс-лист из Excel (шапка — столбцы тарифов, 10 строк веса), объявил — сотруднику уведомление и «Baza → Narxlar» той же таблицей с поиском; смена тарифа — прежний рядом и стрелка');
 
   // ---------- порядок входа нового сотрудника: анкета → тест → приветствие и условия → профиль → «Tanishuv» последним ----------
   const jid = Math.max(...srv.g.state().users.map(u => u.id)) + 1000;

@@ -4546,43 +4546,87 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
 
   /* ---------- Narxlar: SOP-менеджер объявляет цены в «Kontent → Narxlar», сотрудники видят их в «Baza → Narxlar» ----------
      prices[]: { id, status: draft | published, title, note, from (ГГГГ-ММ-ДД, с какого дня), cur (валюта по умолчанию), access,
-     items: [{ id, h (строка-заголовок), name, unit, price (как ввели: «1 250», «kelishiladi»), cur, days, note,
-     was / chAt (прежняя цена и когда сменилась), newAt (новая строка) }], upd (когда объявлено), by }.
-     Сотрудник видит только объявленные и доступные ему (сервер, v21); отметки «↑ / ↓ / yangi» — 14 дней */
+     kind: 'list' (по умолчанию) | 'table', items, upd (когда объявлено), by }.
+     list — строка: { id, name, unit, price (как ввели: «1 250», «kelishiladi»), cur, days, note };
+     table — свои столбцы, как прайс-лист на картинке: head (первый столбец: «Yukning 1 m³ hajmdagi og‘irligi»),
+       cols [{ id, label: «Standart tarif (usd)» }], строка: { id, name: «0-100 kg», v: { [col.id]: «125» } };
+     у обоих — строки-заголовки { id, h: true, name }, отметки смены: was (прежняя цена; у table — по столбцам) / chAt,
+     новая строка — newAt. Сотрудник видит только объявленные и доступные ему (сервер, v21); «↑ / ↓ / yangi» — 14 дней */
   var PR_CUR = ['USD', 'UZS', 'CNY', 'EUR', 'RUB'], PR_FRESH = 14 * DAY;
   function pricesAll(db) { return db.prices || []; }
   function pricesFor(db, u) { return pricesAll(db).filter(function (x) { return (u.role === 'admin' || x.status === 'published') && canSee(db, u, x.access); }); }
+  function prIsTable(x) { return !!x && x.kind === 'table'; }
   function prNum(v) { var s = String(v == null ? '' : v).replace(/[\s  ]/g, '').replace(',', '.'); return /^-?\d+(\.\d+)?$/.test(s) ? +s : null; }
+  /* число — с разрядами, разделитель дроби — как ввели («7,5», «0.395»); текст («0.395 (kg uchun)», «kelishiladi») — как есть */
   function prFmt(v) {
-    var n = prNum(v); if (n == null) return String(v == null ? '' : v).trim();
-    var parts = String(Math.abs(n)).split('.'); return (n < 0 ? '−' : '') + parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + (parts[1] ? ',' + parts[1] : '');
+    var raw = String(v == null ? '' : v).trim(), n = prNum(raw); if (n == null) return raw;
+    var s = raw.replace(/[\s  ]/g, ''), neg = s.charAt(0) === '-'; if (neg) s = s.slice(1);
+    var m = /^(\d+)([.,]\d+)?$/.exec(s); if (!m) return raw;
+    return (neg ? '−' : '') + m[1].replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + (m[2] || '');
   }
   function prItems(x) { return (x.items || []).filter(function (it) { return !it.h; }); }
-  function prSearch(x, it) { return [it.name, it.unit, it.note, it.days, x.title].join(' '); }
-  /* строки из Excel / Google Sheets (табуляция; без неё — «;»): xizmat · birlik · narx · valyuta · muddat · izoh;
-     строка только с первой ячейкой — заголовок группы; строка-шапка таблицы («Narx», «Цена», «Price») пропускается */
-  function prParse(text, cur) {
-    var out = [];
-    String(text || '').split(/\r?\n/).forEach(function (line, i) {
-      if (!line.trim()) return;
-      var c = (line.indexOf('\t') >= 0 ? line.split('\t') : line.split(';')).map(function (x) { return x.trim(); });
-      if (!out.length && c.some(function (x) { return /^(narx|narxi|цена|стоимость|price|价格)$/i.test(x); })) return;
-      var id = 'pi' + Date.now().toString(36) + i + Math.random().toString(36).slice(2, 5);
-      if (c[0] && c.slice(1).every(function (x) { return !x; })) { out.push({ id: id, h: true, name: c[0] }); return; }
-      // валюта словами: «so‘m», «сум», «$», «юань» — к коду
-      var cu = String(c[3] || '').toUpperCase().replace(/[‘’'`ʻʼ\s.]/g, '');
-      cu = /^(SOM|SUM|СУМ|СЎМ|UZS)$/.test(cu) ? 'UZS' : /^(\$|USD|ДОЛЛ.*|DOLL.*)$/.test(cu) ? 'USD' : /^(CNY|RMB|ЮАНЬ|YUAN|¥|元)$/.test(cu) ? 'CNY' : /^(€|EUR|ЕВРО|YEVRO)$/.test(cu) ? 'EUR' : /^(RUB|РУБ.*|₽)$/.test(cu) ? 'RUB' : cu;
-      out.push({ id: id, name: c[0] || '', unit: c[1] || '', price: c[2] || '', cur: PR_CUR.indexOf(cu) >= 0 ? cu : cur, days: c[4] || '', note: c[5] || '' });
+  function prCols(x) { return prIsTable(x) ? (x.cols || []) : []; }
+  function prSearch(x, it) {
+    if (prIsTable(x)) return [it.name, x.title, x.head].concat(prCols(x).map(function (c) { return c.label + ' ' + ((it.v || {})[c.id] || ''); })).join(' ');
+    return [it.name, it.unit, it.note, it.days, x.title].join(' ');
+  }
+  /* строка поиска под названием: цена и единица — или первые столбцы таблицы */
+  function prSub(x, it) {
+    if (prIsTable(x)) return prCols(x).slice(0, 3).map(function (c) { var v = (it.v || {})[c.id]; return v ? c.label + ': ' + prFmt(v) : ''; }).filter(Boolean).concat([x.title]).join(' · ');
+    return [prFmt(it.price) + (prNum(it.price) != null ? ' ' + (it.cur || '') : ''), it.unit, x.title].filter(Boolean).join(' · ');
+  }
+  function prId(k) { return k + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+  function prCurOf(c3, cur) {
+    // валюта словами: «so‘m», «сум», «$», «юань» — к коду
+    var cu = String(c3 || '').toUpperCase().replace(/[‘’'`ʻʼ\s.]/g, '');
+    cu = /^(SOM|SUM|СУМ|СЎМ|UZS)$/.test(cu) ? 'UZS' : /^(\$|USD|ДОЛЛ.*|DOLL.*)$/.test(cu) ? 'USD' : /^(CNY|RMB|ЮАНЬ|YUAN|¥|元)$/.test(cu) ? 'CNY' : /^(€|EUR|ЕВРО|YEVRO)$/.test(cu) ? 'EUR' : /^(RUB|РУБ.*|₽)$/.test(cu) ? 'RUB' : cu;
+    return PR_CUR.indexOf(cu) >= 0 ? cu : cur;
+  }
+  /* строки из Excel / Google Sheets (табуляция; без неё — «;»); строка только с первой ячейкой — заголовок группы.
+     list: xizmat · birlik · narx · valyuta · muddat · izoh, шапка таблицы («Narx», «Цена», «Price») пропускается;
+     table: первая строка, где после первой ячейки нет чисел, — шапка: первый столбец и названия тарифов; дальше — строки */
+  function prParse(text, x) {
+    var lines = String(text || '').split(/\r?\n/).filter(function (l) { return l.trim(); }).map(function (l) { return (l.indexOf('\t') >= 0 ? l.split('\t') : l.split(';')).map(function (c) { return c.trim(); }); });
+    var out = { rows: [] };
+    if (!prIsTable(x)) {
+      lines.forEach(function (c) {
+        if (!out.rows.length && c.some(function (y) { return /^(narx|narxi|цена|стоимость|price|价格)$/i.test(y); })) return;
+        if (c[0] && c.slice(1).every(function (y) { return !y; })) { out.rows.push({ id: prId('pi'), h: true, name: c[0] }); return; }
+        out.rows.push({ id: prId('pi'), name: c[0] || '', unit: c[1] || '', price: c[2] || '', cur: prCurOf(c[3], x.cur || 'USD'), days: c[4] || '', note: c[5] || '' });
+      });
+      return out;
+    }
+    var cols = (x.cols || []).map(function (c) { return { id: c.id, label: c.label }; });
+    if (lines.length && lines[0].length > 1) {
+      var rest = lines[0].slice(1).filter(Boolean);
+      if (rest.length && rest.every(function (y) { return prNum(y) == null && !/^\d/.test(y); })) {
+        var hd = lines.shift(); out.head = hd[0];
+        hd.slice(1).forEach(function (l, i) { if (!l && i >= hd.slice(1).filter(Boolean).length) return; if (cols[i]) cols[i].label = l; else cols.push({ id: prId('pc'), label: l }); });
+        out.cols = cols;
+      }
+    }
+    lines.forEach(function (c) {
+      if (c[0] && c.slice(1).every(function (y) { return !y; })) { out.rows.push({ id: prId('pi'), h: true, name: c[0] }); return; }
+      var v = {};
+      c.slice(1).forEach(function (y, i) { if (!cols[i]) { cols.push({ id: prId('pc'), label: '' }); out.cols = cols; } if (y) v[cols[i].id] = y; });
+      out.rows.push({ id: prId('pi'), name: c[0] || '', v: v });
     });
     return out;
   }
-  function blankPrice() { return { id: null, status: 'draft', title: '', note: '', from: '', cur: 'USD', access: acc('all'), items: [] }; }
-  function prRow(cur) { return { id: 'pi' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), name: '', unit: '', price: '', cur: cur || 'USD', days: '', note: '' }; }
-  function prMark(it) {
-    var now = Date.now();
-    if (it.chAt && now - it.chAt < PR_FRESH && it.was != null) { var a = prNum(it.was), b = prNum(it.price); return { k: a != null && b != null ? (b > a ? 'up' : b < a ? 'down' : 'ch') : 'ch', was: it.was }; }
-    if (it.newAt && now - it.newAt < PR_FRESH) return { k: 'new' };
+  function blankPrice() { return { id: null, status: 'draft', kind: 'table', title: '', note: '', from: '', cur: 'USD', access: acc('all'), head: '', cols: [{ id: prId('pc'), label: '' }], items: [] }; }
+  function prRow(x) { return prIsTable(x) ? { id: prId('pi'), name: '', v: {} } : { id: prId('pi'), name: '', unit: '', price: '', cur: (x && x.cur) || 'USD', days: '', note: '' }; }
+  /* отметка у цены: list — одна цена, table — значение столбца ck */
+  function prMark(it, ck) {
+    var now = Date.now(), was = ck ? (it.was && typeof it.was === 'object' ? it.was[ck] : null) : (typeof it.was === 'object' ? null : it.was);
+    if (it.chAt && now - it.chAt < PR_FRESH && was != null) { var a = prNum(was), b = prNum(ck ? (it.v || {})[ck] : it.price); return { k: a != null && b != null ? (b > a ? 'up' : b < a ? 'down' : 'ch') : 'ch', was: was }; }
+    if (!ck && it.newAt && now - it.newAt < PR_FRESH) return { k: 'new' };
     return null;
+  }
+  function PrCell(p) {
+    var m = p.m, txt = p.text;
+    return h(F, null,
+      h('span', { className: cx('pr-price', m && 'is-' + m.k) }, txt || '—', m && (m.k === 'up' || m.k === 'down') ? h('span', { className: 'pr-arrow', 'aria-hidden': true }, m.k === 'up' ? '↑' : '↓') : null),
+      m && m.was != null ? h('small', { className: 'pr-was' }, tpl(p.t('pr_was'), { x: prFmt(m.was) })) : null);
   }
 
   /* сотрудник: «Baza → Narxlar» — поиск по всем спискам, таблица на каждый список */
@@ -4603,53 +4647,97 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       !list.length ? h('section', { className: 'box' }, h('p', { className: 'lor-muted', style: { margin: 0 } }, t('pr_none')))
         : !shown.length ? h('section', { className: 'box' }, h('p', { className: 'lor-muted', style: { margin: 0 } }, t('pr_nothing')))
         : shown.map(function (r) {
-          var x = r.x;
+          var x = r.x, tb = prIsTable(x), cols = prCols(x), span = tb ? cols.length + 1 : 5;
           return h('section', { key: x.id, className: 'box pr-card' },
             h('div', { className: 'pr-card-h' },
               h('div', null, h('h2', { className: 'lor-h' }, x.title),
                 h('p', { className: 'lor-sm lor-muted pr-meta' }, [x.upd ? tpl(t('pr_upd'), { d: fmtDate(x.upd) }) : null, x.from ? tpl(t('pr_from_v'), { d: fmtK(x.from) }) : null].filter(Boolean).join(' · '))),
               h('span', { className: 'pr-count' }, tpl(t('pr_rows_n'), { n: prItems(x).length }))),
             x.note ? h('p', { className: 'pr-note' }, x.note) : null,
-            h('div', { className: 'lor-table-wrap pr-wrap' }, h('table', { className: 'lor-table pr-table' },
-              h('thead', null, h('tr', null, h('th', null, t('pr_c_name')), h('th', null, t('pr_c_unit')), h('th', { className: 'pr-num' }, t('pr_c_price')), h('th', null, t('pr_c_days')), h('th', null, t('pr_c_note')))),
+            h('div', { className: 'lor-table-wrap pr-wrap' }, h('table', { className: cx('lor-table pr-table', tb && 'is-matrix'), style: tb ? { minWidth: 200 + cols.length * 130 } : null },
+              tb ? h('thead', null, h('tr', null, h('th', { className: 'pr-th-wrap' }, x.head || t('pr_c_name')), cols.map(function (c) { return h('th', { key: c.id, className: 'pr-num pr-th-wrap' }, c.label); })))
+                : h('thead', null, h('tr', null, h('th', null, t('pr_c_name')), h('th', null, t('pr_c_unit')), h('th', { className: 'pr-num' }, t('pr_c_price')), h('th', null, t('pr_c_days')), h('th', null, t('pr_c_note')))),
               h('tbody', null, r.rows.map(function (it) {
-                if (it.h) return h('tr', { key: it.id, className: 'pr-group' }, h('th', { colSpan: 5, scope: 'colgroup' }, it.name));
-                var m = prMark(it), price = prFmt(it.price);
+                if (it.h) return h('tr', { key: it.id, className: 'pr-group' }, h('th', { colSpan: span, scope: 'colgroup' }, it.name));
+                var nw = prMark(it), newTag = nw && nw.k === 'new' ? h('span', { className: 'pr-tag' }, t('pr_new_tag')) : null;
+                if (tb) return h('tr', { key: it.id },
+                  h('td', null, h('b', { className: 'pr-name' }, it.name), newTag),
+                  cols.map(function (c) { return h('td', { key: c.id, className: 'pr-num' }, h(PrCell, { t: t, text: prFmt((it.v || {})[c.id]), m: prMark(it, c.id) })); }));
+                var price = prFmt(it.price);
                 return h('tr', { key: it.id },
-                  h('td', null, h('b', { className: 'pr-name' }, it.name), m && m.k === 'new' ? h('span', { className: 'pr-tag' }, t('pr_new_tag')) : null),
+                  h('td', null, h('b', { className: 'pr-name' }, it.name), newTag),
                   h('td', null, it.unit || '—'),
-                  h('td', { className: 'pr-num' },
-                    h('span', { className: cx('pr-price', m && 'is-' + m.k) }, price ? price + (prNum(it.price) != null && it.cur ? ' ' + it.cur : '') : '—',
-                      m && (m.k === 'up' || m.k === 'down') ? h('span', { className: 'pr-arrow', 'aria-hidden': true }, m.k === 'up' ? '↑' : '↓') : null),
-                    m && m.was != null ? h('small', { className: 'pr-was' }, tpl(t('pr_was'), { x: prFmt(m.was) })) : null),
+                  h('td', { className: 'pr-num' }, h(PrCell, { t: t, text: price ? price + (prNum(it.price) != null && it.cur ? ' ' + it.cur : '') : '', m: nw && nw.k !== 'new' ? nw : null })),
                   h('td', null, it.days || '—'),
                   h('td', { className: 'pr-td-note' }, it.note || ''));
               })))));
         }));
   }
 
-  /* SOP-менеджер / CEO: «Kontent → Narxlar» — списки цен: строки, вставка из Excel, кто видит, объявить и уведомить */
+  /* SOP-менеджер / CEO: «Kontent → Narxlar» — списки цен: таблица со своими столбцами или простой список, вставка из Excel,
+     кто видит, объявить и уведомить */
   function PricesAdmin(p) {
     var t = p.t, db = p.db, list = pricesAll(db);
     var ed = useState(null), draft = ed[0], er = useState({}), del = useState(false), paste = useState(null), notify = useState(true), tried = useRef(false);
     var dRef = useRef(null); dRef.current = draft;
-    function errs(c) { var e = {}; if (!String(c.title || '').trim()) e.title = t('fill_required'); if (!prItems(c).some(function (it) { return String(it.name || '').trim(); })) e.rows = t('pr_need_rows'); return e; }
+    function errs(c) {
+      var e = {};
+      if (!String(c.title || '').trim()) e.title = t('fill_required');
+      if (prIsTable(c) && !(c.cols || []).some(function (x) { return String(x.label || '').trim(); })) e.cols = t('pr_need_cols');
+      if (!prItems(c).some(function (it) { return String(it.name || '').trim(); })) e.rows = t('pr_need_rows');
+      return e;
+    }
     function setD(fn) { var c = clone(dRef.current); fn(c); dRef.current = c; ed[1](c); if (tried.current) er[1](errs(c)); }
-    function start(x) { ed[1](x ? clone(x) : Object.assign(blankPrice(), { items: [prRow('USD')] })); er[1]({}); del[1](false); paste[1](null); notify[1](true); tried.current = false; window.scrollTo(0, 0); }
+    function start(x) { var b = blankPrice(); ed[1](x ? clone(x) : Object.assign(b, { items: [prRow(b)] })); er[1]({}); del[1](false); paste[1](null); notify[1](true); tried.current = false; window.scrollTo(0, 0); }
     function setItem(i, k, v) { setD(function (c) { c.items[i][k] = v; }); }
+    function setCell(i, ck, v) { setD(function (c) { c.items[i].v = Object.assign({}, c.items[i].v); if (v) c.items[i].v[ck] = v; else delete c.items[i].v[ck]; }); }
     function move(i, dir) { setD(function (c) { var j = i + dir; if (j < 0 || j >= c.items.length) return; var x = c.items[i]; c.items[i] = c.items[j]; c.items[j] = x; }); }
+    function moveCol(i, dir) { setD(function (c) { var j = i + dir; if (j < 0 || j >= c.cols.length) return; var x = c.cols[i]; c.cols[i] = c.cols[j]; c.cols[j] = x; }); }
+    /* вид сменили: цена простого списка — первый столбец таблицы, и обратно */
+    function setKind(k) {
+      setD(function (c) {
+        if ((k === 'table') === prIsTable(c)) return;
+        if (k === 'table') {
+          c.kind = 'table'; c.cols = (c.cols || []).length ? c.cols : [{ id: prId('pc'), label: t('pr_c_price') + ' (' + (c.cur || 'USD').toLowerCase() + ')' }];
+          c.items = c.items.map(function (it) { if (it.h) return it; var v = {}; if (String(it.price || '').trim()) v[c.cols[0].id] = it.price; return { id: it.id, name: it.name, v: v }; });
+        } else {
+          var c0 = (c.cols || [])[0]; c.kind = 'list';
+          c.items = c.items.map(function (it) { return it.h ? it : { id: it.id, name: it.name, unit: '', price: c0 ? (it.v || {})[c0.id] || '' : '', cur: c.cur || 'USD', days: '', note: '' }; });
+        }
+      });
+    }
     function save(status) {
       tried.current = true;
       var c = clone(draft), e = errs(c); er[1](e); if (Object.keys(e).length) return;
-      var now = Date.now(), old = c.id ? pricesAll(db).filter(function (x) { return x.id === c.id; })[0] : null, wasPub = !!(old && old.status === 'published'), ch = 0;
+      var now = Date.now(), old = c.id ? pricesAll(db).filter(function (x) { return x.id === c.id; })[0] : null, wasPub = !!(old && old.status === 'published'), ch = 0, tb = prIsTable(c);
       c.status = status; c.title = c.title.trim(); c.note = String(c.note || '').trim();
-      c.items = c.items.filter(function (it) { return String(it.name || '').trim() || (!it.h && String(it.price || '').trim()); }).map(function (it) {
+      if (tb) {
+        c.head = String(c.head || '').trim();
+        var used = {}; c.items.forEach(function (it) { Object.keys(it.v || {}).forEach(function (k) { if (String(it.v[k]).trim()) used[k] = 1; }); });
+        c.cols = (c.cols || []).map(function (x) { return { id: x.id, label: String(x.label || '').trim() }; }).filter(function (x) { return x.label || used[x.id]; });
+      }
+      var ids = (c.cols || []).map(function (x) { return x.id; });
+      c.items = c.items.filter(function (it) {
+        if (String(it.name || '').trim()) return true;
+        return !it.h && (tb ? Object.keys(it.v || {}).some(function (k) { return String(it.v[k]).trim(); }) : String(it.price || '').trim());
+      }).map(function (it) {
         var o = old && (old.items || []).filter(function (y) { return y.id === it.id; })[0], n = Object.assign({}, it, { name: String(it.name || '').trim() });
         if (it.h) return { id: it.id, h: true, name: n.name };
-        n.price = String(it.price == null ? '' : it.price).trim(); n.unit = String(it.unit || '').trim(); n.days = String(it.days || '').trim(); n.note = String(it.note || '').trim();
-        // цена сменилась с прошлого объявления — прежняя остаётся рядом на 14 дней; новая строка в уже объявленном списке — «yangi»
-        if (wasPub && status === 'published') {
-          if (o && String(o.price).trim() !== n.price) { n.was = o.price; n.chAt = now; ch++; }
+        var pub = wasPub && status === 'published';
+        if (tb) {
+          var v = {}; ids.forEach(function (k) { var y = String((it.v || {})[k] == null ? '' : it.v[k]).trim(); if (y) v[k] = y; }); n.v = v;
+          delete n.unit; delete n.price; delete n.cur; delete n.days; delete n.note;
+          // цена в столбце сменилась с прошлого объявления — прежняя рядом 14 дней; новая строка в объявленном списке — «yangi»
+          if (pub && o) {
+            var was = {}, any = false;
+            ids.forEach(function (k) { var ov = String(((o.v || {})[k]) == null ? '' : o.v[k]).trim(); if (ov && ov !== (v[k] || '')) { was[k] = ov; any = true; ch++; } });
+            if (any) { n.was = was; n.chAt = now; }
+          } else if (pub && !o) { n.newAt = now; ch++; }
+          return n;
+        }
+        n.price = String(it.price == null ? '' : it.price).trim(); n.unit = String(it.unit || '').trim(); n.days = String(it.days || '').trim(); n.note = String(it.note || '').trim(); delete n.v;
+        if (pub) {
+          if (o && String(o.price == null ? '' : o.price).trim() !== n.price) { n.was = o.price; n.chAt = now; ch++; }
           else if (!o) { n.newAt = now; ch++; }
         }
         return n;
@@ -4666,26 +4754,48 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     }
     function remove() { var id = draft.id; p.update(function (d) { d.prices = (d.prices || []).filter(function (x) { return x.id !== id; }); }); ed[1](null); p.say(t('pr_deleted')); }
     function addPasted() {
-      var rows = prParse(paste[0], draft.cur || 'USD');
-      if (!rows.length) { p.say(t('pr_paste_none')); return; }
-      setD(function (c) { c.items = c.items.filter(function (it) { return it.h || String(it.name || '').trim() || String(it.price || '').trim(); }).concat(rows); });
-      paste[1](null); p.say(tpl(t('pr_paste_n'), { n: rows.length }));
+      var r = prParse(paste[0], draft);
+      if (!r.rows.length && !r.cols) { p.say(t('pr_paste_none')); return; }
+      setD(function (c) {
+        if (r.cols) c.cols = r.cols;
+        if (r.head) c.head = r.head;
+        c.items = c.items.filter(function (it) { return it.h || String(it.name || '').trim() || String(it.price || '').trim() || Object.keys(it.v || {}).length; }).concat(r.rows);
+      });
+      paste[1](null); p.say(tpl(t('pr_paste_n'), { n: r.rows.length }));
     }
 
-    if (draft) return h('div', { className: 'cms-case-edit' },
+    if (draft) {
+      var tb = prIsTable(draft), cols = draft.cols || [];
+      var grid = tb ? { gridTemplateColumns: 'minmax(150px, 1.4fr) repeat(' + Math.max(1, cols.length) + ', minmax(96px, 1fr)) 94px', minWidth: 150 + Math.max(1, cols.length) * 102 + 94 } : null;
+      return h('div', { className: 'cms-case-edit' },
       h('div', { className: 'page-head' },
         h('div', null, h('span', { className: 'lor-eyebrow' }, t('pr_tab')), h('h2', { className: 'lor-title' }, draft.id ? t('pr_edit') : t('pr_new'))),
         h(Btn, { variant: 'ghost', onClick: function () { ed[1](null); } }, t('cancel'))),
       h('section', { className: 'box cs-form' },
         h('div', { className: 'lor-form-grid' },
           h(Field, { name: 'pr-title', span: true, label: t('pr_title'), required: true, value: draft.title, error: er[0].title, placeholder: t('pr_title_ph'), onChange: function (v) { setD(function (c) { c.title = v; }); } }),
+          h(Field, { name: 'pr-note', span: true, multiline: true, rows: 2, label: t('pr_note'), value: draft.note || '', placeholder: t('pr_note_ph'), onChange: function (v) { setD(function (c) { c.note = v; }); } }),
           h(Field, { name: 'pr-from', label: t('pr_from'), type: 'date', value: draft.from || '', onChange: function (v) { setD(function (c) { c.from = v; }); } }),
-          h(Field, { name: 'pr-cur', label: t('pr_cur'), value: draft.cur || 'USD', options: PR_CUR.map(function (x) { return [x, x]; }), onChange: function (v) { setD(function (c) { c.cur = v; }); } }),
-          h(Field, { name: 'pr-note', span: true, multiline: true, rows: 2, label: t('pr_note'), value: draft.note || '', placeholder: t('pr_note_ph'), onChange: function (v) { setD(function (c) { c.note = v; }); } })),
+          h(Field, { name: 'pr-kind', label: t('pr_kind'), value: tb ? 'table' : 'list', options: [['table', t('pr_k_table')], ['list', t('pr_k_list')]], onChange: setKind }),
+          tb ? null : h(Field, { name: 'pr-cur', label: t('pr_cur'), value: draft.cur || 'USD', options: PR_CUR.map(function (x) { return [x, x]; }), onChange: function (v) { setD(function (c) { c.cur = v; }); } })),
+        tb ? h('div', { className: 'pr-cols' },
+          h('h3', { className: 'cms-h' }, t('pr_cols')),
+          h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('pr_cols_h')),
+          er[0].cols ? h('p', { className: 'lor-field-error', style: { margin: 0 } }, er[0].cols) : null,
+          h(Field, { name: 'pr-head', label: t('pr_head'), value: draft.head || '', placeholder: t('pr_head_col_ph'), onChange: function (v) { setD(function (c) { c.head = v; }); } }),
+          h('div', { className: 'pr-col-list' }, cols.map(function (c, i) {
+            return h('div', { key: c.id, className: 'pr-col' },
+              h('input', { className: 'lor-input slim', value: c.label, placeholder: tpl(t('pr_col_ph'), { n: i + 1 }), 'aria-label': tpl(t('pr_col_ph'), { n: i + 1 }), onChange: function (e) { var v = e.target.value; setD(function (d) { d.cols[i].label = v; }); } }),
+              h('button', { type: 'button', className: 'pr-ib', 'aria-label': '←', disabled: i === 0, onClick: function () { moveCol(i, -1); } }, '←'),
+              h('button', { type: 'button', className: 'pr-ib', 'aria-label': '→', disabled: i === cols.length - 1, onClick: function () { moveCol(i, 1); } }, '→'),
+              h('button', { type: 'button', className: 'pr-ib danger', 'aria-label': t('remove'), disabled: cols.length < 2, onClick: function () { setD(function (d) { d.cols.splice(i, 1); }); } }, '×'));
+          }), h(Btn, { variant: 'ghost', size: 'sm', onClick: function () { setD(function (d) { d.cols = (d.cols || []).concat([{ id: prId('pc'), label: '' }]); }); } }, '+ ' + t('pr_add_col')))) : null,
         h('h3', { className: 'cms-h' }, t('pr_rows')),
         er[0].rows ? h('p', { className: 'lor-field-error', style: { margin: 0 } }, er[0].rows) : null,
-        h('div', { className: 'pr-ed' },
-          h('div', { className: 'pr-ed-head', 'aria-hidden': true }, ['pr_c_name', 'pr_c_unit', 'pr_c_price', 'pr_c_cur', 'pr_c_days', 'pr_c_note'].map(function (k) { return h('span', { key: k }, t(k)); }), h('span')),
+        h('div', { className: cx('pr-ed', tb && 'is-matrix') },
+          h('div', { className: 'pr-ed-head', 'aria-hidden': true, style: grid },
+            tb ? [h('span', { key: 'h' }, draft.head || t('pr_c_name'))].concat(cols.map(function (c, i) { return h('span', { key: c.id, className: 'pr-num' }, c.label || tpl(t('pr_col_ph'), { n: i + 1 })); }))
+              : ['pr_c_name', 'pr_c_unit', 'pr_c_price', 'pr_c_cur', 'pr_c_days', 'pr_c_note'].map(function (k) { return h('span', { key: k }, t(k)); }), h('span')),
           draft.items.map(function (it, i) {
             var acts = h('span', { className: 'pr-ed-acts' },
               h('button', { type: 'button', className: 'pr-ib', 'aria-label': '↑', disabled: i === 0, onClick: function () { move(i, -1); } }, '↑'),
@@ -4693,6 +4803,10 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
               h('button', { type: 'button', className: 'pr-ib danger', 'aria-label': t('remove'), onClick: function () { setD(function (c) { c.items.splice(i, 1); }); } }, '×'));
             if (it.h) return h('div', { key: it.id, className: 'pr-ed-row is-head' },
               h('input', { className: 'lor-input slim', value: it.name, placeholder: t('pr_head_ph'), 'aria-label': t('pr_add_head'), onChange: function (e) { setItem(i, 'name', e.target.value); } }), acts);
+            if (tb) return h('div', { key: it.id, className: 'pr-ed-row', style: grid },
+              h('input', { className: 'lor-input slim', value: it.name || '', placeholder: t('pr_row_ph'), 'aria-label': draft.head || t('pr_c_name'), onChange: function (e) { setItem(i, 'name', e.target.value); } }),
+              cols.map(function (c, k) { return h('input', { key: c.id, className: 'lor-input slim pr-num', value: (it.v || {})[c.id] || '', placeholder: '0', 'aria-label': c.label || tpl(t('pr_col_ph'), { n: k + 1 }), onChange: function (e) { setCell(i, c.id, e.target.value); } }); }),
+              acts);
             var inp = function (k, ph, cls) { return h('input', { className: cx('lor-input slim', cls), value: it[k] == null ? '' : it[k], placeholder: ph || '', 'aria-label': t('pr_c_' + k), onChange: function (e) { setItem(i, k, e.target.value); } }); };
             return h('div', { key: it.id, className: 'pr-ed-row' },
               inp('name', t('pr_name_ph')), inp('unit', 'kg'), inp('price', '0', 'pr-num'),
@@ -4700,11 +4814,11 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
               inp('days', t('pr_days_ph')), inp('note', ''), acts);
           })),
         h('div', { className: 'pr-ed-add' },
-          h(Btn, { variant: 'outline', size: 'sm', onClick: function () { setD(function (c) { c.items.push(prRow(c.cur)); }); } }, '+ ' + t('pr_add_row')),
-          h(Btn, { variant: 'ghost', size: 'sm', onClick: function () { setD(function (c) { c.items.push({ id: prRow().id, h: true, name: '' }); }); } }, '+ ' + t('pr_add_head')),
+          h(Btn, { variant: 'outline', size: 'sm', onClick: function () { setD(function (c) { c.items.push(prRow(c)); }); } }, '+ ' + t('pr_add_row')),
+          h(Btn, { variant: 'ghost', size: 'sm', onClick: function () { setD(function (c) { c.items.push({ id: prId('pi'), h: true, name: '' }); }); } }, '+ ' + t('pr_add_head')),
           h(Btn, { variant: 'ghost', size: 'sm', onClick: function () { paste[1](paste[0] == null ? '' : null); } }, '⇪ ' + t('pr_paste'))),
         paste[0] != null ? h('div', { className: 'pr-paste' },
-          h(Field, { name: 'pr-paste', multiline: true, rows: 5, label: t('pr_paste'), hint: t('pr_paste_h'), value: paste[0], onChange: paste[1] }),
+          h(Field, { name: 'pr-paste', multiline: true, rows: 6, label: t('pr_paste'), hint: t(tb ? 'pr_paste_h_tb' : 'pr_paste_h'), value: paste[0], onChange: paste[1] }),
           h('div', null, h(Btn, { variant: 'secondary', size: 'sm', disabled: !paste[0].trim(), onClick: addPasted }, t('pr_paste_go')))) : null,
         h(AccessEditor, { t: t, db: db, lang: p.lang, name: 'pr', value: draft.access, onChange: function (v) { setD(function (c) { c.access = v; }); } }),
         h('label', { className: 'check' }, h('input', { type: 'checkbox', id: 'pr-notify', checked: notify[0], onChange: function (e) { notify[1](e.target.checked); } }), t('pr_notify')),
@@ -4714,6 +4828,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           h('div', { className: 'cs-foot-b' },
             h(Btn, { variant: 'outline', onClick: function () { save('draft'); } }, t('cs_save_draft')),
             h(Btn, { variant: 'primary', arrow: true, onClick: function () { save('published'); } }, t('cs_publish'))))));
+    }
 
     return h('div', { className: 'cs-admin' },
       h('div', { className: 'cs-admin-h' },
@@ -5228,7 +5343,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     pricesFor(db, u).forEach(function (x) {
       prItems(x).forEach(function (it) {
         if (!hit(prSearch(x, it), q)) return;
-        add('price', 'pr' + x.id + it.id, it.name, [prFmt(it.price) + (prNum(it.price) != null ? ' ' + (it.cur || '') : ''), it.unit, x.title].filter(Boolean).join(' · '), hit(it.name, q) ? 7 : 4, admin ? { name: 'cms', tab: 'prices' } : { name: 'base', tab: 'prices' });
+        add('price', 'pr' + x.id + it.id, it.name, prSub(x, it), hit(it.name, q) ? 7 : 4, admin ? { name: 'cms', tab: 'prices' } : { name: 'base', tab: 'prices' });
       });
     });
 
