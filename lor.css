@@ -4536,3 +4536,19 @@ button.jf-name { padding: 0; background: none; border: 0; border-bottom: 1px sol
 .pr-thumb > span { overflow: hidden; font-size: 12px; line-height: 16px; color: var(--ink-muted); white-space: nowrap; text-overflow: ellipsis; }
 .pr-thumb > span small { display: block; }
 .pr-thumb .pr-ib { position: absolute; top: 4px; right: 4px; background: var(--surface-raised); box-shadow: var(--shadow-sm); }
+
+/* левая панель уроков: кнопка на её краю «‹» — скрыть (страница во всю ширину), «› Darslar» у левого края — вернуть.
+   На телефоне панель — выезжающее меню (кнопка в шапке), кнопки нет */
+.side-tg { position: fixed; z-index: 24; top: 50%; left: 286px; transform: translateY(-50%); display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 28px; height: 28px; padding: 0 8px; border: var(--hairline) solid var(--line); border-radius: var(--radius-pill); background: var(--surface-raised); color: var(--ink); box-shadow: var(--shadow-sm); font: inherit; font-size: 13px; line-height: 1; cursor: pointer; transition: border-color var(--t-xs) var(--ease), box-shadow var(--t-xs) var(--ease); }
+.side-tg-i { font-size: 16px; }
+.side-tg:hover { border-color: var(--border); }
+.side-tg:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.side-tg.is-off { left: 0; padding: 0 12px 0 10px; border-left: 0; border-radius: 0 var(--radius-pill) var(--radius-pill) 0; }
+.app-body.side-off { grid-template-columns: minmax(0, 1fr); }
+.app-body.side-off .app-side { display: none; }
+.app-body.side-off .app-main { padding-left: 88px; }   /* ярлык «› Darslar» у края не наезжает на страницу */
+@media (max-width: 960px) {
+  .side-tg { display: none; }
+  .app-body.side-off .app-main { padding-left: var(--space-6); }
+  .app-body.side-off .app-side.is-open { display: block; }
+}

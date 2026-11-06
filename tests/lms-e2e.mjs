@@ -431,7 +431,17 @@ try {
       // назад на сданный урок с видео — дальше тест идёт оттуда (недочитанный урок при входе снова спросил бы)
       await E.getByText('4.1. Test standarti').first().click(); await E.waitForTimeout(500);
       for (let k = 0; k < 3 && await E.locator('.lor-scrim .lor-modal').count(); k++) { await E.keyboard.press('Escape'); await E.waitForTimeout(400); } } }
-  step('видео урока: ссылка YouTube встраивается, защита урока её не прячет; «Videoni yashirish» — текст во всю ширину, выбор помнится; без ссылки окна видео нет');
+  // левая панель уроков: «‹» на её краю — скрыть, «› Darslar» — вернуть; выбор помнится
+  assert.ok(await E.locator('.app-side').isVisible(), 'панель уроков видна');
+  await E.locator('.side-tg').click(); await E.waitForTimeout(200);
+  assert.equal(await E.locator('.app-side').isVisible(), false, 'панель скрыта');
+  assert.match(await E.locator('.side-tg').innerText(), /Darslar/);
+  await E.reload({ waitUntil: 'networkidle' }); await E.waitForSelector('.side-tg', { timeout: 10000 });
+  assert.equal(await E.locator('.app-side').isVisible(), false, 'после обновления — тоже скрыта');
+  await E.waitForTimeout(300); await shot(E, 'panel-yashirin');
+  await E.locator('.side-tg').click(); await E.waitForTimeout(200);
+  assert.ok(await E.locator('.app-side').isVisible(), 'панель снова на месте');
+  step('видео урока: ссылка YouTube встраивается, защита урока её не прячет; «Videoni yashirish» — текст во всю ширину, выбор помнится; без ссылки окна видео нет; левую панель уроков можно скрыть и вернуть');
 
   // ---------- ИИ-наставник через сервер ----------
   await E.locator('#ai-input').count().then(n => n ? null : E.getByRole('button', { name: 'AI-mentor' }).first().click());

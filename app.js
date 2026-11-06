@@ -10066,6 +10066,9 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var r = useHashRoute(EMP_ROUTES, { name: 'home' }), route = r[0], dr = useState(false), ai = useState(false);
     var ini = useState(false), sv = useState(false), pHide = useState(false), tour = useState(false), gate = useState(false), gateInit = useRef(false), intro = useState(false), qn = useState(false), qnThx = useState(false);
     var pal = useState(false); usePalette(pal[0], pal[1]);
+    /* левая панель уроков: можно скрыть (кнопка на её краю) — страница во всю ширину; выбор помнит браузер */
+    var sideOff = useState(function () { try { return localStorage.getItem('lor-side') === 'off'; } catch (e) { return false; } });
+    function togSide() { var v = !sideOff[0]; sideOff[1](v); try { if (v) localStorage.setItem('lor-side', 'off'); else localStorage.removeItem('lor-side'); } catch (e) {} }
     var hintOn = !!u.hints;
     var theme = useThemePref(p.say, t);
     var hint = { on: hintOn, toggle: function (v) { p.update(function (d) { d.users.forEach(function (x) { if (x.id === u.id) x.hints = v; }); }); p.say(t(v ? 'hint_said_on' : 'hint_said_off')); } };
@@ -10202,8 +10205,10 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       h(Header, { t: t, lang: p.lang, setLang: p.setLang, onProfile: p.openProfile, user: u, notifs: mine, onNotif: openNotif, onReadAll: function () { p.update(function (d) { d.notifications.forEach(function (n) { if (n.userId === u.id) n.read = true; }); }); }, onLogout: p.logout, onMenu: filled ? function () { dr[1](!dr[0]); } : null,
         nav: nav, links: links, hint: filled ? hint : null, theme: theme, onSearch: filled ? function () { pal[1](true); } : null, onHelp: filled ? function () { go({ name: 'help' }); } : null, medalNew: !!u.medalNew, onMedalSeen: function () { p.update(function (d) { d.users.forEach(function (x) { if (x.id === u.id) x.medalNew = false; }); }); }, rank: filled ? rankOf(db, u) : null, fmtNotif: function (n) { return notifText(n, db, p.lang, t); }, onPath: filled ? function () { go({ name: 'path' }); } : null, onTerms: p.showTerms,
         extra: filled ? h(F, null, h(TodayChip, { db: db, user: u, t: t, onClick: function () { go({ name: 'path' }); } }), h(IniButton, { t: t, onClick: function () { ini[1](true); } })) : null }),
-      h('div', { className: cx('app-body', !filled && 'no-side') },
+      h('div', { className: cx('app-body', !filled && 'no-side', filled && sideOff[0] && 'side-off') },
         filled ? h('div', { className: cx('app-side', dr[0] && 'is-open') }, h(LOR.CourseTree, { sections: sections, progress: mastery(db, u).pct, lang: p.lang, onSelect: function (l) { go({ name: 'lesson', id: l.id }); } })) : null,
+        filled ? h('button', { type: 'button', className: cx('side-tg', sideOff[0] && 'is-off'), onClick: togSide, 'aria-expanded': !sideOff[0], 'aria-label': t(sideOff[0] ? 'side_show_l' : 'side_hide'), title: t(sideOff[0] ? 'side_show_l' : 'side_hide') },
+          h('span', { className: 'side-tg-i', 'aria-hidden': true }, sideOff[0] ? '›' : '‹'), sideOff[0] ? h('span', null, t('side_show')) : null) : null,
         h('main', { className: 'app-main', id: 'main' }, h('div', { className: 'page-anim', key: route.name + (route.id || route.uid || route.lessonId || '') + (route.ym || '') }, main), h(Foot, { t: t, onTerms: p.showTerms }))),
       u.celebrate && filled ? h(Celebration, Object.assign({}, p, { go: go, key: 'cel' + (u.celebrate.at || 0) + (u.celebrate.replay ? 'r' : '') })) : null,
       due && !pHide[0] && !sv[0] && !ai[0] && !ini[0] && !u.celebrate && route.name !== 'lesson' && route.name !== 'quiz' && route.name !== 'drill' ? h(PulseBubble, { t: t, db: db, user: u, onStart: function () { sv[1](true); }, onLater: snoozePulse, onClose: function () { pHide[1](true); } }) : null,
