@@ -4454,3 +4454,47 @@ button.jf-name { padding: 0; background: none; border: 0; border-bottom: 1px sol
 .ch-del { flex: none; display: inline-grid; place-items: center; width: 32px; height: 32px; margin: -6px -4px -6px 0; padding: 0; border: 0; border-radius: var(--radius-pill); background: none; color: var(--ink-muted); cursor: pointer; transition: color var(--t-xs) var(--ease), background-color var(--t-xs) var(--ease); }
 .ch-del:hover { color: var(--red-text); background: var(--red-soft); }
 .ch-del:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
+/* ===== «Narxlar»: сотрудник — «Baza → Narxlar», SOP-менеджер — «Kontent → Narxlar» ===== */
+.pr-view { display: grid; gap: var(--space-4); }
+.pr-card { display: grid; gap: var(--space-3); }
+.pr-card-h { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-3); flex-wrap: wrap; }
+.pr-card-h .lor-h { margin: 0; }
+.pr-meta { margin: 4px 0 0; }
+.pr-count { font-size: 13px; line-height: 20px; color: var(--ink-muted); white-space: nowrap; }
+.pr-note { margin: 0; padding: 10px 12px; font-size: 14px; line-height: 21px; border-left: 2px solid var(--red); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; background: var(--surface-sunken); }
+.pr-wrap { border-radius: var(--radius-md); }
+.pr-table { min-width: 620px; }
+.pr-table td { vertical-align: top; }
+.pr-table .pr-num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pr-group th { padding-top: 10px; padding-bottom: 10px; color: var(--ink); background: var(--surface-sunken); border-top: var(--hairline) solid var(--line); }
+.pr-name { font-weight: 500; }
+.pr-price { font-weight: 500; font-size: 15px; }
+.pr-price.is-up { color: var(--red-text); }
+.pr-price.is-down { color: var(--blue-text); }
+.pr-arrow { margin-left: 4px; }
+.pr-was { display: block; margin-top: 2px; font-size: 12px; line-height: 16px; color: var(--ink-muted); }
+.pr-tag { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: var(--radius-pill); background: var(--blue-soft); color: var(--blue-text); font-size: 11px; line-height: 16px; letter-spacing: .04em; text-transform: uppercase; vertical-align: 1px; }
+.pr-td-note { min-width: 140px; font-size: 13px; line-height: 19px; color: var(--ink-muted); }
+.pr-ed { display: grid; gap: 6px; }
+.pr-ed-head, .pr-ed-row { display: grid; grid-template-columns: minmax(180px, 2.2fr) minmax(64px, .8fr) minmax(84px, 1fr) 84px minmax(90px, 1fr) minmax(110px, 1.4fr) 94px; gap: 6px; align-items: center; }   /* у шапки и строк — одна сетка: колонка кнопок фиксированной ширины */
+.pr-ed-head span { font-size: 12px; line-height: 16px; color: var(--ink-muted); }
+.pr-ed-row.is-head { grid-template-columns: minmax(0, 1fr) 94px; }
+.pr-ed-row.is-head .lor-input { font-weight: 500; letter-spacing: .04em; text-transform: uppercase; }
+.pr-ed .lor-input.pr-num { text-align: right; font-variant-numeric: tabular-nums; }
+.pr-ed-acts { display: flex; gap: 2px; }
+.pr-ib { width: 30px; height: 30px; padding: 0; border: 0; border-radius: var(--radius-sm); background: none; color: var(--ink-muted); font: inherit; font-size: 15px; cursor: pointer; }
+.pr-ib:hover:not(:disabled) { background: var(--surface-sunken); color: var(--ink); }
+.pr-ib.danger:hover:not(:disabled) { background: var(--red-soft); color: var(--red-text); }
+.pr-ib:disabled { opacity: .35; cursor: default; }
+.pr-ib:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.pr-ed-add { display: flex; flex-wrap: wrap; gap: 8px; }
+.pr-paste { display: grid; gap: 8px; }
+@media (max-width: 900px) {
+  .pr-ed-head { display: none; }
+  .pr-ed-row { grid-template-columns: 1fr 1fr; padding-bottom: 8px; border-bottom: var(--hairline) solid var(--line); }
+  .pr-ed-row > :first-child { grid-column: 1 / -1; }
+  .pr-ed-row .pr-ed-acts { grid-column: 1 / -1; justify-content: flex-end; }
+  .pr-ed-row.is-head { grid-template-columns: minmax(0, 1fr) auto; }
+  .pr-ed-row.is-head > :first-child, .pr-ed-row.is-head .pr-ed-acts { grid-column: auto; }
+}

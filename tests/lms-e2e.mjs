@@ -1475,6 +1475,46 @@ try {
   await A.keyboard.press('Escape');
   step('«Lavozim va bo‘limlar»: CEO добавил должность и отдел; у SOP-менеджера они в форме сотрудника, список — только просмотр');
 
+
+  // ---------- «Narxlar»: SOP-менеджер объявляет цены в «Kontent», сотрудник видит их в «Baza» ----------
+  await nav(A, 'cms'); await A.locator('.lor-tab').filter({ hasText: 'Narxlar' }).click(); await A.waitForTimeout(300);
+  await A.getByRole('button', { name: 'Yangi narxlar ro‘yxati' }).click();
+  await A.fill('#f-pr-title', 'Xitoy — Toshkent tariflari');
+  await A.fill('#f-pr-note', 'Narxlar QQSsiz, minimal partiya — 10 kg.');
+  await A.getByRole('button', { name: '⇪ Jadvaldan qo‘yish' }).click();
+  await A.fill('#f-pr-paste', ['Xizmat\tBirlik\tNarx\tValyuta\tMuddat\tIzoh', 'Avia', 'Guanchjou — Toshkent\tkg\t7,5\tUSD\t5–7 kun\tbatareyasiz', 'Yiwu — Toshkent\tkg\t7\tUSD\t5–7 kun\t', 'Avto', 'Yiwu — Toshkent (sborniy)\tm³\t260\tUSD\t18–22 kun\t', 'Bojxona rasmiylashtiruvi\txizmat\t1 500 000\tso‘m\t1–2 kun\t'].join('\n'));
+  await A.getByRole('button', { name: 'Qatorlarni qo‘shish' }).click(); await A.waitForTimeout(200);
+  assert.equal(await A.locator('.pr-ed-row').count(), 6, 'пустая строка ушла: 2 заголовка + 4 цены');
+  assert.equal(await A.locator('.pr-ed-row.is-head').count(), 2);
+  await A.waitForTimeout(300); await shot(A, 'narxlar-tahrir');
+  await A.getByRole('button', { name: 'Nashr qilish' }).click(); await settle(A);
+  { const pl = (srv.g.state().prices || [])[0];
+    assert.ok(pl && pl.status === 'published' && pl.upd, 'список объявлен на сервере');
+    assert.deepEqual(pl.items.filter(x => !x.h).map(x => [x.name, x.price, x.cur]), [['Guanchjou — Toshkent', '7,5', 'USD'], ['Yiwu — Toshkent', '7', 'USD'], ['Yiwu — Toshkent (sborniy)', '260', 'USD'], ['Bojxona rasmiylashtiruvi', '1 500 000', 'UZS']]);
+    assert.ok(srv.g.state().notifications.some(n => n.kind === 'price' && n.userId === emp.id), 'сотруднику — уведомление'); }
+  assert.deepEqual(await rejected(A), [], 'сервер принял цены');
+  // сотрудник: «Baza» открывается на «Narxlar», поиск по направлению
+  await E.reload({ waitUntil: 'networkidle' }); await nav(E, 'base');
+  try { await E.waitForSelector('.pr-card', { timeout: 10000 }); } catch (e) { await E.screenshot({ path: '/tmp/claude-0/-home-user/0389a155-4f5e-5550-9ee3-121de8595e5f/scratchpad/audit/pr-fail.png' }); throw e; }
+  assert.match(await E.locator('.lor-tab.is-on').innerText(), /Narxlar/, '«Baza» открывается на ценах');
+  assert.match(await E.locator('.pr-card').innerText(), /Guanchjou — Toshkent[\s\S]*7,5 USD/);
+  assert.match(await E.locator('.pr-card').innerText(), /1\s500\s000 UZS/, 'сумма — с разрядами');
+  await E.fill('#f-pr-q', 'sborniy'); await E.waitForTimeout(200);
+  assert.equal(await E.locator('.pr-table tbody tr:not(.pr-group)').count(), 1, 'поиск: одна строка');
+  assert.equal(await E.locator('.pr-group').count(), 1, '…и её заголовок');
+  await E.fill('#f-pr-q', ''); await E.waitForTimeout(200);
+  // SOP-менеджер меняет цену — у сотрудника рядом прежняя и стрелка
+  await A.getByRole('button', { name: 'Tahrirlash' }).first().click();
+  await A.locator('.pr-ed-row:not(.is-head) input.pr-num').first().fill('8');
+  await A.getByRole('button', { name: 'Nashr qilish' }).click(); await settle(A);
+  { const it = srv.g.state().prices[0].items.find(x => x.name === 'Guanchjou — Toshkent');
+    assert.equal(it.price, '8'); assert.equal(it.was, '7,5'); assert.ok(it.chAt, 'смена цены отмечена'); }
+  assert.ok(srv.g.state().notifications.some(n => n.kind === 'price' && n.userId === emp.id && n.price.n === 1), 'уведомление: 1 цена изменилась');
+  await E.reload({ waitUntil: 'networkidle' }); await E.waitForSelector('.pr-card', { timeout: 10000 });
+  assert.match(await E.locator('.pr-card').innerText(), /8 USD\s*↑[\s\S]*avval: 7,5/, 'новая цена со стрелкой и прежняя рядом');
+  await E.waitForTimeout(300); await shot(E, 'narxlar-xodim');
+  step('«Narxlar»: SOP-менеджер вставил цены из Excel (заголовки и строки), объявил — сотруднику уведомление и «Baza → Narxlar» с поиском; смена цены — прежняя рядом и стрелка');
+
   // ---------- порядок входа нового сотрудника: анкета → тест → приветствие и условия → профиль → «Tanishuv» последним ----------
   const jid = Math.max(...srv.g.state().users.map(u => u.id)) + 1000;
   { const tk = srv.g.post({ action: 'login', login: srv.admin.login, password: srv.admin.password }).token;

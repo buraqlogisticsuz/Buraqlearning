@@ -420,7 +420,7 @@ const pickN = n => ({ userId: n.userId, kind: n.kind, route: n.route, err: n.err
 test('since: та же версия — без данных; после правки — новое состояние', () => {
   const { D, A } = platform();
   const v = D({ action: 'load' });
-  assert.deepEqual(D({ action: 'since', rev: v.rev }), { ok: true, v: 20, ai: false, rev: v.rev, same: true });
+  assert.deepEqual(D({ action: 'since', rev: v.rev }), { ok: true, v: 21, ai: false, rev: v.rev, same: true });
   A({ action: 'patch', ops: [{ op: 'set', path: ['notifications', { id: 9 }], value: { id: 9, userId: 10427, text: 'yangi' }, after: null }] });
   const n = D({ action: 'since', rev: v.rev });
   assert.equal(n.rev, v.rev + 1); assert.equal(n.state.notifications[0].text, 'yangi');
@@ -1054,4 +1054,15 @@ test('уведомления (v20): одинаковые id разводятся
   D({ action: 'patch', ops: [{ op: 'set', path: ['users', { id: 10427 }, 'profile'], value: { passportFile: { name: 'b.pdf', type: 'application/pdf', data: pdf('b') } } }] });
   assert.notEqual(pp().data.slice(8), first);
   assert.equal(g.files[first], undefined, 'прежний скан — в корзине сразу');
+});
+
+test('цены (v21): объявленные и доступные — сотруднику; черновик и чужой отдел — нет; менять цены может только руководство', () => {
+  const { A, D, Z } = platform();
+  const pl = (id, status, access) => ({ op: 'set', path: ['prices', { id }], value: { id, status, title: 'Narx ' + id, access, items: [{ id: 'i1', name: 'Avia', unit: 'kg', price: '7', cur: 'USD' }] } });
+  assert.deepEqual(rejected(A({ action: 'patch', ops: [pl('p1', 'published', { mode: 'all' }), pl('p2', 'draft', { mode: 'all' }), pl('p3', 'published', { mode: 'custom', depts: ['Ombor (Yiwu)'] })] })), []);
+  assert.deepEqual(D({ action: 'load' }).state.prices.map(x => x.id), ['p1'], 'Dilnoza (Logistika): только объявленный для всех');
+  assert.deepEqual(Z({ action: 'load' }).state.prices.map(x => x.id).sort(), ['p1', 'p3'], 'Aziza (Ombor Yiwu): и список своего отдела');
+  assert.equal(A({ action: 'load' }).state.prices.length, 3, 'SOP-менеджер видит и черновик');
+  const r = D({ action: 'patch', ops: [pl('p9', 'published', { mode: 'all' }), { op: 'set', path: ['prices', { id: 'p1' }, 'items', { id: 'i1' }, 'price'], value: '1' }] });
+  assert.equal(r.rejected.length, 2, 'сотрудник цены не меняет');
 });

@@ -9,7 +9,7 @@
 (function (root) {
   'use strict';
   var S = root.LmsSync;
-  var SERVER_V = 20;                      // версия сервера (tools/lms-gs), под которую написана эта страница
+  var SERVER_V = 21;                      // версия сервера (tools/lms-gs), под которую написана эта страница
   var URL_ = String(root.LMS_SERVER || '').trim();
   var DEMO = !URL_;                      // адреса нет — страница пишет «Server ulanmagan» (демо больше нет)
   var K = { token: 'lor-lms-token', cache: 'lor-lms-cache', queue: 'lor-lms-queue', lang: 'lor-lms-lang' };
@@ -34,7 +34,7 @@
   function emptyDb() {
     return { v: 23, lang: lang(), session: null, seq: 100, course: { sections: [] }, levels: [], tracks: [], planTpl: [], settings: {},
       users: [], alumni: [], progress: {}, study: {}, requests: [], notifications: [], reminded: {}, audit: [], assets: [], errors: [], cases: [],
-      journals: [], terms: [], drills: [], sopUpdates: [], initiatives: [], surveys: [], attend: {}, attendCover: {}, attendImports: [],
+      journals: [], terms: [], prices: [], drills: [], sopUpdates: [], initiatives: [], surveys: [], attend: {}, attendCover: {}, attendImports: [],
       attendAlias: {}, xtasks: [], monthly: {}, pay: { schemes: [], people: {} }, payCalcs: [] };
   }
   /* данные для страницы: ответ сервера + ещё не отправленные правки + язык и вход этого устройства */

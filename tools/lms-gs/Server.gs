@@ -21,7 +21,7 @@
  *
  * Запрос — POST с JSON { action, token, … }, ответ — JSON { ok, … } или { ok: false, code, error }.
  */
-var LMS_VERSION = 20;          // 20: защита правок (id карточек, тест — одна попытка, балл и статусы, минуты учёбы, уведомления другим);  2: файлы — отдельно на Диске, действие file; 3: ИИ через Claude API (действие ai);
+var LMS_VERSION = 21;          // 21: цены — «Kontent → Narxlar», сотрудникам в «Baza» (prices); 20: защита правок (id карточек, тест — одна попытка, балл и статусы, минуты учёбы, уведомления другим);  2: файлы — отдельно на Диске, действие file; 3: ИИ через Claude API (действие ai);
                                // 4: адресаты идей — CEO, Project Manager, руководитель компании (свой вход, role 'leader');
                                // 5: у идеи несколько адресатов (to — список), repliedBy — кто ответил;
                                // 6: свой профиль — имя и фото, смена логина и пароля (действие account);
@@ -381,7 +381,7 @@ function emptyState_() {
     course: { sections: [] }, levels: [], tracks: [], planTpl: [],
     settings: { survey: { on: false, every: 3, round: 0 }, facePurgedV: FACE_PURGE_V },
     users: [], alumni: [], progress: {}, study: {}, requests: [], notifications: [], reminded: {}, audit: [],
-    assets: [], errors: [], cases: [], journals: [], terms: [], drills: [], sopUpdates: [], initiatives: [], surveys: [],
+    assets: [], errors: [], cases: [], journals: [], terms: [], prices: [], drills: [], sopUpdates: [], initiatives: [], surveys: [],
     attend: {}, attendCover: {}, attendImports: [], attendAlias: {}, xtasks: [], monthly: {},
     pay: { schemes: [], people: {} }, payCalcs: []
   };
@@ -568,6 +568,8 @@ function viewFor_(st, me) {
   v.cases = (st.cases || []).filter(function (c) { return c.status === 'published'; });
   v.journals = (st.journals || []).filter(function (j) { return j.status === 'published' && canSee_(me, j.access); });
   v.terms = (st.terms || []).filter(function (x) { return x.status === 'published' && canSee_(me, x.access); });
+  // цены (v21): объявленные SOP-менеджером списки, которые этому человеку видны; черновики — только руководству
+  v.prices = (st.prices || []).filter(function (x) { return x.status === 'published' && canSee_(me, x.access); });
   v.attend = {}; if (st.attend && st.attend[uid]) v.attend[uid] = st.attend[uid];
   v.attendImports = []; v.attendAlias = {};
   v.reminded = {}; if (st.reminded && st.reminded[uid] !== undefined) v.reminded[uid] = st.reminded[uid];

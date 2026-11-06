@@ -90,6 +90,7 @@ export function startTelegram({ token, C, strings, fetch = globalThis.fetch, log
       if (n.kind === 'pp-warn') return tpl(T('n_pp_warn'), { name: p.name || '—', d });
       return tpl(T('n_pp_gone'), { name: p.name || '—' }) + ' ' + T(p.dl ? 'n_pp_gone_dl' : 'n_pp_gone_nodl');
     }
+    if (n.kind === 'price' && n.price) return tpl(T('n_price'), { x: n.price.ttl || '' }) + (n.price.n ? ' ' + tpl(T('n_price_n'), { n: n.price.n }) : '');   // «Narxlar» (v21)
     if ((n.kind === 'shot' || n.kind === 'shot-me') && n.shot) {   // попытка снимка экрана (Guard в app.js)
       const k = { prtsc: 'PrintScreen', win: 'Win+Shift+S', mac: 'Cmd+Shift+3/4/5' }[n.shot.how] || '';
       return n.kind === 'shot-me' ? T('n_shot_me') : tpl(T('n_shot'), { name: n.shot.name || '—', k });

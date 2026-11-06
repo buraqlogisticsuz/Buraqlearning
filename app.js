@@ -2016,6 +2016,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     if (n.kind === 'ltask' && n.lt) return tpl(t('n_ltask'), { x: txtOf(n.lt.x, lang) });
     if ((n.kind === 'pp' || n.kind === 'pp-warn' || n.kind === 'pp-gone') && n.pp) return ppNotif(n, t);
     if ((n.kind === 'shot' || n.kind === 'shot-me') && n.shot) return shotNotif(n, t);
+    if (n.kind === 'price' && n.price) return tpl(t('n_price'), { x: n.price.ttl || '' }) + (n.price.n ? ' ' + tpl(t('n_price_n'), { n: n.price.n }) : '');
     if (n.kind === 'pay' && n.pay) return tpl(t('n_pay_' + n.pay.s), { m: ymLabel(n.pay.ym, lang, true), x: sumTxt(n.pay.total, t) }) + (n.pay.reply ? ' — ' + n.pay.reply : '');
     if (!n.promo) return n.text;
     var lv = levelsOf(db)[n.promo.li];
@@ -4542,10 +4543,200 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         : h('section', { className: 'box' }, h('p', { className: 'lor-muted', style: { margin: 0 } }, t('tm_none'))));
   }
 
+  /* ---------- Narxlar: SOP-менеджер объявляет цены в «Kontent → Narxlar», сотрудники видят их в «Baza → Narxlar» ----------
+     prices[]: { id, status: draft | published, title, note, from (ГГГГ-ММ-ДД, с какого дня), cur (валюта по умолчанию), access,
+     items: [{ id, h (строка-заголовок), name, unit, price (как ввели: «1 250», «kelishiladi»), cur, days, note,
+     was / chAt (прежняя цена и когда сменилась), newAt (новая строка) }], upd (когда объявлено), by }.
+     Сотрудник видит только объявленные и доступные ему (сервер, v21); отметки «↑ / ↓ / yangi» — 14 дней */
+  var PR_CUR = ['USD', 'UZS', 'CNY', 'EUR', 'RUB'], PR_FRESH = 14 * DAY;
+  function pricesAll(db) { return db.prices || []; }
+  function pricesFor(db, u) { return pricesAll(db).filter(function (x) { return (u.role === 'admin' || x.status === 'published') && canSee(db, u, x.access); }); }
+  function prNum(v) { var s = String(v == null ? '' : v).replace(/[\s  ]/g, '').replace(',', '.'); return /^-?\d+(\.\d+)?$/.test(s) ? +s : null; }
+  function prFmt(v) {
+    var n = prNum(v); if (n == null) return String(v == null ? '' : v).trim();
+    var parts = String(Math.abs(n)).split('.'); return (n < 0 ? '−' : '') + parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + (parts[1] ? ',' + parts[1] : '');
+  }
+  function prItems(x) { return (x.items || []).filter(function (it) { return !it.h; }); }
+  function prSearch(x, it) { return [it.name, it.unit, it.note, it.days, x.title].join(' '); }
+  /* строки из Excel / Google Sheets (табуляция; без неё — «;»): xizmat · birlik · narx · valyuta · muddat · izoh;
+     строка только с первой ячейкой — заголовок группы; строка-шапка таблицы («Narx», «Цена», «Price») пропускается */
+  function prParse(text, cur) {
+    var out = [];
+    String(text || '').split(/\r?\n/).forEach(function (line, i) {
+      if (!line.trim()) return;
+      var c = (line.indexOf('\t') >= 0 ? line.split('\t') : line.split(';')).map(function (x) { return x.trim(); });
+      if (!out.length && c.some(function (x) { return /^(narx|narxi|цена|стоимость|price|价格)$/i.test(x); })) return;
+      var id = 'pi' + Date.now().toString(36) + i + Math.random().toString(36).slice(2, 5);
+      if (c[0] && c.slice(1).every(function (x) { return !x; })) { out.push({ id: id, h: true, name: c[0] }); return; }
+      // валюта словами: «so‘m», «сум», «$», «юань» — к коду
+      var cu = String(c[3] || '').toUpperCase().replace(/[‘’'`ʻʼ\s.]/g, '');
+      cu = /^(SOM|SUM|СУМ|СЎМ|UZS)$/.test(cu) ? 'UZS' : /^(\$|USD|ДОЛЛ.*|DOLL.*)$/.test(cu) ? 'USD' : /^(CNY|RMB|ЮАНЬ|YUAN|¥|元)$/.test(cu) ? 'CNY' : /^(€|EUR|ЕВРО|YEVRO)$/.test(cu) ? 'EUR' : /^(RUB|РУБ.*|₽)$/.test(cu) ? 'RUB' : cu;
+      out.push({ id: id, name: c[0] || '', unit: c[1] || '', price: c[2] || '', cur: PR_CUR.indexOf(cu) >= 0 ? cu : cur, days: c[4] || '', note: c[5] || '' });
+    });
+    return out;
+  }
+  function blankPrice() { return { id: null, status: 'draft', title: '', note: '', from: '', cur: 'USD', access: acc('all'), items: [] }; }
+  function prRow(cur) { return { id: 'pi' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), name: '', unit: '', price: '', cur: cur || 'USD', days: '', note: '' }; }
+  function prMark(it) {
+    var now = Date.now();
+    if (it.chAt && now - it.chAt < PR_FRESH && it.was != null) { var a = prNum(it.was), b = prNum(it.price); return { k: a != null && b != null ? (b > a ? 'up' : b < a ? 'down' : 'ch') : 'ch', was: it.was }; }
+    if (it.newAt && now - it.newAt < PR_FRESH) return { k: 'new' };
+    return null;
+  }
+
+  /* сотрудник: «Baza → Narxlar» — поиск по всем спискам, таблица на каждый список */
+  function PricesView(p) {
+    var t = p.t, list = p.list, q = useState(''), needle = q[0].trim().toLowerCase();
+    var shown = list.map(function (x) {
+      var rows = [], head = null;
+      (x.items || []).forEach(function (it) {
+        if (it.h) { head = it; return; }
+        if (needle && prSearch(x, it).toLowerCase().indexOf(needle) < 0) return;
+        if (head) { rows.push(head); head = null; }
+        rows.push(it);
+      });
+      return { x: x, rows: rows };
+    }).filter(function (r) { return r.rows.length; });
+    return h('div', { className: 'pr-view' },
+      list.length ? h('div', { className: 'filters' }, h(Field, { name: 'pr-q', label: t('cs_search'), value: q[0], placeholder: t('pr_search_ph'), onChange: q[1] })) : null,
+      !list.length ? h('section', { className: 'box' }, h('p', { className: 'lor-muted', style: { margin: 0 } }, t('pr_none')))
+        : !shown.length ? h('section', { className: 'box' }, h('p', { className: 'lor-muted', style: { margin: 0 } }, t('pr_nothing')))
+        : shown.map(function (r) {
+          var x = r.x;
+          return h('section', { key: x.id, className: 'box pr-card' },
+            h('div', { className: 'pr-card-h' },
+              h('div', null, h('h2', { className: 'lor-h' }, x.title),
+                h('p', { className: 'lor-sm lor-muted pr-meta' }, [x.upd ? tpl(t('pr_upd'), { d: fmtDate(x.upd) }) : null, x.from ? tpl(t('pr_from_v'), { d: fmtK(x.from) }) : null].filter(Boolean).join(' · '))),
+              h('span', { className: 'pr-count' }, tpl(t('pr_rows_n'), { n: prItems(x).length }))),
+            x.note ? h('p', { className: 'pr-note' }, x.note) : null,
+            h('div', { className: 'lor-table-wrap pr-wrap' }, h('table', { className: 'lor-table pr-table' },
+              h('thead', null, h('tr', null, h('th', null, t('pr_c_name')), h('th', null, t('pr_c_unit')), h('th', { className: 'pr-num' }, t('pr_c_price')), h('th', null, t('pr_c_days')), h('th', null, t('pr_c_note')))),
+              h('tbody', null, r.rows.map(function (it) {
+                if (it.h) return h('tr', { key: it.id, className: 'pr-group' }, h('th', { colSpan: 5, scope: 'colgroup' }, it.name));
+                var m = prMark(it), price = prFmt(it.price);
+                return h('tr', { key: it.id },
+                  h('td', null, h('b', { className: 'pr-name' }, it.name), m && m.k === 'new' ? h('span', { className: 'pr-tag' }, t('pr_new_tag')) : null),
+                  h('td', null, it.unit || '—'),
+                  h('td', { className: 'pr-num' },
+                    h('span', { className: cx('pr-price', m && 'is-' + m.k) }, price ? price + (prNum(it.price) != null && it.cur ? ' ' + it.cur : '') : '—',
+                      m && (m.k === 'up' || m.k === 'down') ? h('span', { className: 'pr-arrow', 'aria-hidden': true }, m.k === 'up' ? '↑' : '↓') : null),
+                    m && m.was != null ? h('small', { className: 'pr-was' }, tpl(t('pr_was'), { x: prFmt(m.was) })) : null),
+                  h('td', null, it.days || '—'),
+                  h('td', { className: 'pr-td-note' }, it.note || ''));
+              })))));
+        }));
+  }
+
+  /* SOP-менеджер / CEO: «Kontent → Narxlar» — списки цен: строки, вставка из Excel, кто видит, объявить и уведомить */
+  function PricesAdmin(p) {
+    var t = p.t, db = p.db, list = pricesAll(db);
+    var ed = useState(null), draft = ed[0], er = useState({}), del = useState(false), paste = useState(null), notify = useState(true), tried = useRef(false);
+    var dRef = useRef(null); dRef.current = draft;
+    function errs(c) { var e = {}; if (!String(c.title || '').trim()) e.title = t('fill_required'); if (!prItems(c).some(function (it) { return String(it.name || '').trim(); })) e.rows = t('pr_need_rows'); return e; }
+    function setD(fn) { var c = clone(dRef.current); fn(c); dRef.current = c; ed[1](c); if (tried.current) er[1](errs(c)); }
+    function start(x) { ed[1](x ? clone(x) : Object.assign(blankPrice(), { items: [prRow('USD')] })); er[1]({}); del[1](false); paste[1](null); notify[1](true); tried.current = false; window.scrollTo(0, 0); }
+    function setItem(i, k, v) { setD(function (c) { c.items[i][k] = v; }); }
+    function move(i, dir) { setD(function (c) { var j = i + dir; if (j < 0 || j >= c.items.length) return; var x = c.items[i]; c.items[i] = c.items[j]; c.items[j] = x; }); }
+    function save(status) {
+      tried.current = true;
+      var c = clone(draft), e = errs(c); er[1](e); if (Object.keys(e).length) return;
+      var now = Date.now(), old = c.id ? pricesAll(db).filter(function (x) { return x.id === c.id; })[0] : null, wasPub = !!(old && old.status === 'published'), ch = 0;
+      c.status = status; c.title = c.title.trim(); c.note = String(c.note || '').trim();
+      c.items = c.items.filter(function (it) { return String(it.name || '').trim() || (!it.h && String(it.price || '').trim()); }).map(function (it) {
+        var o = old && (old.items || []).filter(function (y) { return y.id === it.id; })[0], n = Object.assign({}, it, { name: String(it.name || '').trim() });
+        if (it.h) return { id: it.id, h: true, name: n.name };
+        n.price = String(it.price == null ? '' : it.price).trim(); n.unit = String(it.unit || '').trim(); n.days = String(it.days || '').trim(); n.note = String(it.note || '').trim();
+        // цена сменилась с прошлого объявления — прежняя остаётся рядом на 14 дней; новая строка в уже объявленном списке — «yangi»
+        if (wasPub && status === 'published') {
+          if (o && String(o.price).trim() !== n.price) { n.was = o.price; n.chAt = now; ch++; }
+          else if (!o) { n.newAt = now; ch++; }
+        }
+        return n;
+      });
+      if (status === 'published') { c.upd = now; c.by = p.user.id; }
+      var send = status === 'published' && notify[0] && (!wasPub || ch > 0);
+      p.update(function (d) {
+        d.prices = d.prices || [];
+        if (c.id) d.prices = d.prices.map(function (x) { return x.id === c.id ? c : x; });
+        else { c.id = 'pr' + nextId(d); c.at = now; d.prices.unshift(c); }
+        if (send) d.users.forEach(function (u) { if (u.role === 'employee' && canSee(d, u, c.access)) d.notifications.unshift({ id: nextId(d), userId: u.id, kind: 'price', price: { ttl: c.title, n: wasPub ? ch : 0 }, route: 'base', tab: 'prices', text: '', at: now, read: false }); });
+      });
+      ed[1](null); p.say(status === 'published' ? t('pr_saved_pub') : t('cs_saved'));
+    }
+    function remove() { var id = draft.id; p.update(function (d) { d.prices = (d.prices || []).filter(function (x) { return x.id !== id; }); }); ed[1](null); p.say(t('pr_deleted')); }
+    function addPasted() {
+      var rows = prParse(paste[0], draft.cur || 'USD');
+      if (!rows.length) { p.say(t('pr_paste_none')); return; }
+      setD(function (c) { c.items = c.items.filter(function (it) { return it.h || String(it.name || '').trim() || String(it.price || '').trim(); }).concat(rows); });
+      paste[1](null); p.say(tpl(t('pr_paste_n'), { n: rows.length }));
+    }
+
+    if (draft) return h('div', { className: 'cms-case-edit' },
+      h('div', { className: 'page-head' },
+        h('div', null, h('span', { className: 'lor-eyebrow' }, t('pr_tab')), h('h2', { className: 'lor-title' }, draft.id ? t('pr_edit') : t('pr_new'))),
+        h(Btn, { variant: 'ghost', onClick: function () { ed[1](null); } }, t('cancel'))),
+      h('section', { className: 'box cs-form' },
+        h('div', { className: 'lor-form-grid' },
+          h(Field, { name: 'pr-title', span: true, label: t('pr_title'), required: true, value: draft.title, error: er[0].title, placeholder: t('pr_title_ph'), onChange: function (v) { setD(function (c) { c.title = v; }); } }),
+          h(Field, { name: 'pr-from', label: t('pr_from'), type: 'date', value: draft.from || '', onChange: function (v) { setD(function (c) { c.from = v; }); } }),
+          h(Field, { name: 'pr-cur', label: t('pr_cur'), value: draft.cur || 'USD', options: PR_CUR.map(function (x) { return [x, x]; }), onChange: function (v) { setD(function (c) { c.cur = v; }); } }),
+          h(Field, { name: 'pr-note', span: true, multiline: true, rows: 2, label: t('pr_note'), value: draft.note || '', placeholder: t('pr_note_ph'), onChange: function (v) { setD(function (c) { c.note = v; }); } })),
+        h('h3', { className: 'cms-h' }, t('pr_rows')),
+        er[0].rows ? h('p', { className: 'lor-field-error', style: { margin: 0 } }, er[0].rows) : null,
+        h('div', { className: 'pr-ed' },
+          h('div', { className: 'pr-ed-head', 'aria-hidden': true }, ['pr_c_name', 'pr_c_unit', 'pr_c_price', 'pr_c_cur', 'pr_c_days', 'pr_c_note'].map(function (k) { return h('span', { key: k }, t(k)); }), h('span')),
+          draft.items.map(function (it, i) {
+            var acts = h('span', { className: 'pr-ed-acts' },
+              h('button', { type: 'button', className: 'pr-ib', 'aria-label': '↑', disabled: i === 0, onClick: function () { move(i, -1); } }, '↑'),
+              h('button', { type: 'button', className: 'pr-ib', 'aria-label': '↓', disabled: i === draft.items.length - 1, onClick: function () { move(i, 1); } }, '↓'),
+              h('button', { type: 'button', className: 'pr-ib danger', 'aria-label': t('remove'), onClick: function () { setD(function (c) { c.items.splice(i, 1); }); } }, '×'));
+            if (it.h) return h('div', { key: it.id, className: 'pr-ed-row is-head' },
+              h('input', { className: 'lor-input slim', value: it.name, placeholder: t('pr_head_ph'), 'aria-label': t('pr_add_head'), onChange: function (e) { setItem(i, 'name', e.target.value); } }), acts);
+            var inp = function (k, ph, cls) { return h('input', { className: cx('lor-input slim', cls), value: it[k] == null ? '' : it[k], placeholder: ph || '', 'aria-label': t('pr_c_' + k), onChange: function (e) { setItem(i, k, e.target.value); } }); };
+            return h('div', { key: it.id, className: 'pr-ed-row' },
+              inp('name', t('pr_name_ph')), inp('unit', 'kg'), inp('price', '0', 'pr-num'),
+              h('select', { className: 'lor-input slim', value: it.cur || draft.cur || 'USD', 'aria-label': t('pr_c_cur'), onChange: function (e) { setItem(i, 'cur', e.target.value); } }, PR_CUR.map(function (x) { return h('option', { key: x, value: x }, x); })),
+              inp('days', t('pr_days_ph')), inp('note', ''), acts);
+          })),
+        h('div', { className: 'pr-ed-add' },
+          h(Btn, { variant: 'outline', size: 'sm', onClick: function () { setD(function (c) { c.items.push(prRow(c.cur)); }); } }, '+ ' + t('pr_add_row')),
+          h(Btn, { variant: 'ghost', size: 'sm', onClick: function () { setD(function (c) { c.items.push({ id: prRow().id, h: true, name: '' }); }); } }, '+ ' + t('pr_add_head')),
+          h(Btn, { variant: 'ghost', size: 'sm', onClick: function () { paste[1](paste[0] == null ? '' : null); } }, '⇪ ' + t('pr_paste'))),
+        paste[0] != null ? h('div', { className: 'pr-paste' },
+          h(Field, { name: 'pr-paste', multiline: true, rows: 5, label: t('pr_paste'), hint: t('pr_paste_h'), value: paste[0], onChange: paste[1] }),
+          h('div', null, h(Btn, { variant: 'secondary', size: 'sm', disabled: !paste[0].trim(), onClick: addPasted }, t('pr_paste_go')))) : null,
+        h(AccessEditor, { t: t, db: db, lang: p.lang, name: 'pr', value: draft.access, onChange: function (v) { setD(function (c) { c.access = v; }); } }),
+        h('label', { className: 'check' }, h('input', { type: 'checkbox', id: 'pr-notify', checked: notify[0], onChange: function (e) { notify[1](e.target.checked); } }), t('pr_notify')),
+        h('div', { className: 'cms-foot' },
+          draft.id ? (del[0] ? h('span', { className: 'cms-confirm' }, t('confirm_del'), ' ', h(Btn, { variant: 'ghost', size: 'sm', onClick: function () { del[1](false); } }, t('cancel')), h(Btn, { variant: 'outline', size: 'sm', onClick: remove }, t('yes_del')))
+            : h('button', { type: 'button', className: 'app-link danger', onClick: function () { del[1](true); } }, t('pr_delete'))) : h('span'),
+          h('div', { className: 'cs-foot-b' },
+            h(Btn, { variant: 'outline', onClick: function () { save('draft'); } }, t('cs_save_draft')),
+            h(Btn, { variant: 'primary', arrow: true, onClick: function () { save('published'); } }, t('cs_publish'))))));
+
+    return h('div', { className: 'cs-admin' },
+      h('div', { className: 'cs-admin-h' },
+        h('div', null, h('h2', { className: 'lor-h' }, t('pr_tab')), h('p', { className: 'lor-sm lor-muted', style: { margin: '4px 0 0', maxWidth: 720 } }, t('pr_admin_s'))),
+        h(Btn, { variant: 'primary', arrow: true, onClick: function () { start(null); } }, t('pr_new'))),
+      list.length ? h('div', { className: 'lor-table-wrap' }, h('table', { className: 'lor-table' },
+        h('thead', null, h('tr', null, h('th', null, t('pr_title')), h('th', null, t('pr_rows')), h('th', null, t('pr_upd_col')), h('th', null, t('ac_title')), h('th', null, t('status')), h('th', { 'aria-label': 'act' }))),
+        h('tbody', null, list.map(function (x) {
+          return h('tr', { key: x.id },
+            h('td', null, h('b', null, x.title)),
+            h('td', null, prItems(x).length),
+            h('td', null, x.upd ? fmtDate(x.upd) : '—'),
+            h('td', null, accessLabel(db, x.access, t, p.lang)),
+            h('td', null, h(Badge, { status: x.status === 'published' ? 'passed' : 'todo', lang: p.lang }, x.status === 'published' ? t('jr_pub') : t('cs_draft'))),
+            h('td', { className: 'jr-acts' }, h('button', { type: 'button', className: 'app-link', onClick: function () { start(x); } }, t('edit'))));
+        }))))
+        : h('section', { className: 'box' }, h('p', { className: 'lor-muted', style: { margin: 0 } }, t('pr_admin_empty'))));
+  }
+
   /* ---------- employee page: Baza (journals + terminology) ---------- */
   function BasePage(p) {
     /* из поиска: tab и jid — сразу нужная вкладка и журнал */
-    var t = p.t, db = p.db, u = p.user, tab = useState(p.tab === 'terms' ? 'terms' : 'journals'), open = useState(p.jid || null);
+    var t = p.t, db = p.db, u = p.user, ps = pricesFor(db, u), open = useState(p.jid || null);
+    var tab = useState(p.tab === 'terms' || p.tab === 'journals' || p.tab === 'prices' ? p.tab : ps.length ? 'prices' : 'journals');
     var js = journalsFor(db, u), ts = termsFor(db, u);
     var cur = open[0] ? js.filter(function (x) { return x.id === open[0]; })[0] : null;
     if (cur) return h('div', { className: 'app-wrap' }, h(JournalView, Object.assign({}, p, { j: cur, onBack: function () { open[1](null); } })));
@@ -4553,10 +4744,11 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       h('div', { className: 'page-head' },
         h('div', null, h('span', { className: 'lor-eyebrow' }, t('db_eyebrow')), h('h1', { className: 'lor-title' }, t('nav_base'), h(PageTip, { t: t, id: 'base' }))),
         h('span', { className: 'lor-sm lor-muted' }, t('db_access_note'))),
-      h('div', { className: 'lor-tabs fb-tabs', role: 'tablist' }, [['journals', t('db_tab_j'), js.length], ['terms', t('db_tab_t'), ts.length]].map(function (x) {
+      h('div', { className: 'lor-tabs fb-tabs', role: 'tablist' }, [['prices', t('pr_tab'), ps.length], ['journals', t('db_tab_j'), js.length], ['terms', t('db_tab_t'), ts.length]].map(function (x) {
         return h('button', { key: x[0], type: 'button', role: 'tab', 'aria-selected': tab[0] === x[0], className: cx('lor-tab', tab[0] === x[0] && 'is-on'), onClick: function () { tab[1](x[0]); } }, x[1], h('span', { className: 'lor-count' }, x[2]));
       })),
-      tab[0] === 'terms' ? h(Glossary, { t: t, db: db, lang: p.lang, list: ts, onLesson: function (id) { p.go({ name: 'lesson', id: id }); } })
+      tab[0] === 'prices' ? h(PricesView, { t: t, list: ps })
+      : tab[0] === 'terms' ? h(Glossary, { t: t, db: db, lang: p.lang, list: ts, onLesson: function (id) { p.go({ name: 'lesson', id: id }); } })
         : js.length ? h('div', { className: 'jr-grid' }, js.map(function (j) { return h(JournalCard, { key: j.id, j: j, t: t, db: db, user: u, lang: p.lang, onOpen: function () { open[1](j.id); window.scrollTo(0, 0); } }); }))
           : h('section', { className: 'box' }, h('p', { className: 'lor-muted', style: { margin: 0 } }, t('jr_none_emp'))));
   }
@@ -5032,6 +5224,13 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       add('term', 'tm' + x.id, term, tmF(x, lang, 'short'), inTitle ? 7 : 3, admin ? { name: 'cms', tab: 'terms' } : { name: 'base', tab: 'terms' });
     });
 
+    pricesFor(db, u).forEach(function (x) {
+      prItems(x).forEach(function (it) {
+        if (!hit(prSearch(x, it), q)) return;
+        add('price', 'pr' + x.id + it.id, it.name, [prFmt(it.price) + (prNum(it.price) != null ? ' ' + (it.cur || '') : ''), it.unit, x.title].filter(Boolean).join(' · '), hit(it.name, q) ? 7 : 4, admin ? { name: 'cms', tab: 'prices' } : { name: 'base', tab: 'prices' });
+      });
+    });
+
     journalsFor(db, u).forEach(function (j) {
       var inTitle = hit(j.title, q);
       var row = !inTitle && (j.rows || []).filter(function (r) { return hit(rowText(db, j, r), q); })[0];
@@ -5047,7 +5246,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     return out.sort(function (a, b) { return b.sc - a.sc; }).slice(0, 24);
   }
 
-  var GROUPS = ['page', 'sop', 'case', 'term', 'journal', 'people'];
+  var GROUPS = ['page', 'sop', 'price', 'case', 'term', 'journal', 'people'];
 
   function Palette(p) {
     var t = p.t, db = p.db, u = p.user;
@@ -5091,7 +5290,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
                 part.map(function (r) {
                   i++; var me = i;
                   return h('button', { key: r.key, type: 'button', className: cx('gs-row', me === sel[0] && 'is-on'), onMouseEnter: function () { sel[1](me); }, onClick: function () { pick(r); } },
-                    h('span', { className: 'gs-row-ic', 'aria-hidden': true }, h(Ico, { name: { page: 'flag', sop: 'doc', case: 'case', term: 'idea', journal: 'clip', people: 'team' }[g], size: 16 })),
+                    h('span', { className: 'gs-row-ic', 'aria-hidden': true }, h(Ico, { name: { page: 'flag', sop: 'doc', price: 'wallet', case: 'case', term: 'idea', journal: 'clip', people: 'team' }[g], size: 16 })),
                     h('span', { className: 'gs-row-t' }, h('b', null, r.title), r.sub ? h('small', null, r.sub) : null));
                 }));
             })),
@@ -9688,7 +9887,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       p.update(function (d) { d.notifications.forEach(function (x) { if (x.id === n.id) x.read = true; }); });
       if (n.lessonId) go({ name: 'lesson', id: n.lessonId });
       else if (n.route === 'pulse') { if (pulseDue(db, u)) sv[1](true); else go({ name: 'home' }); }
-      else if (n.route) go({ name: n.route, ym: n.ym || null });
+      else if (n.route) go({ name: n.route, ym: n.ym || null, tab: n.tab || null });
       else if (n.path) go({ name: 'path' }); else go({ name: 'home' });
     }
 
@@ -9975,12 +10174,13 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
 
     return h('div', { className: 'app-wrap' },
       h('div', { className: 'page-head' }, h('div', null, h('span', { className: 'lor-eyebrow' }, t('srv_cms_hint')), h('h1', { className: 'lor-title' }, t('nav_cms'), h(PageTip, { t: t, id: 'cms' })))),
-      h('div', { className: 'lor-tabs fb-tabs', role: 'tablist' }, [['lessons', t('cms_tab_lessons'), flat(db.course).length], ['welcome', t('in_tab'), (function () { var st = introStat(db); return st.w ? st.seen.length + '/' + st.emps.length : 0; })()], ['qn', t('qn_tab'), (function () { var st = qnStat(db); return st.q ? st.done.length + '/' + st.emps.length : 0; })()], ['cases', t('nav_cases'), (db.cases || []).length], ['journals', t('db_tab_j'), (db.journals || []).length], ['terms', t('db_tab_t'), (db.terms || []).length], ['tracks', t('trk_tab'), (db.tracks || []).length], ['plan', t('pl_tab'), (db.planTpl || []).length], ['wisdom', t('wz_title'), ((db.settings && db.settings.wisdom && db.settings.wisdom.list) || []).length]].map(function (x) {
+      h('div', { className: 'lor-tabs fb-tabs', role: 'tablist' }, [['lessons', t('cms_tab_lessons'), flat(db.course).length], ['welcome', t('in_tab'), (function () { var st = introStat(db); return st.w ? st.seen.length + '/' + st.emps.length : 0; })()], ['qn', t('qn_tab'), (function () { var st = qnStat(db); return st.q ? st.done.length + '/' + st.emps.length : 0; })()], ['cases', t('nav_cases'), (db.cases || []).length], ['journals', t('db_tab_j'), (db.journals || []).length], ['terms', t('db_tab_t'), (db.terms || []).length], ['prices', t('pr_tab'), (db.prices || []).length], ['tracks', t('trk_tab'), (db.tracks || []).length], ['plan', t('pl_tab'), (db.planTpl || []).length], ['wisdom', t('wz_title'), ((db.settings && db.settings.wisdom && db.settings.wisdom.list) || []).length]].map(function (x) {
         return h('button', { key: x[0], type: 'button', role: 'tab', 'aria-selected': tab[0] === x[0], className: cx('lor-tab', tab[0] === x[0] && 'is-on'), onClick: function () { tab[1](x[0]); } }, x[1], h('span', { className: 'lor-count' }, x[2]));
       })),
       tab[0] === 'cases' ? h(CasesAdmin, p) :
       tab[0] === 'journals' ? h(JournalsAdmin, p) :
       tab[0] === 'terms' ? h(TermsAdmin, p) :
+      tab[0] === 'prices' ? h(PricesAdmin, p) :
       tab[0] === 'tracks' ? h(TracksAdmin, p) :
       tab[0] === 'plan' ? h(PlanAdmin, p) :
       tab[0] === 'wisdom' ? h(WisdomAdmin, p) :
