@@ -7580,6 +7580,32 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         h(Btn, { variant: 'ghost', onClick: p.onBack }, t('cancel')),
         h(Btn, { variant: 'primary', disabled: !ok[0], onClick: del }, t('ud_btn'))));
   }
+  /* удаление главы (Kontent → Darslar): глава со всеми уроками; программы её забывают, открытые вопросы и заявки на экзамен
+     по её урокам закрываются. Прогресс и XP сотрудников остаются в данных, но уроков больше нет — в процент и рейтинг не идут */
+  function SecDelModal(p) {
+    var t = p.t, db = p.db, s = p.section, ids = s.lessons.map(function (l) { return l.id; }), ok = useState(!s.lessons.length);
+    var readers = db.users.filter(function (u) { var pr = db.progress[u.id] || {}; return ids.some(function (id) { return pr[id] && pr[id].status; }); }).length;
+    var open = (db.requests || []).filter(function (r) { return r.state === 'open' && ids.indexOf(r.lessonId) >= 0; }).length;
+    function del() {
+      p.update(function (d) {
+        d.course.sections = d.course.sections.filter(function (x) { return x.id !== s.id; });
+        (d.tracks || []).forEach(function (tr) { tr.sections = (tr.sections || []).filter(function (x) { return x !== s.id; }); });
+        (d.requests || []).forEach(function (r) { if (r.state === 'open' && ids.indexOf(r.lessonId) >= 0) { r.state = 'closed'; r.unread = false; r.closedAt = Date.now(); } });
+      });
+      p.say(t('ch_deleted')); p.onDone(ids);
+    }
+    return h(Modal, { t: t, hid: 'sd-h', onClose: p.onClose, className: 'ud-modal' },
+      h('span', { className: 'lor-eyebrow' }, t('ch_del')),
+      h('h2', { className: 'lor-h', id: 'sd-h' }, p.title),
+      h('ul', { className: 'ud-list' },
+        h('li', { className: 'is-gone' }, s.lessons.length ? tpl(t('ch_del_text'), { n: s.lessons.length }) : t('ch_del_empty')),
+        open ? h('li', { className: 'is-gone' }, tpl(t('ch_del_req'), { n: open })) : null,
+        readers ? h('li', { className: 'is-kept' }, tpl(t('ch_del_prog'), { n: readers })) : null),
+      s.lessons.length ? h('label', { className: 'check big' }, h('input', { type: 'checkbox', id: 'sd-ok', checked: ok[0], onChange: function (e) { ok[1](e.target.checked); } }), t('ch_del_sure')) : null,
+      h('div', { className: 'lor-modal-actions' },
+        h(Btn, { variant: 'ghost', onClick: p.onClose }, t('cancel')),
+        h(Btn, { variant: 'primary', disabled: !ok[0], onClick: del }, t('ch_del'))));
+  }
   function UserEditModal(p) {
     var t = p.t, u = p.u, emp = u.role === 'employee', delAsk = useState(false);
     var f = useState({ name: u.name || '', login: u.login || '', position: u.position || '', department: u.department || '', avatar: u.avatar || null, password: '' }), v = f[0], er = useState({});
@@ -9913,7 +9939,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var t = p.t, db = p.db, first = flat(db.course)[0];
     var sel = useState(p.lessonId || (first && first.id)), id = sel[0];
     var lesson = findLesson(db.course, id);
-    var dr = useState(null), draft = dr[0], cf = useState(false), notif = useState(null), baseRef = useRef(''), tab = useState(p.tab || 'lessons'), audSec = useState(null);
+    var dr = useState(null), draft = dr[0], cf = useState(false), notif = useState(null), baseRef = useRef(''), tab = useState(p.tab || 'lessons'), audSec = useState(null), delSec = useState(null);
     var openCh = useState(function () { var c = db.course.sections.filter(function (s) { return s.lessons.some(function (l) { return l.id === id; }); })[0]; return c ? c.id : null; });
     useEffect(function () { var c = db.course.sections.filter(function (s) { return s.lessons.some(function (l) { return l.id === id; }); })[0]; if (c) openCh[1](c.id); }, [id]);
     useEffect(function () { if (p.tab) tab[1](p.tab); }, [p.tab]);
@@ -9961,6 +9987,11 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       tab[0] === 'welcome' ? h(WelcomeAdmin, p) :
       tab[0] === 'qn' ? h(QnAdmin, p) :
       h('div', { className: 'cms' },
+        (function () {
+          var ds = delSec[0] && db.course.sections.filter(function (s) { return s.id === delSec[0]; })[0];
+          return ds ? h(SecDelModal, Object.assign({}, p, { section: ds, title: chTitle(ds), onClose: function () { delSec[1](null); },
+            onDone: function (gone) { delSec[1](null); if (gone.indexOf(id) >= 0) { var nx = flat(db.course).filter(function (l) { return gone.indexOf(l.id) < 0; })[0]; sel[1](nx && nx.id); } } })) : null;
+        })(),
         audSec[0] && db.course.sections.some(function (s) { return s.id === audSec[0]; }) ? h(AudienceModal, Object.assign({}, p, { section: db.course.sections.filter(function (s) { return s.id === audSec[0]; })[0], onClose: function () { audSec[1](null); } })) : null,
         h('aside', { className: 'cms-tree' },
           // the two ways in: a file (Word or .json) or an empty chapter to write by hand
@@ -9976,7 +10007,9 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
                 h('b', { className: 'ch-title' }, chTitle(s)),
                 h('span', { className: 'ch-meta' }, tpl(t('ch_meta'), { n: s.lessons.length, q: q }) + (s.officialOnly ? ' · ' + t('ch_official') : '')),
                 h('span', { className: 'ch-chev', 'aria-hidden': true }, isOpen ? '▴' : '▾')),
-              h('button', { type: 'button', className: 'cms-aud', onClick: function () { audSec[1](s.id); } }, h('span', null, t('aud_label') + ':'), ' ', h('b', null, audText(secAudience(db, s), t))),
+              h('div', { className: 'ch-foot' },
+                h('button', { type: 'button', className: 'cms-aud', onClick: function () { audSec[1](s.id); } }, h('span', null, t('aud_label') + ':'), ' ', h('b', null, audText(secAudience(db, s), t))),
+                h('button', { type: 'button', className: 'ch-del', title: t('ch_del'), 'aria-label': t('ch_del') + ': ' + chTitle(s), onClick: function () { delSec[1](s.id); } }, h(Ico, { name: 'trash', size: 18 }))),
               isOpen ? h('div', { className: 'ch-body' },
                 s.lessons.length ? h('ul', { className: 'ch-lessons' }, s.lessons.map(function (l) {
                   return h('li', { key: l.id }, h('button', { type: 'button', className: cx('cms-l', l.id === id && 'is-on'), onClick: function () { sel[1](l.id); } },
@@ -9987,10 +10020,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
                   h('label', { className: 'lor-sm', htmlFor: 'ch-t-' + s.id }, t('sec_title')),
                   h('input', { id: 'ch-t-' + s.id, className: 'lor-input slim cms-sec-title', value: s.title, onChange: function (e) { var v = e.target.value; secUpdate(s.id, function (x) { x.title = v; }); } }),
                   h('label', { className: 'check' }, h('input', { type: 'checkbox', checked: !!s.officialOnly, onChange: function (e) { var v = e.target.checked; secUpdate(s.id, function (x) { x.officialOnly = v; }); } }), t('official_only')),
-                  // only an empty chapter can go: lessons (and the results on them) are deleted one by one, on purpose
-                  s.lessons.length ? null : h('button', { type: 'button', className: 'app-link danger cms-sec-del', onClick: function () {
-                    p.update(function (d) { d.course.sections = d.course.sections.filter(function (x) { return x.id !== s.id; }); (d.tracks || []).forEach(function (tr) { tr.sections = (tr.sections || []).filter(function (x) { return x !== s.id; }); }); });
-                  } }, t('del_section')))) : null);
+                  h('button', { type: 'button', className: 'app-link danger cms-sec-del', onClick: function () { delSec[1](s.id); } }, t('ch_del')))) : null);
           })),
         draft && lesson ? h('section', { className: 'box cms-edit' },
           openQ.length ? h('div', { className: 'status-box is-fail' }, h('div', null, h('b', null, '? ' + openQ.length + ' · ' + t('tab_q')), openQ.map(function (r) { return h('p', { key: r.id }, userOf(db, r.userId).name + ': ' + r.text); }))) : null,

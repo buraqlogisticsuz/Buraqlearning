@@ -4447,3 +4447,10 @@ button.jf-name { padding: 0; background: none; border: 0; border-bottom: 1px sol
 @media print { html.emp-guard body { display: none !important; } }
 .grd-cover p.grd-cover-sent { display: inline-flex; align-items: center; gap: var(--space-2); opacity: 1; }
 .grd-cover-sent::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--red); flex: none; }
+
+/* Kontent → Darslar: внизу карточки главы — «Kimlar o‘qiydi» и корзина «Bobni o‘chirish» (окно с подтверждением) */
+.ch-foot { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-2); }
+.ch-foot .cms-aud { flex: 1; min-width: 0; }
+.ch-del { flex: none; display: inline-grid; place-items: center; width: 32px; height: 32px; margin: -6px -4px -6px 0; padding: 0; border: 0; border-radius: var(--radius-pill); background: none; color: var(--ink-muted); cursor: pointer; transition: color var(--t-xs) var(--ease), background-color var(--t-xs) var(--ease); }
+.ch-del:hover { color: var(--red-text); background: var(--red-soft); }
+.ch-del:focus-visible { outline: none; box-shadow: var(--focus-ring); }

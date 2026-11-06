@@ -741,13 +741,26 @@ try {
   assert.ok(ss.indexOf('b2') < ss.indexOf('b3') && ss.indexOf('b3') < ss.indexOf('s2'), '3-bob — между 2-bob и 4-bob');
   const odd = srv.g.state().users.find(u => u.role === 'employee' && u.department !== dep);
   if (odd) assert.equal(srv.g.ctx.viewFor_(srv.g.ctx.readState_(), odd).course.sections.some(x => x.id === 'b3'), false, 'другой отдел главу не получает');
-  // пустую главу («+ Yangi bob») можно удалить; главу с уроками — нет
+  // главу можно удалить: пустую — сразу из окна; с уроками — после галочки «Ha, bobni darslari bilan o‘chiraman»
   const nSec = srv.g.state().course.sections.length;
   await A.getByRole('button', { name: '+ Yangi bob' }).click(); await settle(A);
   assert.equal(srv.g.state().course.sections.length, nSec + 1);
-  assert.equal(await A.locator('.cms-sec-del').count(), 1, 'кнопка — только у пустого раздела');
-  await A.locator('.cms-sec-del').click(); await settle(A);
+  assert.equal(await A.locator('.ch-del').count(), nSec + 1, 'корзина — у каждой главы');
+  await A.locator('.cms-sec-del').click(); await A.waitForSelector('.ud-modal');
+  assert.equal(await A.locator('#sd-ok').count(), 0, 'пустая глава — без галочки');
+  await A.locator('.ud-modal button', { hasText: 'Bobni o‘chirish' }).click(); await settle(A);
   assert.equal(srv.g.state().course.sections.length, nSec);
+  await A.getByRole('button', { name: '+ Yangi bob' }).click(); await settle(A);
+  await A.locator('.ch-card.is-open button', { hasText: 'Dars qo‘shish' }).click(); await settle(A);
+  const sNew = srv.g.state().course.sections[nSec];
+  assert.equal(sNew.lessons.length, 1, 'в новой главе — урок');
+  await A.locator('.ch-card').nth(nSec).locator('.ch-del').click(); await A.waitForSelector('.ud-modal');
+  assert.match(await A.locator('.ud-modal').innerText(), /1 ta dars o‘chiriladi/);
+  assert.ok(await A.locator('.ud-modal button', { hasText: 'Bobni o‘chirish' }).isDisabled(), 'без галочки не удалить');
+  await A.waitForTimeout(450); await shot(A, 'bob-ochirish');
+  await A.check('#sd-ok'); await A.locator('.ud-modal button', { hasText: 'Bobni o‘chirish' }).click(); await settle(A);
+  assert.equal(srv.g.state().course.sections.length, nSec, 'глава с уроком удалена');
+  assert.ok(!srv.g.state().course.sections.some(x => x.id === sNew.id));
   assert.deepEqual(await rejected(A), [], 'сервер принял раздел и назначение');
   step('главы: файл .json и Word (.docx) — окно «Qayerga / Kimlar o‘qiydi», порядок по номеру, замена на месте, отказ при чужих номерах; кто — по должности, отделу, имени');
 
