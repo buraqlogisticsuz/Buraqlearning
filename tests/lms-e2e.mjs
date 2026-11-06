@@ -409,6 +409,8 @@ try {
   await E.reload({ waitUntil: 'networkidle' }); await E.waitForSelector('.lor-lesson-title', { timeout: 10000 });
   assert.equal(await E.locator('.lor-pane-media').count(), 0, 'после обновления — тоже скрыто');
   assert.match(await E.locator('.ls-vid-tg').innerText(), /Videoni ko‘rsatish/i);
+  { const lid = decodeURIComponent((/[?&]id=([^&]+)/.exec(new URL(E.url()).hash) || [])[1] || '');
+    assert.deepEqual(await E.evaluate(() => Object.keys(localStorage).filter(k => k.indexOf('lor-lesson-vid') === 0)), ['lor-lesson-vid:' + lid], 'скрыто только в этом уроке — в других видео по умолчанию видно'); }
   await E.waitForTimeout(300); await shot(E, 'dars-videosiz');
   await E.locator('.ls-vid-tg').click(); await E.waitForTimeout(300);
   assert.equal(await E.locator('.lor-video-frame iframe').count(), 1, 'видео снова рядом');

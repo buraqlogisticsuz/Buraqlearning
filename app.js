@@ -9776,9 +9776,10 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   var LS_VID = 'lor-lesson-vid';
   function LessonView(p) {
     var t = p.t, db = p.db, u = p.user, l = findLesson(db.course, p.id);
-    /* «Videoni yashirish»: ученик читает — видео прячется, текст остаётся во всю ширину; выбор помнит браузер */
-    var vh = useState(function () { try { return localStorage.getItem(LS_VID) === 'off'; } catch (e) { return false; } });
-    function togVid() { var v = !vh[0]; vh[1](v); try { localStorage.setItem(LS_VID, v ? 'off' : 'on'); } catch (e) {} }
+    /* «Videoni yashirish»: ученик читает — видео прячется, текст остаётся во всю ширину. По умолчанию видео всегда видно;
+       скрыл — только в этом уроке (браузер помнит по уроку), в другом уроке видео снова на месте */
+    var vk = LS_VID + ':' + p.id, vh = useState(function () { try { return localStorage.getItem(vk) === 'off'; } catch (e) { return false; } });
+    function togVid() { var v = !vh[0]; vh[1](v); try { if (v) localStorage.setItem(vk, 'off'); else localStorage.removeItem(vk); } catch (e) {} }
     var st = l ? lessonStatus(db, u, l.id) : 'locked', pr = l ? (prog(db, u.id)[l.id] || {}) : {};
     var m = useState(null), modal = m[0], setModal = m[1];
     var asked = useRef(false), sentinel = useRef(null);
