@@ -814,6 +814,12 @@ try {
   // а если страница ещё взяла данные из копии на устройстве — из меню пользователя
   if (!(await E.locator('.ir').count())) { await E.locator('.user-btn').first().click(); await E.locator('.user-pop-links button.intro').click(); }
   await E.locator('.ir').waitFor({ timeout: 5000 });
+  // обязательно и для работающего сотрудника: ни крестика, ни «Keyinroq», Escape не закрывает — только выйти или подтвердить
+  assert.equal(await E.locator('.ir-x').count(), 0, 'крестика нет');
+  assert.equal(await E.locator('.ir-actions button', { hasText: 'Keyinroq' }).count(), 0, '«Keyinroq» нет');
+  await E.keyboard.press('Escape'); await E.waitForTimeout(200);
+  assert.equal(await E.locator('.ir').count(), 1, 'Escape не закрывает');
+  assert.match(await E.locator('.ir').innerText(), /Majburiy tanishuv/i, 'подпись — «Majburiy tanishuv»');
   assert.ok(await E.locator('.ir-actions button:has-text("Tasdiqlash")').isDisabled(), 'без галочки подтвердить нельзя');
   assert.equal(await E.locator('.ir-tab').count(), 2, 'два документа — две вкладки');
   await E.locator('.ir .dv-doc').waitFor({ timeout: 8000 });
@@ -886,7 +892,7 @@ try {
   await E.check('#in-seen'); await E.locator('.ir-actions button:has-text("Tasdiqlash")').click(); await settle(E);
   assert.ok(srv.g.state().users.find(u => u.id === emp.id).introSeenAt, 'знакомство подтверждено — на сервере');
   assert.equal(await E.locator('.ir').count(), 0, 'экран знакомства закрылся');
-  step('«Tanishuv»: SOP-менеджер задал приветствие и обязательное знакомство (текст, PDF и Word, видео), на весь экран: документ слева, его видео справа; сотрудник открыл документы и подтвердил');
+  step('«Tanishuv»: SOP-менеджер задал приветствие и обязательное знакомство (текст, PDF и Word, видео), на весь экран: документ слева, его видео справа; работающий сотрудник не может отложить — открыл документы и подтвердил');
 
   // ---------- «Savolnoma»: SOP-менеджер добавляет вопросы списком (варианты, раздел, оценка); сотрудник заполняет; ответы видит SOP ----------
   await nav(A, 'cms'); await A.locator('.lor-tab').filter({ hasText: 'Savolnoma' }).click(); await A.waitForTimeout(300);

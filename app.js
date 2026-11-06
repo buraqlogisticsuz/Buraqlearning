@@ -1331,13 +1331,14 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       h('div', { className: 'cb-body' }, h('b', null, t(co ? 'qn_cons_t' : 'qn_banner_t')), h('span', null, co ? t('qn_banner_cons') : tpl(t('qn_banner_sub'), { n: qnAsk(q).length }))),
       h(Btn, { variant: 'primary', arrow: true, onClick: p.openQn }, t('qn_open')));
   }
-  /* знакомство поверх программы: обязательное (ещё не подтверждено) — с галочкой и «Tasdiqlash»; уже подтверждено — просто посмотреть.
+  /* знакомство поверх программы: не подтверждено — с галочкой и «Tasdiqlash»; уже подтверждено — просто посмотреть.
+     Обязательно для всех сотрудников: отложить нельзя — ни «Keyinroq», ни крестика, ни Escape (выйти из аккаунта можно).
      Новый сотрудник (принял условия уже при этой версии знакомства) проходит его последним шагом входа — после анкеты,
-     теста, приветствия и профиля — и отложить не может: ни «Keyinroq», ни крестика, ни Escape (выйти из аккаунта можно).
-     Работающим — когда знакомство добавили или изменили — оно приходит окном, которое можно отложить */
-  function introMust(db, u) { var w = introOf(db); return !!(w && introDue(db, u) && (u.termsAcceptedAt || 0) >= (w.at || 0)); }
+     теста, приветствия и профиля («Oxirgi qadam»); работающим — при входе, когда знакомство добавили или изменили */
+  function introMust(db, u) { return !!(introOf(db) && introDue(db, u)); }
+  function introLast(db, u) { var w = introOf(db); return !!(w && introDue(db, u) && (u.termsAcceptedAt || 0) >= (w.at || 0)); }
   function IntroModal(p) {
-    var t = p.t, u = p.user, w = introOf(p.db) || {}, due = introDue(p.db, u), must = introMust(p.db, u), ok = useState(false), tick = useState(0);
+    var t = p.t, u = p.user, w = introOf(p.db) || {}, due = introDue(p.db, u), must = introMust(p.db, u), last = introLast(p.db, u), ok = useState(false), tick = useState(0);
     var close = must ? null : function () { p.onClose(); }, out = must && p.logout ? { label: t('logout'), on: p.logout } : null;
     useEffect(function () { function k(e) { if (e.key === 'Escape' && close) close(); } window.addEventListener('keydown', k); return function () { window.removeEventListener('keydown', k); }; }, [must]);
     function confirm() {
@@ -1346,14 +1347,14 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       SAY('in_confirmed'); p.onClose();
     }
     /* с документами — на весь экран: документ слева, его видео справа */
-    if ((w.docs || []).length) return h(IntroReader, { t: t, w: w, confirm: due, onX: close, step: must ? t('in_last') : null,
+    if ((w.docs || []).length) return h(IntroReader, { t: t, w: w, confirm: due, onX: close, step: last ? t('in_last') : must ? t('in_must') : null,
       back: must ? out : due ? { label: t('clk_later'), on: close } : null,
       next: due ? { label: t('in_confirm'), on: confirm } : { label: t('close'), on: function () { p.onClose(); } },
       note: !due && u.introSeenAt ? '✓ ' + tpl(t('in_seen_on'), { d: fmt(u.introSeenAt, t) }) : null });
     return h('div', { className: 'lor-scrim', onMouseDown: function (e) { if (e.target === e.currentTarget && close) close(); } },
       h('div', { className: 'lor-modal intro-modal', role: 'dialog', 'aria-modal': true, 'aria-labelledby': 'in-h' },
         close ? h('button', { type: 'button', className: 'lor-modal-x', 'aria-label': t('close'), onClick: close }, '×') : null,
-        h('span', { className: 'lor-eyebrow' }, must ? t('in_last') + ' · ' + t('in_banner_t') : due ? t('in_banner_t') : t('in_tab')),
+        h('span', { className: 'lor-eyebrow' }, last ? t('in_last') + ' · ' + t('in_banner_t') : must ? t('in_must') : due ? t('in_banner_t') : t('in_tab')),
         h('h2', { className: 'lor-h', id: 'in-h' }, w.introTitle || t('in_title')),
         h(IntroBody, { t: t, w: w, onOpen: function () { tick[1](function (n) { return n + 1; }); } }),
         due ? h(IntroCheck, { t: t, w: w, checked: ok[0], onChange: ok[1] })
@@ -9881,6 +9882,9 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       else if (clockDue(d, u)) gate[1](true);
     }
     useEffect(function () { if (gateInit.current || !ready) return; gateInit.current = true; nextGate('start'); }, [ready]);
+    /* знакомство обязательно: SOP-менеджер добавил или изменил его, пока сотрудник на сайте, — окно открывается само */
+    var introNow = ready && introMust(db, u);
+    useEffect(function () { if (introNow && gateInit.current && !intro[0] && !qn[0]) intro[1]('auto'); }, [introNow]);
     function forceGo(x) { r[1](x); dr[1](false); window.scrollTo(0, 0); }
     function go(x) { if (route.name === 'lesson' && leaveRef.current && leaveRef.current(x)) { dr[1](false); return; } forceGo(x); }
     function openNotif(n) {
