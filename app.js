@@ -9771,8 +9771,14 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   }
 
   /* ---------------- lesson view ---------------- */
+  /* видео урока есть, только если SOP-менеджер дал ссылку (YouTube или файл .mp4); без неё окна видео нет — текст во всю ширину */
+  function lessonHasVideo(l) { return /^https?:\/\/\S+/i.test(String((l && l.video && l.video.src) || '').trim()); }
+  var LS_VID = 'lor-lesson-vid';
   function LessonView(p) {
     var t = p.t, db = p.db, u = p.user, l = findLesson(db.course, p.id);
+    /* «Videoni yashirish»: ученик читает — видео прячется, текст остаётся во всю ширину; выбор помнит браузер */
+    var vh = useState(function () { try { return localStorage.getItem(LS_VID) === 'off'; } catch (e) { return false; } });
+    function togVid() { var v = !vh[0]; vh[1](v); try { localStorage.setItem(LS_VID, v ? 'off' : 'on'); } catch (e) {} }
     var st = l ? lessonStatus(db, u, l.id) : 'locked', pr = l ? (prog(db, u.id)[l.id] || {}) : {};
     var m = useState(null), modal = m[0], setModal = m[1];
     var asked = useRef(false), sentinel = useRef(null);
@@ -9815,12 +9821,17 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     else if (st === 'question') statusBox = h('div', { className: 'status-box' }, h('div', null, h('b', null, '? ' + t('st_question')), h('p', null, t('st_question_sub'))));
     else if (st === 'updated') statusBox = h('div', { className: 'status-box is-info' }, h('div', null, h('b', null, '↻ ' + t('st_updated')), h('p', null, t('st_updated_sub'))));
     var canFinish = st !== 'passed' && st !== 'exam-ready';
+    var hasVid = lessonHasVideo(l), showVid = hasVid && !vh[0];
 
     return h(F, null,
-      h(LOR.Protected, { watermark: wmText(u), hideOnBlur: true, lang: p.lang, onViolation: function (k) { p.update(function (d) { d.audit.unshift({ id: nextId(d), userId: u.id, key: k, lessonId: l.id, at: Date.now() }); if (!SV) d.audit = d.audit.slice(0, 200); }); } },
-        h('div', { className: 'lor-lesson app-lesson' },
+      /* водяной знак урока — общий, бледный (Guard: «имя · логин · дата»); прежний плотный знак урока убран */
+      h(LOR.Protected, { watermark: GUARD ? null : wmText(u), hideOnBlur: true, lang: p.lang, onViolation: function (k) { p.update(function (d) { d.audit.unshift({ id: nextId(d), userId: u.id, key: k, lessonId: l.id, at: Date.now() }); if (!SV) d.audit = d.audit.slice(0, 200); }); } },
+        h('div', { className: cx('lor-lesson app-lesson', !showVid && 'no-media') },
           h('article', { className: 'lor-pane' },
-            h('div', { className: 'lor-crumb' }, h('span', null, l.sectionTitle), h(Arrow, { length: 16 }), h(Badge, { status: st, lang: p.lang })),
+            h('div', { className: 'lor-crumb' }, h('span', null, l.sectionTitle), h(Arrow, { length: 16 }), h(Badge, { status: st, lang: p.lang }),
+              hasVid ? h('button', { type: 'button', className: cx('ls-vid-tg', showVid && 'is-on'), 'aria-pressed': showVid, onClick: togVid },
+                h('svg', { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true }, h('rect', { x: 3, y: 5, width: 14, height: 14, rx: 2 }), h('path', { d: 'M17 10l4-2.5v9L17 14' }), showVid ? null : h('path', { d: 'M3 3l18 18' })),
+                t(showVid ? 'ls_vid_hide' : 'ls_vid_show')) : null),
             h('h1', { className: 'lor-lesson-title' }, l.title),
             (function () {
               var up = updateForLesson(db, u.id, l.id);
@@ -9837,7 +9848,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
             h('div', { ref: sentinel, className: 'sentinel', 'aria-hidden': true }),
             statusBox ? h('div', { style: { marginTop: 24 } }, statusBox) : null,
             canFinish ? h('div', { className: 'lor-lesson-foot' }, h(Btn, { variant: 'primary', arrow: true, onClick: function () { asked.current = true; setModal({ step: 'ask' }); } }, t('finish'))) : null),
-          h('div', { className: 'lor-pane lor-pane-media' }, h(Player, { t: t, video: l.video || { title: '', duration: '00:00' } }), h('p', { className: 'lor-sm lor-muted protect-note' }, h(Icon, { name: 'shield', size: 14 }), t('protected_note'))))),
+          showVid ? h('div', { className: 'lor-pane lor-pane-media' }, h(IntroVideo, { t: t, video: l.video }), h('p', { className: 'lor-sm lor-muted protect-note' }, h(Icon, { name: 'shield', size: 14 }), t('protected_note'))) : null)),
       modal ? h(Feedback, { key: 'fb', t: t, lang: p.lang, step: modal.step, lessonTitle: l.sectionTitle + ' · ' + l.title, canLater: !!modal.pending, onQuestion: sendQuestion, onExam: requestExam, onClose: closeModal }) : null);
   }
 

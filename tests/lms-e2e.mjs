@@ -402,7 +402,34 @@ try {
   await E.locator('.lor-video-frame iframe').focus(); await E.waitForTimeout(200);
   assert.equal(await E.locator('.lor-shield').count(), 0, 'клик в видео не прячет урок');
   await E.keyboard.press('Escape');
-  step('видео урока: ссылка YouTube встраивается, защита урока её не прячет');
+  // «Videoni yashirish»: видео прячется, текст остаётся во всю ширину; выбор помнится после обновления страницы
+  await E.locator('.ls-vid-tg').click(); await E.waitForTimeout(200);
+  assert.equal(await E.locator('.lor-pane-media').count(), 0, 'видео скрыто');
+  assert.equal(await E.locator('.app-lesson.no-media .lor-lesson-title').count(), 1, 'текст на месте, во всю ширину');
+  await E.reload({ waitUntil: 'networkidle' }); await E.waitForSelector('.lor-lesson-title', { timeout: 10000 });
+  assert.equal(await E.locator('.lor-pane-media').count(), 0, 'после обновления — тоже скрыто');
+  assert.match(await E.locator('.ls-vid-tg').innerText(), /Videoni ko‘rsatish/i);
+  await E.waitForTimeout(300); await shot(E, 'dars-videosiz');
+  await E.locator('.ls-vid-tg').click(); await E.waitForTimeout(300);
+  assert.equal(await E.locator('.lor-video-frame iframe').count(), 1, 'видео снова рядом');
+  // урок без ссылки на видео — окна видео нет вовсе
+  { const noVid = await E.evaluate(() => { const db = LmsClient.initial(); for (const s of db.course.sections) for (const l of s.lessons) if (!(l.video && /^https?:/.test(l.video.src || ''))) return l.title; return null; });
+    if (noVid) { await E.getByText(noVid).first().click(); await E.waitForTimeout(500);
+      // уход с недочитанного урока спрашивает «Mavzuni to‘liq o‘rgandingizmi?» — «Keyinroq», и переход продолжается;
+      // короткий урок дочитан сразу — тот же вопрос, закрываем Escape
+      for (let k = 0; k < 3 && await E.locator('.lor-scrim .lor-modal').count(); k++) {
+        if (await E.locator('.lor-scrim .lor-modal button', { hasText: 'Keyinroq' }).count()) await E.locator('.lor-scrim .lor-modal button', { hasText: 'Keyinroq' }).click();
+        else await E.keyboard.press('Escape');
+        await E.waitForTimeout(400);
+      }
+      assert.equal(await E.locator('.lor-pane-media').count(), 0, 'без ссылки — без окна видео');
+      assert.equal(await E.locator('.ls-vid-tg').count(), 0, '…и без кнопки');
+      assert.equal(await E.locator('.lor-video-play').count(), 0, 'ненастоящего плеера нет');
+      await E.waitForTimeout(300); await shot(E, 'dars-videosiz-urok');
+      // назад на сданный урок с видео — дальше тест идёт оттуда (недочитанный урок при входе снова спросил бы)
+      await E.getByText('4.1. Test standarti').first().click(); await E.waitForTimeout(500);
+      for (let k = 0; k < 3 && await E.locator('.lor-scrim .lor-modal').count(); k++) { await E.keyboard.press('Escape'); await E.waitForTimeout(400); } } }
+  step('видео урока: ссылка YouTube встраивается, защита урока её не прячет; «Videoni yashirish» — текст во всю ширину, выбор помнится; без ссылки окна видео нет');
 
   // ---------- ИИ-наставник через сервер ----------
   await E.locator('#ai-input').count().then(n => n ? null : E.getByRole('button', { name: 'AI-mentor' }).first().click());
