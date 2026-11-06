@@ -379,7 +379,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       return function () { io.disconnect(); };
     }, [st[0].st, st[0].n]);
     if (st[0].st === 'wait') return h('div', { className: 'dv-msg' }, h('span', { className: 'dv-spin', 'aria-hidden': true }), t('in_doc_loading'));
-    if (st[0].st === 'err') return h('div', { className: 'dv-msg' }, h('p', null, t('in_doc_err_view')), h(Btn, { variant: 'outline', size: 'sm', onClick: function () { tick[1](tick[0] + 1); } }, t('retry')));
+    if (st[0].st === 'err') return h('div', { className: 'dv-msg' }, h('p', null, t('in_doc_err_view')), h(Btn, { variant: 'outline', size: 'sm', onClick: function () { tick[1](tick[0] + 1); } }, t('err_retry')));
     var pages = []; for (var i = 1; i <= st[0].n; i++) pages.push(h('canvas', { key: i, 'data-p': i, className: 'pdfv-page', draggable: false, 'aria-label': tpl(t('pdf_page'), { n: i, m: st[0].n }) }));
     return h('div', { ref: box, className: 'pdfv', onContextMenu: noSave, onDragStart: noSave, onCopy: noSave }, pages);
   }
