@@ -4629,9 +4629,49 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       m && m.was != null ? h('small', { className: 'pr-was' }, tpl(p.t('pr_was'), { x: prFmt(m.was) })) : null);
   }
 
+  /* картинки прайс-листа (imgs: [{ id, name, size, type, data }]): до 5; data — «data:…» до сохранения, потом «lmsfile:…»
+     (сервер кладёт файл на Диск, отдаёт его тем, кому список виден). Большой снимок уменьшается до 2400 px (JPEG) */
+  var PR_IMG_MAX = 5, PR_IMG_URL = {};
+  function prImgUrl(ref) {
+    ref = String(ref || '');
+    if (ref.indexOf('data:') === 0) return Promise.resolve(ref);
+    if (PR_IMG_URL[ref]) return PR_IMG_URL[ref];
+    var pr = SV && ref.indexOf('lmsfile:') === 0 ? SV.file(ref.slice(8)).then(function (f) { return URL.createObjectURL(b64Blob(f.data, f.type || 'image/jpeg')); }) : Promise.reject(new Error('nofile'));
+    PR_IMG_URL[ref] = pr; pr.catch(function () { delete PR_IMG_URL[ref]; });
+    return pr;
+  }
+  function prShrink(file) {
+    return new Promise(function (ok, no) {
+      var rd = new FileReader();
+      rd.onerror = function () { no(new Error('read')); };
+      rd.onload = function () {
+        var url = rd.result;
+        if (file.size <= 1.5 * 1048576) return ok({ name: file.name, size: file.size, type: file.type, data: url });
+        var im = new Image();
+        im.onerror = function () { no(new Error('img')); };
+        im.onload = function () {
+          var k = Math.min(1, 2400 / Math.max(im.naturalWidth, im.naturalHeight)), cv = document.createElement('canvas');
+          cv.width = Math.round(im.naturalWidth * k); cv.height = Math.round(im.naturalHeight * k);
+          cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height);
+          var d = cv.toDataURL('image/jpeg', 0.86);
+          ok({ name: file.name.replace(/\.[^.]+$/, '') + '.jpg', size: Math.round((d.length - d.indexOf(',') - 1) * 3 / 4), type: 'image/jpeg', data: d });
+        };
+        im.src = url;
+      };
+      rd.readAsDataURL(file);
+    });
+  }
+  function PrImg(p) {
+    var s = useState(null);
+    useEffect(function () { var live = true; s[1](null); prImgUrl(p.src).then(function (u) { if (live) s[1](u); }, function () { if (live) s[1]('err'); }); return function () { live = false; }; }, [p.src]);
+    if (!s[0] || s[0] === 'err') return h('div', { className: cx('pr-img-wait', p.className) }, s[0] === 'err' ? p.t('pr_img_err') : h('span', { className: 'dv-spin', 'aria-hidden': true }));
+    return h('img', { className: p.className, src: s[0], alt: p.alt || '', draggable: false, onClick: p.onClick ? function () { p.onClick(s[0]); } : null });
+  }
+
   /* сотрудник: «Baza → Narxlar» — поиск по всем спискам, таблица на каждый список */
   function PricesView(p) {
-    var t = p.t, list = p.list, q = useState(''), needle = q[0].trim().toLowerCase();
+    var t = p.t, list = p.list, q = useState(''), needle = q[0].trim().toLowerCase(), zoom = useState(null);
+    useEffect(function () { if (!zoom[0]) return; function k(e) { if (e.key === 'Escape') zoom[1](null); } window.addEventListener('keydown', k); return function () { window.removeEventListener('keydown', k); }; }, [zoom[0]]);
     var shown = list.map(function (x) {
       var rows = [], head = null;
       (x.items || []).forEach(function (it) {
@@ -4640,8 +4680,10 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         if (head) { rows.push(head); head = null; }
         rows.push(it);
       });
-      return { x: x, rows: rows };
-    }).filter(function (r) { return r.rows.length; });
+      var inTitle = !needle || String(x.title || '').toLowerCase().indexOf(needle) >= 0;
+      if (inTitle && needle) rows = (x.items || []).slice();
+      return { x: x, rows: rows, imgs: (x.imgs || []).length && (inTitle || rows.length) ? x.imgs : [] };
+    }).filter(function (r) { return r.rows.length || r.imgs.length; });
     return h('div', { className: 'pr-view' },
       list.length ? h('div', { className: 'filters' }, h(Field, { name: 'pr-q', label: t('cs_search'), value: q[0], placeholder: t('pr_search_ph'), onChange: q[1] })) : null,
       !list.length ? h('section', { className: 'box' }, h('p', { className: 'lor-muted', style: { margin: 0 } }, t('pr_none')))
@@ -4652,9 +4694,10 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
             h('div', { className: 'pr-card-h' },
               h('div', null, h('h2', { className: 'lor-h' }, x.title),
                 h('p', { className: 'lor-sm lor-muted pr-meta' }, [x.upd ? tpl(t('pr_upd'), { d: fmtDate(x.upd) }) : null, x.from ? tpl(t('pr_from_v'), { d: fmtK(x.from) }) : null].filter(Boolean).join(' · '))),
-              h('span', { className: 'pr-count' }, tpl(t('pr_rows_n'), { n: prItems(x).length }))),
+              prItems(x).length ? h('span', { className: 'pr-count' }, tpl(t('pr_rows_n'), { n: prItems(x).length })) : null),
             x.note ? h('p', { className: 'pr-note' }, x.note) : null,
-            h('div', { className: 'lor-table-wrap pr-wrap' }, h('table', { className: cx('lor-table pr-table', tb && 'is-matrix'), style: tb ? { minWidth: 200 + cols.length * 130 } : null },
+            r.imgs.length ? h('div', { className: 'pr-imgs' }, r.imgs.map(function (im) { return h(PrImg, { key: im.id, t: t, src: im.data, alt: x.title, className: 'pr-img', onClick: zoom[1] }); })) : null,
+            !r.rows.length ? null : h('div', { className: 'lor-table-wrap pr-wrap' }, h('table', { className: cx('lor-table pr-table', tb && 'is-matrix'), style: tb ? { minWidth: 200 + cols.length * 130 } : null },
               tb ? h('thead', null, h('tr', null, h('th', { className: 'pr-th-wrap' }, x.head || t('pr_c_name')), cols.map(function (c) { return h('th', { key: c.id, className: 'pr-num pr-th-wrap' }, c.label); })))
                 : h('thead', null, h('tr', null, h('th', null, t('pr_c_name')), h('th', null, t('pr_c_unit')), h('th', { className: 'pr-num' }, t('pr_c_price')), h('th', null, t('pr_c_days')), h('th', null, t('pr_c_note')))),
               h('tbody', null, r.rows.map(function (it) {
@@ -4671,7 +4714,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
                   h('td', null, it.days || '—'),
                   h('td', { className: 'pr-td-note' }, it.note || ''));
               })))));
-        }));
+        }),
+      zoom[0] ? h('div', { className: 'lightbox', role: 'dialog', 'aria-modal': true, onClick: function () { zoom[1](null); } }, h('img', { src: zoom[0], alt: '', draggable: false }), h('button', { type: 'button', className: 'lor-modal-x', 'aria-label': t('close') }, '×')) : null);
   }
 
   /* SOP-менеджер / CEO: «Kontent → Narxlar» — списки цен: таблица со своими столбцами или простой список, вставка из Excel,
@@ -4683,12 +4727,13 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     function errs(c) {
       var e = {};
       if (!String(c.title || '').trim()) e.title = t('fill_required');
-      if (prIsTable(c) && !(c.cols || []).some(function (x) { return String(x.label || '').trim(); })) e.cols = t('pr_need_cols');
-      if (!prItems(c).some(function (it) { return String(it.name || '').trim(); })) e.rows = t('pr_need_rows');
+      var hasRows = prItems(c).some(function (it) { return String(it.name || '').trim(); });
+      if (prIsTable(c) && hasRows && !(c.cols || []).some(function (x) { return String(x.label || '').trim(); })) e.cols = t('pr_need_cols');
+      if (!hasRows && !(c.imgs || []).length) e.rows = t('pr_need_rows');   // список — строки цен или хотя бы картинка
       return e;
     }
     function setD(fn) { var c = clone(dRef.current); fn(c); dRef.current = c; ed[1](c); if (tried.current) er[1](errs(c)); }
-    function start(x) { var b = blankPrice(); ed[1](x ? clone(x) : Object.assign(b, { items: [prRow(b)] })); er[1]({}); del[1](false); paste[1](null); notify[1](true); tried.current = false; window.scrollTo(0, 0); }
+    function start(x) { var b = blankPrice(); ed[1](x ? clone(x) : Object.assign(b, { items: [prRow(b)] })); er[1]({}); del[1](false); paste[1](null); notify[1](true); imgErr[1](''); tried.current = false; window.scrollTo(0, 0); }
     function setItem(i, k, v) { setD(function (c) { c.items[i][k] = v; }); }
     function setCell(i, ck, v) { setD(function (c) { c.items[i].v = Object.assign({}, c.items[i].v); if (v) c.items[i].v[ck] = v; else delete c.items[i].v[ck]; }); }
     function move(i, dir) { setD(function (c) { var j = i + dir; if (j < 0 || j >= c.items.length) return; var x = c.items[i]; c.items[i] = c.items[j]; c.items[j] = x; }); }
@@ -4743,6 +4788,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         return n;
       });
       if (status === 'published') { c.upd = now; c.by = p.user.id; }
+      if (wasPub && status === 'published') { var oldIm = ((old && old.imgs) || []).map(function (x) { return x.id; }); ch += (c.imgs || []).filter(function (x) { return oldIm.indexOf(x.id) < 0; }).length; }
       var send = status === 'published' && notify[0] && (!wasPub || ch > 0);
       p.update(function (d) {
         d.prices = d.prices || [];
@@ -4753,6 +4799,21 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       ed[1](null); p.say(status === 'published' ? t('pr_saved_pub') : t('cs_saved'));
     }
     function remove() { var id = draft.id; p.update(function (d) { d.prices = (d.prices || []).filter(function (x) { return x.id !== id; }); }); ed[1](null); p.say(t('pr_deleted')); }
+    var imgRef = useRef(null), imgErr = useState('');
+    function pickImgs(e) {
+      var files = Array.prototype.slice.call(e.target.files || []); e.target.value = '';
+      if (!files.length) return;
+      var bad = files.filter(function (f) { return !/^image\/(png|jpe?g|webp)$/i.test(f.type); })[0];
+      if (bad) { imgErr[1](t('pr_img_type')); return; }
+      var room = PR_IMG_MAX - ((dRef.current && dRef.current.imgs) || []).length;
+      if (files.length > room) { imgErr[1](tpl(t('pr_img_max'), { n: PR_IMG_MAX })); files = files.slice(0, Math.max(0, room)); } else imgErr[1]('');
+      files.forEach(function (f) {
+        prShrink(f).then(function (x) {
+          if (x.size > 6 * 1048576) { imgErr[1](tpl(t('pr_img_big'), { name: f.name })); return; }
+          setD(function (c) { c.imgs = (c.imgs || []).concat([Object.assign({ id: prId('im') }, x)]).slice(0, PR_IMG_MAX); });
+        }, function () { imgErr[1](tpl(t('pr_img_big'), { name: f.name })); });
+      });
+    }
     function addPasted() {
       var r = prParse(paste[0], draft);
       if (!r.rows.length && !r.cols) { p.say(t('pr_paste_none')); return; }
@@ -4778,6 +4839,19 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           h(Field, { name: 'pr-from', label: t('pr_from'), type: 'date', value: draft.from || '', onChange: function (v) { setD(function (c) { c.from = v; }); } }),
           h(Field, { name: 'pr-kind', label: t('pr_kind'), value: tb ? 'table' : 'list', options: [['table', t('pr_k_table')], ['list', t('pr_k_list')]], onChange: setKind }),
           tb ? null : h(Field, { name: 'pr-cur', label: t('pr_cur'), value: draft.cur || 'USD', options: PR_CUR.map(function (x) { return [x, x]; }), onChange: function (v) { setD(function (c) { c.cur = v; }); } })),
+        h('div', { className: 'pr-imgs-ed' },
+          h('h3', { className: 'cms-h' }, t('pr_imgs')),
+          h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, tpl(t('pr_imgs_h'), { n: PR_IMG_MAX })),
+          (draft.imgs || []).length ? h('div', { className: 'pr-thumbs' }, draft.imgs.map(function (im, i) {
+            return h('div', { key: im.id, className: 'pr-thumb' },
+              h(PrImg, { t: t, src: im.data, alt: im.name }),
+              h('span', { title: im.name }, im.name, h('small', null, fileSize(im.size || 0))),
+              h('button', { type: 'button', className: 'pr-ib danger', 'aria-label': t('remove') + ': ' + im.name, onClick: function () { setD(function (c) { c.imgs.splice(i, 1); }); } }, '×'));
+          })) : null,
+          (draft.imgs || []).length < PR_IMG_MAX ? h('div', null,
+            h('input', { ref: imgRef, id: 'pr-img-input', type: 'file', accept: 'image/png,image/jpeg,image/webp', multiple: true, className: 'jf-input', onChange: pickImgs }),
+            h('label', { className: 'lor-btn lor-btn-outline lor-btn-sm', htmlFor: 'pr-img-input' }, '+ ' + t('pr_img_add'))) : null,
+          imgErr[0] ? h('p', { className: 'lor-field-error', style: { margin: 0 } }, imgErr[0]) : null),
         tb ? h('div', { className: 'pr-cols' },
           h('h3', { className: 'cms-h' }, t('pr_cols')),
           h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('pr_cols_h')),
@@ -10969,7 +11043,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     GUARD = !!(user && user.role === 'employee');
     /* другой человек в той же вкладке (выход и вход на общем компьютере): отметки «документ открыт» и файлы прежнего — забыть */
     var lastUid = useRef(user ? user.id : null), uidNow = user ? user.id : null;
-    if (lastUid.current !== uidNow) { DOC_OPENED = {}; DOC_CACHE = {}; lastUid.current = uidNow; }
+    if (lastUid.current !== uidNow) { DOC_OPENED = {}; DOC_CACHE = {}; PR_IMG_URL = {}; lastUid.current = uidNow; }
     /* the 1st of a month (or the first open after it): the closed month's report goes out — from the SOP manager's device */
     var lvU = lvlOf(user), due = monthlyDue(db, Date.now()), canIssue = lvU === 'sop' || lvU === 'ceo';   // владелец (boss) только смотрит: его запись monthly сервер отклонит — без этого рассылка шла бы по кругу
     useEffect(function () { if (due && canIssue) update(function (d) { if (monthlyDue(d, Date.now()) === due) issueMonthly(d, due); }); }, [due, canIssue]);

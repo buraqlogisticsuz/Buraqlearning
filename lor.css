@@ -4525,3 +4525,14 @@ button.jf-name { padding: 0; background: none; border: 0; border-bottom: 1px sol
 .ls-vid-tg:hover { border-color: var(--border); }
 .ls-vid-tg:not(.is-on) { color: var(--ink-muted); background: var(--surface-sunken); }
 .ls-vid-tg:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+/* «Narxlar» — картинки прайс-листа: у сотрудника — во всю ширину карточки (нажать — крупно), в редакторе — миниатюры */
+.pr-imgs { display: grid; gap: var(--space-3); }
+.pr-img { display: block; width: 100%; height: auto; border: var(--hairline) solid var(--line); border-radius: var(--radius-md); background: var(--surface-sunken); cursor: zoom-in; }
+.pr-img-wait { display: grid; place-items: center; min-height: 160px; padding: var(--space-3); border-radius: var(--radius-md); background: var(--surface-sunken); color: var(--ink-muted); font-size: 13px; }
+.pr-imgs-ed { display: grid; gap: 10px; }
+.pr-thumbs { display: flex; flex-wrap: wrap; gap: 12px; }
+.pr-thumb { position: relative; display: grid; gap: 4px; width: 180px; }
+.pr-thumb img, .pr-thumb .pr-img-wait { width: 180px; height: 120px; min-height: 0; object-fit: cover; border: var(--hairline) solid var(--line); border-radius: var(--radius-sm); }
+.pr-thumb > span { overflow: hidden; font-size: 12px; line-height: 16px; color: var(--ink-muted); white-space: nowrap; text-overflow: ellipsis; }
+.pr-thumb > span small { display: block; }
+.pr-thumb .pr-ib { position: absolute; top: 4px; right: 4px; background: var(--surface-raised); box-shadow: var(--shadow-sm); }

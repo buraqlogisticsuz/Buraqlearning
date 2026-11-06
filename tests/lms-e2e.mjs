@@ -1527,8 +1527,14 @@ try {
   assert.equal(await A.locator('#f-pr-head').inputValue(), 'Yukning 1 m³ hajmdagi og‘irligi', 'первый столбец — из шапки');
   assert.equal(await A.locator('.pr-col input').count(), 4, 'четыре тарифа — четыре столбца');
   assert.equal(await A.locator('.pr-ed-row').count(), 10, 'пустая строка ушла: 10 строк веса');
+  // картинка прайс-листа: PNG — миниатюра в редакторе, при сохранении — файл на сервере
+  const pricePng = await A.screenshot({ clip: { x: 0, y: 0, width: 480, height: 270 } });
+  await A.setInputFiles('#pr-img-input', { name: 'asosiy-price-list.png', mimeType: 'image/png', buffer: pricePng });
+  await A.locator('.pr-thumb img').waitFor({ timeout: 5000 });
   await A.waitForTimeout(300); await shot(A, 'narxlar-tahrir');
   await A.getByRole('button', { name: 'Nashr qilish' }).click(); await settle(A);
+  { const im = ((srv.g.state().prices || [])[0] || {}).imgs || [];
+    assert.equal(im.length, 1); assert.match(im[0].data, /^lmsfile:/, 'картинка сохранена файлом на сервере'); assert.equal(im[0].name, 'asosiy-price-list.png'); }
   { const pl = (srv.g.state().prices || [])[0];
     assert.ok(pl && pl.status === 'published' && pl.kind === 'table' && pl.from === '2026-11-05', 'прайс-лист объявлен на сервере');
     assert.deepEqual(pl.cols.map(c => c.label), ['Standart tarif (usd)', 'Eksklyuziv tarif (usd)', 'Horgos Standart tarif (usd)', 'Horgos Eksklyuziv tarif (usd)']);
@@ -1543,6 +1549,10 @@ try {
   assert.match(await E.locator('.pr-table tbody tr').first().innerText(), /0-100 kg\s+125\s+145\s+95\s+115/);
   assert.match(await E.locator('.pr-table tbody tr').last().innerText(), /1000 kg<\s+0\.395 \(kg uchun\)/);
   assert.match(await E.locator('.pr-card').innerText(), /amal qiladi: 05\.11\.2026 dan/);
+  await E.waitForFunction(() => { const i = document.querySelector('.pr-card img.pr-img'); return i && i.complete && i.naturalWidth > 100; }, null, { timeout: 10000 });
+  await E.locator('.pr-card img.pr-img').click(); await E.locator('.lightbox img').waitFor({ timeout: 3000 });
+  await E.keyboard.press('Escape'); await E.waitForTimeout(200);
+  assert.equal(await E.locator('.lightbox').count(), 0, 'картинка — крупно и закрывается');
   await E.fill('#f-pr-q', '701'); await E.waitForTimeout(200);
   assert.equal(await E.locator('.pr-table tbody tr').count(), 1, 'поиск: одна строка');
   await E.fill('#f-pr-q', ''); await E.waitForTimeout(200);
