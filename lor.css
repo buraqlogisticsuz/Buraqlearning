@@ -3338,10 +3338,27 @@ button.mc-cell.at-cell:hover { outline: 2px solid var(--blue-text); outline-offs
 .aud-sum.is-empty { color: var(--red-text); }
 .imp-lessons { margin: 0; padding-left: 22px; max-height: 220px; overflow-y: auto; font-size: 13px; line-height: 20px; }
 
-.imp-lessons { list-style: none; padding-left: 0; display: grid; gap: 2px; }
+.imp-lessons { list-style: none; padding-left: 0; display: grid; gap: 2px; max-height: min(46vh, 420px); }
 .imp-lessons li { padding: 4px 6px; border-radius: var(--radius-sm); }
-.imp-lessons li.is-merged { padding-left: 26px; color: var(--ink-muted); }
+.imp-lessons li.is-cut { border-top: var(--hairline) solid var(--line); padding-top: 7px; margin-top: 2px; }
+.imp-lessons li.is-cut:first-child { border-top: 0; margin-top: 0; }
+.imp-lessons li.is-sub { color: var(--ink-muted); }
+.imp-lessons .check { align-items: flex-start; }
+.imp-l { min-width: 0; overflow-wrap: anywhere; }
 .imp-lessons small { color: var(--ink-muted); }
+.imp-lessons small.is-off { color: var(--red-text); }
+.imp-lessons li.is-cut .check { color: var(--ink); }
+.imp-lessons .check input { margin-top: 2px; }
+
+/* «Kontent» → «Darslar»: место урока в главе — выше / ниже, объединить с предыдущим, разделить по подзаголовку */
+.ls-place { display: grid; gap: var(--space-3); padding-bottom: var(--space-4); border-bottom: var(--hairline) solid var(--line); }
+.ls-place-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
+.ls-place-acts { display: flex; gap: 6px; flex-wrap: wrap; }
+.ls-place-acts .lor-btn:disabled { opacity: .45; cursor: default; }
+.ls-confirm { display: grid; gap: 8px; padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); background: var(--surface-sunken); border: var(--hairline) solid var(--line); }
+.ls-confirm p { margin: 0; font-size: 14px; line-height: 20px; }
+.ls-confirm .lor-input { max-width: 100%; }
+.ch-renum { justify-self: start; }
 
 /* «Kontent» → «Tanishuv»: приветствие и обязательное знакомство (текст + видео) */
 .in-admin .in-cols { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: var(--space-6); align-items: start; }

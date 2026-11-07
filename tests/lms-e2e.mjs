@@ -762,7 +762,7 @@ try {
   await A.setInputFiles('#cms-import', { name: '3-bob.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', buffer: docx });
   await A.waitForSelector('.imp-dlg');
   assert.match(await txt(A, '.imp-dlg .imp-sum'), /3-bob\. Sinov standartlari\s+3 ta dars · 0 ta test savoli · testlar keyin qo‘shiladi/);
-  await A.locator('.imp-dlg .imp-lessons input').nth(1).uncheck();
+  await A.locator('.imp-dlg .imp-lessons li', { hasText: 'QO‘SHIMCHA SKRIPT' }).locator('input').uncheck();
   assert.match(await txt(A, '.imp-dlg .imp-sum'), /2 ta dars/, '«Qo‘shimcha skript» — в предыдущий урок');
   await A.locator('.imp-dlg .aud > .aud-mode input').uncheck();
   await A.locator('.imp-dlg .ac-chip', { hasText: dep }).click();
@@ -780,6 +780,64 @@ try {
   assert.ok(ss.indexOf('b2') < ss.indexOf('b3') && ss.indexOf('b3') < ss.indexOf('s2'), '3-bob — между 2-bob и 4-bob');
   const odd = srv.g.state().users.find(u => u.role === 'employee' && u.department !== dep);
   if (odd) assert.equal(srv.g.ctx.viewFor_(srv.g.ctx.readState_(), odd).course.sections.some(x => x.id === 'b3'), false, 'другой отдел главу не получает');
+  // глава из Word со своими номерами: «2.», «4.», заголовок с переносом строки «4. …⏎4.1. …», жирный «3. …» между заголовками,
+  // заголовок без текста перед «1. …»: уроки нумеруются по порядку («6.2.», без «2.»), подзаголовки — за номером урока;
+  // любой заголовок отмечается или снимается вручную. Потом в редакторе: разделить, присоединить, поднять, навести порядок в номерах
+  {
+    const H = (x, lv) => '<w:p><w:pPr><w:pStyle w:val="Heading' + lv + '"/></w:pPr>' + x + '</w:p>', Pp = x => '<w:p>' + x + '</w:p>';
+    const d6 = zip({
+      'word/styles.xml': '<?xml version="1.0"?><w:styles ' + NS + '>' + [1, 2].map(i => '<w:style w:type="paragraph" w:styleId="Heading' + i + '"><w:name w:val="heading ' + i + '"/></w:style>').join('') + '</w:styles>',
+      'word/document.xml': '<?xml version="1.0"?><w:document ' + NS + '><w:body>' + [
+        H(run('6-BOB. RAQAMLAR SINOVI'), 1), H(run('UMUMIY STANDART'), 2), H(run('1. MAQSAD'), 2), Pp(run('Maqsad matni')),
+        H(run('2. HARAJAT TURLARI'), 2), Pp(run('2.1. Yo‘l puli')), Pp(run('2.5 kg yuk')), Pp(run('3. LIMITLAR', true)), Pp(run('Limit matni')),
+        H(run('4. TASDIQLASH TARTIBI') + '<w:r><w:br/></w:r>' + run('4.1. Uchrashuvdan oldin'), 2), Pp(run('Tasdiq matni')),
+        H(run('Pitch variant-1'), 2), Pp(run('Javob')), H(run('Nega bu pitch ishlaydi?'), 2), Pp(run('Sabab')),
+        H(run('3.6. kontakt yig‘ish'), 2), Pp(run('Kontakt matni'))].join('') + '</w:body></w:document>' });
+    await A.setInputFiles('#cms-import', { name: '6-bob.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', buffer: d6 });
+    await A.waitForSelector('.imp-dlg');
+    assert.match(await txt(A, '.imp-dlg .imp-sum'), /6-bob\. Raqamlar sinovi\s+7 ta dars/);
+    assert.match(await txt(A, '.imp-dlg .imp-lessons'), /6\.1\. Umumiy standart · \d+ so‘z\s+1\. MAQSAD → 6\.1 darsi ichida\s+6\.2\. Harajat turlari[\s\S]*6\.3\. Limitlar[\s\S]*6\.4\. Tasdiqlash tartibi[\s\S]*6\.7\. Kontakt yig‘ish/, 'свои номера из файла убраны, жирный «3.» — урок');
+    await A.locator('.imp-dlg .imp-lessons li', { hasText: 'Nega bu pitch' }).locator('input').uncheck();
+    assert.match(await txt(A, '.imp-dlg .imp-lessons'), /Nega bu pitch ishlaydi\? → 6\.5 darsi ichida/);
+    assert.equal(await A.locator('#imp-cut option:checked').innerText(), 'Qo‘lda tanlangan — 6 ta dars');
+    await shot(A, '25b-word-cuts');
+    await A.locator('.imp-dlg').getByRole('button', { name: 'Yuklash' }).click(); await settle(A);
+    const b6 = () => srv.g.state().course.sections.find(x => x.id === 'b6'), titles = () => b6().lessons.map(l => l.title), html = i => b6().lessons[i].html.replace(/\n/g, '');
+    assert.deepEqual(titles(), ['6.1. Umumiy standart', '6.2. Harajat turlari', '6.3. Limitlar', '6.4. Tasdiqlash tartibi', '6.5. Pitch variant-1', '6.6. Kontakt yig‘ish']);
+    assert.ok(html(0).includes('<h3>1. MAQSAD</h3>') && html(1).includes('<p>6.2.1. Yo‘l puli</p>') && html(1).includes('<p>2.5 kg yuk</p>'), html(0) + html(1));
+    assert.ok(html(3).startsWith('<h3>6.4.1. Uchrashuvdan oldin</h3>') && html(4).includes('<h3>Nega bu pitch ishlaydi?</h3>') && html(5).includes('Kontakt matni'), html(3) + html(4));
+    // редактор: место урока в главе
+    if (!(await A.locator('.ch-card.is-open', { hasText: 'Raqamlar sinovi' }).count())) await A.locator('.ch-card', { hasText: 'Raqamlar sinovi' }).locator('.ch-head').click();
+    const lsPick = async x => { await A.locator('.ch-card.is-open .cms-l', { hasText: x }).first().click(); await A.waitForTimeout(300); };
+    const place = A.locator('.ls-place');
+    await lsPick('6.5. Pitch');
+    assert.match(await txt(A, '.ls-place'), /Bobdagi o‘rni: 5 \/ 6/i);
+    await place.getByRole('button', { name: 'Darsni bo‘lish' }).click();
+    assert.deepEqual(await A.locator('#ls-split-at option').allInnerTexts(), ['Nega bu pitch ishlaydi?']);
+    await A.locator('.ls-confirm').getByRole('button', { name: 'Bo‘lish' }).click(); await settle(A);
+    assert.deepEqual(titles().slice(4), ['6.5. Pitch variant-1', '6.6. Nega bu pitch ishlaydi?', '6.7. Kontakt yig‘ish'], 'разделён по подзаголовку');
+    assert.equal(html(5), '<p>Sabab</p>');
+    await lsPick('6.3. Limitlar');
+    await place.getByRole('button', { name: 'Oldingi darsga qo‘shish' }).click();
+    assert.match(await txt(A, '.ls-confirm'), /«6\.3\. Limitlar» darsi «6\.2\. Harajat turlari» darsining oxiriga qo‘shiladi/);
+    await A.locator('.ls-confirm').getByRole('button', { name: 'Ha, qo‘shish' }).click(); await settle(A);
+    assert.equal(titles().length, 6); assert.ok(html(1).endsWith('<h3>Limitlar</h3><p>Limit matni</p>'), html(1));
+    assert.equal(await A.inputValue('#f-title'), '6.2. Harajat turlari', 'открыт урок, к которому присоединили');
+    await lsPick('6.6. Kontakt');
+    await place.getByRole('button', { name: '↑ Yuqoriga' }).click(); await settle(A);
+    assert.deepEqual(titles().slice(4), ['6.5. Kontakt yig‘ish', '6.6. Nega bu pitch ishlaydi?']);
+    await A.fill('#f-title', '6.5. 9. ESKI NOM'); await place.getByRole('button', { name: '↓ Pastga' }).click(); await A.waitForTimeout(300);
+    assert.match(await txt(A, 'body'), /Avval darsni saqlang/, 'несохранённую правку не потерять');
+    await A.locator('.cms-edit .cms-foot').getByRole('button', { name: 'Saqlash' }).click(); await settle(A);
+    assert.equal(titles()[4], '6.5. 9. ESKI NOM');
+    await A.locator('.ch-card.is-open').getByRole('button', { name: 'Raqamlarni tartiblash' }).click(); await settle(A);
+    assert.equal(titles()[4], '6.5. Eski nom'); assert.equal(await A.inputValue('#f-title'), '6.5. Eski nom');
+    assert.match(await txt(A, 'body'), /Raqamlar tartiblandi: 1 ta dars o‘zgardi/);
+    await shot(A, '25c-lesson-place');
+    await A.locator('.ch-card.is-open .ch-del').click(); await A.waitForSelector('.ud-modal');
+    await A.check('#sd-ok'); await A.locator('.ud-modal button', { hasText: 'Bobni o‘chirish' }).click(); await settle(A);
+    assert.ok(!b6(), 'проверочная глава удалена');
+  }
   // главу можно удалить: пустую — сразу из окна; с уроками — после галочки «Ha, bobni darslari bilan o‘chiraman»
   const nSec = srv.g.state().course.sections.length;
   await A.getByRole('button', { name: '+ Yangi bob' }).click(); await settle(A);

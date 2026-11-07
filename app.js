@@ -5664,14 +5664,17 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   /* after a section file is chosen: where it goes (new / replace / add to a section) and who studies it */
   function ImportDialog(p) {
     var t = p.t, db = p.db, src = p.ch, isDoc = !!src.doc;
-    // Word: how to cut it into lessons — the first heading level that gives two or more lessons; the text before the first lesson — off
+    // Word: how to cut it into lessons — the first heading level that gives two or more lessons (then any heading can be ticked
+    // or unticked by hand); the text before the first lesson — off
+    var plan = R.useMemo(function () { return isDoc ? docxPlan(src.doc, src.name) : null; }, []);
     var lv = useState(function () {
       if (!isDoc) return 0;
-      var L = src.doc.levels.filter(function (x) { return docxChapter(src.doc, src.name, x, false).section.lessons.length >= 2; });
-      return L[0] || src.doc.levels[0] || 0;
-    }), fr = useState(false), mg = useState([]);
-    var ch = R.useMemo(function () { return isDoc ? docxChapter(src.doc, src.name, lv[0], fr[0], mg[0]) : src; }, [lv[0], fr[0], mg[0]]);
-    function joinCut(i, on) { var m = mg[0].filter(function (x) { return x !== i; }); if (on) m.push(i); mg[1](m); }
+      var L = plan.levels.filter(function (x) { return docxCuts(plan, x).length >= 2; });
+      return L[0] || plan.levels[0] || 0;
+    }), cs = useState(function () { return isDoc && lv[0] ? docxCuts(plan, lv[0]) : []; }), man = useState(false), fr = useState(false);
+    var ch = R.useMemo(function () { return isDoc ? docxChapter(src.doc, src.name, cs[0], fr[0], plan) : src; }, [cs[0], fr[0]]);
+    function tick(i, on) { var m = cs[0].filter(function (x) { return x !== i; }); if (on) m.push(i); m.sort(function (a, b) { return a - b; }); cs[1](m); man[1](true); }
+    function lsRef(x) { var m = /^(\d+\.\d+)\.\s/.exec(x || ''); return m ? m[1] : '«' + x + '»'; }
     var sec = ch.section, secs = db.course.sections, same = secs.some(function (s) { return s.id === sec.id; });
     var wh = useState(same ? 'replace' : 'new'), tg = useState(same ? sec.id : (secs[0] ? secs[0].id : '')), err = useState('');
     useEffect(function () { if (same && wh[0] === 'new') { wh[1]('replace'); tg[1](sec.id); } }, [sec.id]);
@@ -5694,15 +5697,18 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       h('h2', { className: 'lor-h', id: 'imp-h' }, t('imp_dlg_t')),
       h('div', { className: 'imp-sum' }, h('b', null, sec.title), h('span', { className: 'lor-sm lor-muted' }, tpl(t('imp_dlg_sum'), { n: sec.lessons.length, q: q }) + (isDoc ? ' · ' + t('imp_doc_noq') : ''))),
       isDoc ? h('section', { className: 'imp-part' }, h('span', { className: 'lor-eyebrow' }, t('imp_cut')),
-        h('select', { className: 'lor-input slim', id: 'imp-cut', 'aria-label': t('imp_cut'), value: lv[0], onChange: function (e) { lv[1](+e.target.value); mg[1]([]); } },
-          src.doc.levels.map(function (x) { return h('option', { key: x, value: x }, tpl(t('imp_cut_lvl'), { n: x, k: docxChapter(src.doc, src.name, x, false).section.lessons.length })); })
+        h('select', { className: 'lor-input slim', id: 'imp-cut', 'aria-label': t('imp_cut'), value: man[0] ? -1 : lv[0], onChange: function (e) { var v = +e.target.value; if (v < 0) return; lv[1](v); cs[1](v ? docxCuts(plan, v) : []); man[1](false); } },
+          (man[0] ? [h('option', { key: -1, value: -1 }, tpl(t('imp_custom'), { k: cs[0].length }))] : []).concat(plan.levels.map(function (x) { return h('option', { key: x, value: x }, tpl(t('imp_cut_lvl'), { n: x, k: docxCuts(plan, x).length })); }))
             .concat(h('option', { key: 0, value: 0 }, t('imp_cut_one')))),
         h('label', { className: 'check' }, h('input', { type: 'checkbox', checked: fr[0], onChange: function (e) { fr[1](e.target.checked); } }), t('imp_front')),
-        ch.cuts.length > 1 ? h('p', { className: 'lor-sm lor-muted' }, t('imp_join_hint')) : null,
-        h('ul', { className: 'imp-lessons' }, (fr[0] && sec.lessons[0] && sec.lessons[0].title === 'Kirish' ? [h('li', { key: 'intro' }, h('span', null, 'Kirish'))] : []).concat(ch.cuts.map(function (c, i) {
-          return h('li', { key: i, className: cx(c.merged && 'is-merged') }, i === 0 ? h('span', null, c.title)
-            : h('label', { className: 'check' }, h('input', { type: 'checkbox', checked: !c.merged, onChange: function (e) { joinCut(i, !e.target.checked); } }), h('span', null, c.title, c.merged ? h('small', null, ' — ' + t('imp_joined')) : null)));
-        })))) : null,
+        ch.rows.length ? h('p', { className: 'lor-sm lor-muted' }, t('imp_join_hint')) : null,
+        ch.rows.length ? h('ul', { className: 'imp-lessons' }, (fr[0] && sec.lessons[0] && sec.lessons[0].title === 'Kirish' ? [h('li', { key: 'intro', className: 'is-cut' }, h('span', { className: 'imp-l' }, h('b', null, 'Kirish')))] : []).concat(ch.rows.map(function (r) {
+          return h('li', { key: r.i, className: r.cut ? 'is-cut' : 'is-sub', style: { paddingLeft: 6 + Math.max(0, plan.levels.indexOf(r.lvl)) * 18 } },
+            h('label', { className: 'check' },
+              h('input', { type: 'checkbox', checked: r.cut, 'aria-label': r.text, onChange: function (e) { tick(r.i, e.target.checked); } }),
+              r.cut ? h('span', { className: 'imp-l' }, h('b', null, r.lesson), h('small', null, ' · ' + tpl(t('imp_words'), { n: r.words })))
+                : h('span', { className: 'imp-l' }, r.text, h('small', { className: cx(!r.lesson && 'is-off') }, ' → ' + (r.lesson ? tpl(t('imp_in'), { x: lsRef(r.lesson) }) : t('imp_skip'))))));
+        }))) : null) : null,
       h('section', { className: 'imp-part' }, h('span', { className: 'lor-eyebrow' }, t('imp_where')),
         h('div', { className: 'aud-modes', role: 'radiogroup', 'aria-label': t('imp_where') }, where.map(function (w) {
           return h('label', { key: w[0], className: cx('aud-mode', wh[0] === w[0] && 'is-on', w[2] && 'is-off') },
@@ -6815,8 +6821,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   }
   /* ---------- a chapter from Word (.docx), read in the browser: the text goes only to the server ----------
      Paragraphs with their heading level (styles: «heading N», outline level), lists (numbering), bold/italic, tables,
-     pictures (data: URI, the server moves them to files). docxChapter() cuts it into lessons by the chosen heading level:
-     if some headings of that level are numbered, only the numbered ones start lessons (the rest stay subheadings inside) */
+     pictures (data: URI, the server moves them to files). docxChapter() cuts it into lessons at the chosen headings */
   function uzQuotes(x) { return String(x).replace(/([OoGg])['’`ʼ‘]/g, '$1‘').replace(/([A-Za-z])['`ʼ](?=[A-Za-z])/g, '$1’'); }
   function sentence(x) { x = String(x).trim(); return /[a-zа-я]/.test(x) ? x : x.charAt(0) + x.slice(1).toLowerCase(); }
   function parseDocx(buf) {
@@ -6889,7 +6894,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           var ol = A(kid(pp, 'w:outlineLvl'), 'w:val'), lvl = ol != null && +ol < 9 ? +ol + 1 : styleOf(sid, 'lvl');
           var numbered = !!np || !!styleOf(sid, 'num'), nid = np ? A(kid(np, 'w:numId'), 'w:val') : null, il = np ? A(kid(np, 'w:ilvl'), 'w:val') || '0' : '0';
           if (!plainOf(html) && html.indexOf('<img') < 0) continue;
-          if (lvl != null) blocks.push({ k: 'h', lvl: lvl, num: numbered && nid !== '0', text: plainOf(html) });
+          // a heading with line breaks («4. TASDIQLASH TARTIBI⏎4.1. Uchrashuvdan oldin»): the first line is the heading, the rest — its subheadings
+          if (lvl != null) { var lns = html.split('<br>').map(plainOf).filter(Boolean); blocks.push({ k: 'h', lvl: lvl, num: numbered && nid !== '0', text: plainOf(html.replace(/<br>/g, ' ')), lines: lns.length > 1 ? lns : null }); }
           else if (np && nid !== '0') blocks.push({ k: 'li', ul: (fmt[nid] || {})[il] === 'bullet', html: html });
           else blocks.push({ k: 'p', html: html });
         }
@@ -6899,56 +6905,122 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       return { blocks: blocks, levels: levels };
     });
   }
-  /* the cut: lvl — heading level that starts a lesson (0 — the whole file is one lesson); front — the text before the
-     first lesson becomes the lesson «Kirish»; merge — numbers of the cuts that join the previous lesson (their heading
-     becomes a subheading there). Lessons start only after the chapter title line («2-BOB …»): what stands before it —
-     a notice, the table of contents — is the front. Lesson ids: <chapter>-1, -2… (b2-1 for «2-bob»), «Kirish» — <chapter>-0 */
-  function docxChapter(doc, fileName, lvl, front, merge) {
+  /* a heading's own typed number: «2. », «3.6. », «4.1 », «5) » → { no: '3.6', rest: 'Kontakt yig‘ish' } (not «2026 yil», not «1.5 kg») */
+  function headNo(x) {
+    var s = String(x || ''), m = /^\s*(\d{1,2}(?:\.\d{1,2})+)\.?\s*/.exec(s) || /^\s*(\d{1,2})[.)]\s*/.exec(s);
+    if (!m) return null;
+    var rest = s.slice(m[0].length);
+    return rest && (!/^[\d.,%]/.test(rest) || headNo(rest)) ? { no: m[1], rest: rest } : null;   // «5.2. 2. …» — a number after a number
+  }
+  function capFirst(x) { x = String(x).trim(); var i = x.search(/[A-Za-zА-Яа-яЁё]/); return i < 0 ? x : x.slice(0, i) + x.charAt(i).toUpperCase() + x.slice(i + 1); }
+  /* a lesson title without the document's own number, in sentence case: «2. AJRATILADIGAN HARAJAT TURLARI» → «Ajratiladigan harajat turlari» */
+  function lsName(x) { var s = String(x || '').trim(), m; for (var k = 0; k < 3 && (m = headNo(s)); k++) s = m.rest; return capFirst(sentence(s)); }
+  /* subheadings numbered after the lesson's old number follow its new one: in lesson 3.2 (was «2.») «2.1. Yo‘l puli» → «3.2.1. Yo‘l puli».
+     Headings — «2.1 …» or «2.1. …»; paragraphs and list items — only «2.1. …» with the dot, so «2.5 kg» stays */
+  function renumHtml(html, olds, nw) {
+    olds = (olds || []).filter(function (x, i, a) { return x && x !== nw && a.indexOf(x) === i; }).sort(function (a, b) { return b.length - a.length; });
+    if (!olds.length || !nw) return html;
+    var alt = olds.map(function (x) { return x.replace(/\./g, '\\.'); }).join('|');
+    return String(html || '')
+      .replace(new RegExp('(<h[34]>(?:<strong>|<em>|\\s)*)(' + alt + ')\\.(?=\\d)', 'g'), function (_, a) { return a + nw + '.'; })
+      .replace(new RegExp('(<(?:p|li)>(?:<strong>|<em>|\\s)*)(' + alt + ')\\.(?=\\d{1,2}(?:\\.\\d{1,2})*\\.\\s)', 'g'), function (_, a) { return a + nw + '.'; });
+  }
+  /* what the file holds: the chapter title line («2-BOB …» — lessons start only after it; a notice or the table of contents
+     before it is the front), its number and every heading after it that can start a lesson. A bold or capitals paragraph
+     with a typed number that fills a gap in the headings' numbering («1. MAQSAD» among headings «2. …», «4. …») counts as
+     a heading of their level */
+  function docxPlan(doc, fileName) {
     var bl = doc.blocks, titleIdx = -1, titleRaw = null;
-    merge = merge || [];
-    function txtOf(b) { return b.k === 'h' ? b.text : b.html ? b.html.replace(/<[^>]+>/g, '').replace(/&quot;/g, '"').replace(/&amp;/g, '&').trim() : ''; }
+    function txtOf(b) { return b.k === 'h' ? b.text : b.html ? b.html.replace(/<br>/g, ' ').replace(/<[^>]+>/g, '').replace(/&quot;/g, '"').replace(/&amp;/g, '&').trim() : ''; }
     bl.some(function (b, i) { var x = txtOf(b); if ((b.k === 'h' || b.k === 'p') && x.length < 160 && /\b\d+\s*-\s*bob\b/i.test(x)) { titleRaw = x; titleIdx = i; return true; } return false; });
     var n = titleRaw ? +/(\d+)\s*-\s*bob/i.exec(titleRaw)[1] : null;
     var title = titleRaw ? n + '-bob. ' + sentence(titleRaw.replace(/^.*?\d+\s*-\s*bob\.?\s*/i, '')) : String(fileName || 'Yangi bob').replace(/\.docx$/i, '');
-    var after = function (i) { return i > titleIdx; };
-    var useNum = bl.some(function (b, i) { return after(i) && b.k === 'h' && b.lvl === lvl && b.num; });
-    function isCut(b, i) { return lvl > 0 && after(i) && b.k === 'h' && b.lvl === lvl && (!useNum || b.num) && b.text.length <= 160; }
+    var heads = [], seq = {};
+    bl.forEach(function (b, i) { if (i > titleIdx && b.k === 'h' && b.lvl > 0) { var tx = b.lines ? b.lines[0] : b.text; if (tx.length <= 160) heads.push({ i: i, lvl: b.lvl, num: !!b.num, text: tx }); } });
+    function key(no) { var ps = no.split('.'); return { k: ps.length + '|' + ps.slice(0, -1).join('.'), last: +ps[ps.length - 1] }; }
+    heads.forEach(function (x) { var m = headNo(x.text); if (!m) return; var q = key(m.no), r = seq[q.k] = seq[q.k] || { lv: {}, have: {}, max: 0 }; r.lv[x.lvl] = (r.lv[x.lvl] || 0) + 1; if (!r.have[q.last]) r.have[q.last] = x.i + 1; r.max = Math.max(r.max, q.last); });
+    bl.forEach(function (b, i) {
+      if (i <= titleIdx || b.k !== 'p') return;
+      var tx = txtOf(b), m = tx.length <= 120 && headNo(tx);
+      if (!m) return;
+      var bold = b.html.indexOf('<strong>') >= 0 && !b.html.replace(/<strong>[\s\S]*?<\/strong>/g, '').replace(/<[^>]+>/g, '').trim(), caps = /[A-ZА-Я]/.test(m.rest) && m.rest === m.rest.toUpperCase();
+      var q = key(m.no), r = seq[q.k];
+      if (!(bold || caps) || !r || r.have[q.last] || q.last < 1 || q.last >= r.max) return;
+      // only in its place: after the heading numbered before it and before the one numbered after it
+      var lo = -1, hi = Infinity;
+      Object.keys(r.have).forEach(function (k) { var at = r.have[k] - 1; if (+k < q.last) lo = Math.max(lo, at); else if (+k > q.last) hi = Math.min(hi, at); });
+      if (!(i > lo && i < hi)) return;
+      r.have[q.last] = i + 1;
+      var lvl = +Object.keys(r.lv).sort(function (a, c) { return r.lv[c] - r.lv[a]; })[0];
+      heads.push({ i: i, lvl: lvl, num: false, text: tx, para: true });
+    });
+    heads.sort(function (a, c) { return a.i - c.i; });
+    var levels = []; heads.forEach(function (x) { if (levels.indexOf(x.lvl) < 0) levels.push(x.lvl); }); levels.sort();
+    return { titleIdx: titleIdx, n: n, title: title, heads: heads, levels: levels, blocks: bl };
+  }
+  /* the headings of one level that start lessons: if some of them are numbered by Word, only the numbered ones (the rest stay
+     subheadings). A heading with no text under it before the next one («UCHRASHUV HARAJATLARI STANDARTI» right before «1. MAQSAD»)
+     is the title of what follows — the next heading stays in its lesson */
+  function docxCuts(plan, lvl) {
+    var hs = plan.heads.filter(function (x) { return x.lvl === lvl; }), useNum = hs.some(function (x) { return x.num; });
+    var cuts = hs.filter(function (x) { return !useNum || x.num; }).map(function (x) { return x.i; });
+    return cuts.filter(function (i, j) { var pv = cuts[j - 1]; return !(j > 0 && pv === i - 1 && !(plan.blocks[pv] || {}).lines && (j < 2 || cuts[j - 2] !== pv - 1)); });
+  }
+  /* the chapter: cuts — block numbers of the headings that start lessons (from docxCuts or ticked by hand); front — the text
+     before the first lesson becomes the lesson «Kirish». Lesson titles: «<chapter>.<k>. » + the heading without its own
+     number, in sentence case; a heading that does not start a lesson stays inside the previous one as a subheading.
+     Lesson ids: <chapter>-1, -2… (b2-1 for «2-bob»), «Kirish» — <chapter>-0. rows — every heading and where it went */
+  function docxChapter(doc, fileName, cuts, front, plan) {
+    plan = plan || docxPlan(doc, fileName);
+    var bl = doc.blocks, n = plan.n, title = plan.title, titleIdx = plan.titleIdx, isCut = {}, hd = {};
+    (cuts || []).forEach(function (i) { isCut[i] = 1; });
+    plan.heads.forEach(function (x) { hd[x.i] = x; });
+    var lvls = plan.heads.filter(function (x) { return isCut[x.i]; }).map(function (x) { return x.lvl; });
+    var topLvl = lvls.length ? Math.min.apply(null, lvls) : plan.levels[0] || 1;
+    function txtOf(b) { return b.k === 'h' ? b.text : b.html ? b.html.replace(/<[^>]+>/g, '').replace(/&quot;/g, '"').replace(/&amp;/g, '&').trim() : ''; }
     function norm(x) { return String(x).toUpperCase().replace(/[^A-ZА-Я0-9]+/g, ''); }
     function list(it) { return (it.ul ? '<ul>' : '<ol>') + it.li.join('') + (it.ul ? '</ul>' : '</ol>'); }
     function build(head, body) {
-      var out = [], items = null;
+      var out = [], items = null, base = head ? head.lvl : topLvl;
       body.forEach(function (b) {
         if (b.k !== 'li' && items) { out.push(list(items)); items = null; }
         if (b.k === 'li') { if (items && items.ul !== b.ul) { out.push(list(items)); items = null; } items = items || { ul: b.ul, li: [] }; items.li.push('<li>' + b.html + '</li>'); return; }
         if (b.k === 'html') { out.push(b.html); return; }
         var tx = txtOf(b);
-        if (!out.length && head && norm(tx) && norm(head).indexOf(norm(tx)) >= 0) return;   // the lesson title repeated under itself
+        if (!out.length && head && norm(tx) && norm(head.text).indexOf(norm(tx)) >= 0) return;   // the lesson title repeated under itself
         var il = /^ILOVA[- ]?(\d+(?:\.\d+)?)\.?\s*(.*?)\.?$/i.exec(tx);
         if (il) { out.push('<div class="ilova"><b>ILOVA-' + il[1] + '</b><span>' + esc(sentence(il[2])) + '</span></div>'); return; }
-        if (b.k === 'h') out.push(b.lvl <= lvl + 1 ? '<h3>' + esc(tx) + '</h3>' : '<h4>' + esc(tx) + '</h4>');
+        if (b.k === 'h') out.push(b.lvl <= base + 1 ? '<h3>' + esc(tx) + '</h3>' : '<h4>' + esc(tx) + '</h4>');
         else out.push('<p>' + b.html + '</p>');
       });
       if (items) out.push(list(items));
       return sanitize(out.join('\n'));
     }
-    var id = n ? 'b' + n : 'c' + Date.now().toString(36), parts = [], pre = [], cur = null;
+    var id = n ? 'b' + n : 'c' + Date.now().toString(36), parts = [], pre = [], cur = null, rows = [];
     bl.forEach(function (b, i) {
       if (i === titleIdx) return;
-      if (isCut(b, i)) { cur = { head: b.text, body: [] }; parts.push(cur); return; }
-      (cur ? cur.body : pre).push(b);
+      var x = hd[i], into = cur ? cur.body : pre;
+      if (x && isCut[i]) { cur = { head: x, body: [] }; parts.push(cur); into = cur.body; rows.push({ i: i, lvl: x.lvl, text: x.text, cut: true, part: parts.length - 1 }); }
+      else if (x) { into.push({ k: 'h', lvl: x.lvl, text: x.text }); rows.push({ i: i, lvl: x.lvl, text: x.text, cut: false, part: parts.length - 1 }); }
+      else into.push(b.k === 'h' && b.lines ? { k: 'h', lvl: b.lvl, text: b.lines[0] } : b);
+      if (b.k === 'h' && b.lines) b.lines.slice(1).forEach(function (ln) { into.push({ k: 'h', lvl: b.lvl + 1, text: ln }); });
     });
-    var keep = [];
-    parts.forEach(function (x, i) {
-      if (i > 0 && merge.indexOf(i) >= 0) { var pv = keep[keep.length - 1]; pv.body = pv.body.concat([{ k: 'h', lvl: lvl, text: x.head }], x.body); x.merged = true; }
-      else keep.push({ head: x.head, body: x.body.slice() });
+    var lessons = parts.map(function (x, k) {
+      var nw = n ? n + '.' + (k + 1) : null, own = headNo(x.head.text), html = build(x.head, x.body);
+      return { id: id + '-' + (k + 1), title: (nw ? nw + '. ' : '') + lsName(x.head.text), html: nw && own ? renumHtml(html, [own.no], nw) : html, quiz: [] };
     });
-    var lessons = keep.map(function (x, i) { return { id: id + '-' + (i + 1), title: (n ? n + '.' + (i + 1) + '. ' : '') + sentence(x.head), html: build(x.head, x.body), quiz: [] }; });
+    var intro = null;
     if (pre.length && (front || !lessons.length)) {
-      var intro = build(null, pre);
+      intro = build(null, pre);
       if (intro) lessons.unshift({ id: id + (lessons.length ? '-0' : '-1'), title: lessons.length ? 'Kirish' : title.replace(/^\d+-bob\.\s*/, ''), html: intro, quiz: [] });
     }
-    return { section: { id: id, title: title, officialOnly: false, lessons: lessons }, aud: null, tracks: [],
-      cuts: parts.map(function (x) { return { title: sentence(x.head), merged: !!x.merged }; }) };
+    var sh = intro && parts.length ? 1 : 0;
+    rows.forEach(function (r) {
+      var l = r.part >= 0 ? lessons[r.part + sh] : null;
+      r.lesson = l ? l.title : r.part < 0 && intro ? lessons[0].title : null;
+      r.words = r.cut && l ? plain(l.html).split(/\s+/).filter(Boolean).length : 0;
+    });
+    return { section: { id: id, title: title, officialOnly: false, lessons: lessons }, aud: null, tracks: [], rows: rows, plan: plan };
   }
   function colIdx(ref) { var m = /^([A-Z]+)/.exec(ref || ''); if (!m) return -1; var n = 0; for (var i = 0; i < m[1].length; i++) n = n * 26 + m[1].charCodeAt(i) - 64; return n - 1; }
   function parseXLSX(buf) {
@@ -10350,13 +10422,14 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var lesson = findLesson(db.course, id);
     var dr = useState(null), draft = dr[0], cf = useState(false), notif = useState(null), baseRef = useRef(''), tab = useState(p.tab || 'lessons'), audSec = useState(null), delSec = useState(null);
     var openCh = useState(function () { var c = db.course.sections.filter(function (s) { return s.lessons.some(function (l) { return l.id === id; }); })[0]; return c ? c.id : null; });
+    var rl = useState(0), jn = useState(false), sp = useState(null);   // a draft reload after a move / join / split; join confirm; split point
     useEffect(function () { var c = db.course.sections.filter(function (s) { return s.lessons.some(function (l) { return l.id === id; }); })[0]; if (c) openCh[1](c.id); }, [id]);
     useEffect(function () { if (p.tab) tab[1](p.tab); }, [p.tab]);
     useEffect(function () {
       var l = findLesson(db.course, id);
       dr[1](l ? clone({ id: l.id, title: l.title, intro: l.intro || '', html: l.html || '', steps: l.steps || [], limit: l.limit || '', video: l.video || { title: '', duration: '' }, quiz: l.quiz || [] }) : null);
-      baseRef.current = l ? lessonText(l) : ''; cf[1](false); notif[1](null);
-    }, [id]);
+      baseRef.current = l ? lessonText(l) : ''; cf[1](false); notif[1](null); jn[1](false); sp[1](null);
+    }, [id, rl[0]]);
     useEffect(function () { if (p.lessonId) sel[1](p.lessonId); }, [p.lessonId]);
     /* the course appeared (import, another device): open its first lesson */
     useEffect(function () { if (!lesson && first) sel[1](first.id); }, [first && first.id]);
@@ -10380,6 +10453,30 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     }
     function del() { p.update(function (d) { d.course.sections.forEach(function (s) { s.lessons = s.lessons.filter(function (l) { return l.id !== id; }); }); }); var nx = flat(db.course).filter(function (l) { return l.id !== id; })[0]; sel[1](nx && nx.id); }
     function move(arr, i, dlt) { var j = i + dlt; if (j < 0 || j >= arr.length) return; var x = arr[i]; arr[i] = arr[j]; arr[j] = x; }
+    /* the lesson's place in its chapter: moves, joins and splits change the stored course — unsaved edits first have to be saved */
+    function secOfId(lid) { return db.course.sections.filter(function (s) { return s.lessons.some(function (l) { return l.id === lid; }); })[0]; }
+    function dirty() {
+      if (!draft || !lesson) return false;
+      var vid = function (v) { return JSON.stringify(v || { title: '', duration: '' }); };
+      return plain(lessonText(draft)) !== plain(baseRef.current) || JSON.stringify(draft.quiz || []) !== JSON.stringify(lesson.quiz || []) || vid(draft.video) !== vid(lesson.video);
+    }
+    function lsOp(fn) {
+      if (dirty()) { p.say(t('ls_save_first')); return false; }
+      var s0 = secOfId(id); if (!s0) return false;
+      var i = s0.lessons.findIndex(function (l) { return l.id === id; });
+      p.update(function (d) { var s = d.course.sections.filter(function (x) { return x.id === s0.id; })[0]; fn(d, s, i); if (chapNo(s.title)) secRenumber(s); });
+      rl[1](rl[0] + 1);
+      return true;
+    }
+    function lsMove(dl) { if (lsOp(function (d, s, i) { move(s.lessons, i, dl); })) p.say(t('ls_moved')); }
+    function lsJoin() { var prevId = null; if (lsOp(function (d, s, i) { prevId = s.lessons[i - 1].id; secJoin(d, s, i); })) { sel[1](prevId); p.say(t('ls_joined')); } }
+    function lsSplit() { var k = sp[0], nl = null; if (lsOp(function (d, s, i) { nl = secSplit(s, i, k, 'l' + Date.now().toString(36)); }) && nl) p.say(tpl(t('ls_splitted'), { x: nl.title })); }
+    function chRenum(sid) {
+      var cs = secOfId(id);
+      if (cs && cs.id === sid && dirty()) { p.say(t('ls_save_first')); return; }
+      var n = 0; p.update(function (d) { d.course.sections.forEach(function (s) { if (s.id === sid) n = secRenumber(s); }); });
+      rl[1](rl[0] + 1); p.say(tpl(t('ch_renum_ok'), { n: n }));
+    }
     var openQ = db.requests.filter(function (r) { return r.type === 'question' && r.lessonId === id && r.state === 'open'; });
 
     return h('div', { className: 'app-wrap' },
@@ -10430,12 +10527,35 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
                   h('label', { className: 'lor-sm', htmlFor: 'ch-t-' + s.id }, t('sec_title')),
                   h('input', { id: 'ch-t-' + s.id, className: 'lor-input slim cms-sec-title', value: s.title, onChange: function (e) { var v = e.target.value; secUpdate(s.id, function (x) { x.title = v; }); } }),
                   h('label', { className: 'check' }, h('input', { type: 'checkbox', checked: !!s.officialOnly, onChange: function (e) { var v = e.target.checked; secUpdate(s.id, function (x) { x.officialOnly = v; }); } }), t('official_only')),
+                  n && s.lessons.length ? h('button', { type: 'button', className: 'app-link ch-renum', title: tpl(t('ch_renum_h'), { n: n }), onClick: function () { chRenum(s.id); } }, t('ch_renum')) : null,
                   h('button', { type: 'button', className: 'app-link danger cms-sec-del', onClick: function () { delSec[1](s.id); } }, t('ch_del')))) : null);
           })),
         draft && lesson ? h('section', { className: 'box cms-edit' },
           openQ.length ? h('div', { className: 'status-box is-fail' }, h('div', null, h('b', null, '? ' + openQ.length + ' · ' + t('tab_q')), openQ.map(function (r) { return h('p', { key: r.id }, userOf(db, r.userId).name + ': ' + r.text); }))) : null,
           notif[0] ? h(SopNotifyPanel, Object.assign({}, p, { key: notif[0].lessonId + notif[0].title, x: notif[0], onDone: function () { notif[1](null); } })) : null,
           h(LessonRisk, Object.assign({}, p, { lessonId: draft.id, key: 'rk' + draft.id })),
+          (function () {
+            var s0 = secOfId(id); if (!s0) return null;
+            var i = s0.lessons.findIndex(function (l) { return l.id === id; }), prev = s0.lessons[i - 1], hs = lsHeads(lesson.html);
+            var started = db.users.filter(function (u) { var st = (prog(db, u.id)[id] || {}).status; return u.role === 'employee' && st && st !== 'todo' && st !== 'locked'; }).length;
+            return h('div', { className: 'ls-place' },
+              h('div', { className: 'ls-place-row' },
+                h('span', { className: 'lor-eyebrow' }, tpl(t('ls_place'), { k: i + 1, n: s0.lessons.length })),
+                h('div', { className: 'ls-place-acts' },
+                  h(Btn, { variant: 'outline', size: 'sm', disabled: i <= 0, onClick: function () { lsMove(-1); } }, '↑ ' + t('up')),
+                  h(Btn, { variant: 'outline', size: 'sm', disabled: i >= s0.lessons.length - 1, onClick: function () { lsMove(1); } }, '↓ ' + t('down')),
+                  h(Btn, { variant: 'outline', size: 'sm', disabled: !prev, 'aria-expanded': jn[0], onClick: function () { sp[1](null); jn[1](!jn[0]); } }, t('ls_join')),
+                  h(Btn, { variant: 'outline', size: 'sm', disabled: !hs.length, title: hs.length ? null : t('ls_split_none'), 'aria-expanded': sp[0] != null, onClick: function () { jn[1](false); sp[1](sp[0] == null ? hs[0].k : null); } }, t('ls_split')))),
+              jn[0] && prev ? h('div', { className: 'ls-confirm' },
+                h('p', null, tpl(t('ls_join_q'), { a: lesson.title, b: prev.title })),
+                started ? h('p', { className: 'lor-field-error' }, tpl(t('ls_join_prog'), { n: started })) : null,
+                h('div', { className: 'cms-mini' }, h(Btn, { variant: 'ghost', size: 'sm', onClick: function () { jn[1](false); } }, t('cancel')), h(Btn, { variant: 'primary', size: 'sm', onClick: lsJoin }, t('ls_join_ok')))) : null,
+              sp[0] != null && hs.length ? h('div', { className: 'ls-confirm' },
+                h('label', { className: 'lor-sm', htmlFor: 'ls-split-at' }, t('ls_split_pick')),
+                h('select', { id: 'ls-split-at', className: 'lor-input slim', value: sp[0], onChange: function (e) { sp[1](+e.target.value); } }, hs.map(function (x) { return h('option', { key: x.k, value: x.k }, x.text); })),
+                h('p', { className: 'lor-sm lor-muted' }, t('ls_split_h')),
+                h('div', { className: 'cms-mini' }, h(Btn, { variant: 'ghost', size: 'sm', onClick: function () { sp[1](null); } }, t('cancel')), h(Btn, { variant: 'primary', size: 'sm', onClick: lsSplit }, t('ls_split_go')))) : null);
+          })(),
           h(CmsAI, { t: t, lang: p.lang, sampler: p.sampler, say: p.say, draft: draft, setD: setD, questions: openQ.map(function (r) { return r.text; }) }),
           h(Field, { name: 'title', label: t('l_title'), required: true, value: draft.title, onChange: function (v) { setD(function (d) { d.title = v; }); } }),
           h(Field, { name: 'intro', label: t('l_intro'), multiline: true, rows: 2, value: draft.intro, onChange: function (v) { setD(function (d) { d.intro = v; }); } }),
@@ -10944,6 +11064,57 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     return { section: { id: s.id, title: s.title.trim(), officialOnly: !!s.officialOnly, lessons: lessons },
       aud: fa && (fa.all || fa.positions.length || fa.depts.length) ? fa : null,
       tracks: x.tracks === 'all' ? 'all' : Array.isArray(x.tracks) ? x.tracks.filter(function (t) { return typeof t === 'string'; }) : [] };
+  }
+  /* ---------- the order of lessons in a chapter (Kontent → Darslar): renumber, move, join, split ---------- */
+  function ownNos(title) { var s0 = String(title || '').trim(), olds = [], m; for (var j = 0; j < 3 && (m = headNo(s0)); j++) { olds.push(m.no); s0 = m.rest; } return { olds: olds, rest: s0 }; }
+  /* one lesson as number k of chapter n: «3.3. 4. HARAJATLARNI TASDIQLASH TARTIBI4.1. Uchrashuvdan oldin» → «3.3. Harajatlarni
+     tasdiqlash tartibi», the glued «4.1. Uchrashuvdan oldin» — a subheading at the top of the text, and its subheadings follow
+     the new number («4.1.» → «3.3.1.») */
+  function lsTidy(l, n, k) {
+    var o = ownNos(l.title), s0 = o.rest, sub = null, g = /^(.*?[^\d\s.(])(\d{1,2}(?:\.\d{1,2})+\.?\s+\S.*)$/.exec(s0);
+    if (g && g[1].trim().length >= 3) { s0 = g[1]; sub = g[2].trim(); }
+    var nw = n ? n + '.' + k : null, html = (sub ? '<h3>' + esc(sub) + '</h3>' : '') + (l.html || '');
+    return { title: (nw ? nw + '. ' : '') + capFirst(sentence(s0)), html: nw ? renumHtml(html, o.olds, nw) : html };
+  }
+  function lsIsIntro(l) { return /^kirish$/i.test(lsName(l.title)); }
+  /* the lessons of a numbered chapter get «<chapter>.1, .2…» in their order («Kirish» keeps its name); how many changed */
+  function secRenumber(s) {
+    var n = chapNo(s.title), k = 0, ch = 0;
+    s.lessons.forEach(function (l) {
+      if (lsIsIntro(l)) return;
+      var x = lsTidy(l, n, ++k);
+      if (x.title !== l.title || x.html !== l.html) { ch++; l.title = x.title; l.html = x.html; }
+    });
+    return ch;
+  }
+  /* lesson i joins lesson i-1: its title becomes a subheading there; the text, steps, test questions and linked cases follow */
+  function secJoin(d, s, i) {
+    var a = s.lessons[i - 1], b = s.lessons[i], o = ownNos(b.title), bh = b.html || '';
+    if (o.olds.length) bh = bh.replace(new RegExp('(<h[34]>(?:<strong>|<em>|\\s)*)(?:' + o.olds.map(function (x) { return x.replace(/\./g, '\\.'); }).join('|') + ')\\.(?=\\d)', 'g'), '$1');
+    a.html = (a.html || '') + '\n<h3>' + esc(capFirst(sentence(o.rest))) + '</h3>' + (b.intro ? '<p>' + esc(b.intro) + '</p>' : '') + bh;
+    a.steps = (a.steps || []).concat(b.steps || []);
+    a.quiz = (a.quiz || []).concat(b.quiz || []);
+    if (b.limit) a.limit = a.limit ? a.limit + '\n' + b.limit : b.limit;
+    if (b.video && b.video.src && !(a.video && a.video.src)) a.video = b.video;
+    (d.cases || []).forEach(function (c) { if ((c.lessonIds || []).indexOf(b.id) >= 0) c.lessonIds = uniq(c.lessonIds.map(function (x) { return x === b.id ? a.id : x; })); });
+    s.lessons.splice(i, 1);
+  }
+  /* where a lesson can be split: its top-level subheadings (not the first block) */
+  function lsHeads(html) {
+    var root = new DOMParser().parseFromString('<div>' + (html || '') + '</div>', 'text/html').body.firstChild, out = [];
+    Array.prototype.forEach.call(root.children, function (c, k) { var x = c.textContent.replace(/\s+/g, ' ').trim(); if (k > 0 && /^H[34]$/.test(c.tagName) && x) out.push({ k: k, text: x }); });
+    return out;
+  }
+  /* lesson i is cut at its k-th top-level block (a subheading): from there on — a new lesson right after it, the subheading is its title */
+  function secSplit(s, i, k, nid) {
+    var l = s.lessons[i], root = new DOMParser().parseFromString('<div>' + (l.html || '') + '</div>', 'text/html').body.firstChild;
+    var hEl = root.children[k]; if (!hEl) return null;
+    var head = document.createElement('div'), tail = document.createElement('div'), on = false;
+    Array.prototype.slice.call(root.childNodes).forEach(function (c) { if (c === hEl) { on = true; return; } (on ? tail : head).appendChild(c.cloneNode(true)); });
+    var nl = { id: nid, title: chapNo(s.title) ? hEl.textContent.replace(/\s+/g, ' ').trim() : lsName(hEl.textContent.replace(/\s+/g, ' ')), intro: '', html: sanitize(tail.innerHTML.trim()) || '<p></p>', steps: [], limit: '', video: { title: '', duration: '' }, quiz: [] };
+    l.html = sanitize(head.innerHTML.trim()) || '<p></p>';
+    s.lessons.splice(i + 1, 0, nl);
+    return nl;
   }
   function chTitle(s) { return String(s.title || '').replace(/^\s*\d+\s*-\s*bob\.?\s*/i, '') || '—'; }
   function chapNo(title) { var m = /^(\d+)\s*-\s*bob\b/i.exec(title || ''); return m ? +m[1] : null; }
