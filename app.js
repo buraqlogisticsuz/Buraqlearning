@@ -111,17 +111,33 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   }
 
   /* ---------- rich text editor (CMS) ---------- */
+  /* paste from Word or a site: headings, lists, tables, bold and italic stay (the sanitizer's allowlist), the rest — plain text.
+     Word's «Heading 1/2» → H, «Heading 3+» → h; empty paragraphs go */
+  function pasteHtml(html) {
+    var doc = new DOMParser().parseFromString(html, 'text/html');
+    Array.prototype.slice.call(doc.querySelectorAll('style,script,meta,link,title,xml')).forEach(function (e) { e.parentNode.removeChild(e); });
+    Array.prototype.slice.call(doc.querySelectorAll('h1,h2,h3,h4,h5,h6')).forEach(function (e) { var n = doc.createElement(/^H[12]$/.test(e.tagName) ? 'h3' : 'h4'); n.innerHTML = e.innerHTML; e.parentNode.replaceChild(n, e); });
+    return sanitize(doc.body.innerHTML).replace(/<p>(?:\s|&nbsp;|<br>|<span>(?:\s|&nbsp;)*<\/span>)*<\/p>/g, '').replace(/<span>([\s\S]*?)<\/span>/g, '$1');
+  }
   function RichEditor(p) {
     var t = p.t, ref = useRef(null);
     useEffect(function () { if (ref.current) ref.current.innerHTML = sanitize(p.value || ''); }, [p.docKey]);
     function emit() { p.onChange(ref.current.innerHTML); }
     function cmd(c, v) { ref.current.focus(); try { document.execCommand(c, false, v); } catch (e) {} emit(); }
-    var tools = [['H', function () { cmd('formatBlock', 'h4'); }, 'Heading'], ['¶', function () { cmd('formatBlock', 'p'); }, 'Paragraph'], ['B', function () { cmd('bold'); }, 'Bold'], ['I', function () { cmd('italic'); }, 'Italic'],
-      ['•', function () { cmd('insertUnorderedList'); }, 'List'], ['1.', function () { cmd('insertOrderedList'); }, 'Numbered list'], [t('note_btn'), function () { cmd('formatBlock', 'blockquote'); }, t('note_btn')], ['⌫', function () { cmd('removeFormat'); }, 'Clear']];
+    function table() { var th = function (k) { return '<th>' + t('rte_col') + ' ' + k + '</th>'; }, td = '<td>…</td>'; cmd('insertHTML', '<table><tr>' + th(1) + th(2) + '</tr><tr>' + td + td + '</tr><tr>' + td + td + '</tr></table><p><br></p>'); }
+    var tools = [['H', function () { cmd('formatBlock', 'h3'); }, t('rte_h3')], ['h', function () { cmd('formatBlock', 'h4'); }, t('rte_h4')], ['¶', function () { cmd('formatBlock', 'p'); }, t('rte_p')], ['B', function () { cmd('bold'); }, t('rte_b')], ['I', function () { cmd('italic'); }, t('rte_i')],
+      ['•', function () { cmd('insertUnorderedList'); }, t('rte_ul')], ['1.', function () { cmd('insertOrderedList'); }, t('rte_ol')], [t('note_btn'), function () { cmd('formatBlock', 'blockquote'); }, t('note_btn')], ['▦', table, t('rte_tbl')],
+      ['↶', function () { cmd('undo'); }, t('rte_undo')], ['↷', function () { cmd('redo'); }, t('rte_redo')], ['⌫', function () { cmd('removeFormat'); }, t('rte_clear')]];
     return h('div', { className: 'rte' },
-      h('div', { className: 'rte-bar', role: 'toolbar', 'aria-label': t('rte_hint') }, tools.map(function (x) { return h('button', { key: x[2], type: 'button', title: x[2], 'aria-label': x[2], onMouseDown: function (e) { e.preventDefault(); }, onClick: x[1] }, x[0]); })),
+      h('div', { className: 'rte-bar', role: 'toolbar', 'aria-label': t('rte_hint') }, tools.map(function (x, i) { return h('button', { key: i, type: 'button', title: x[2], 'aria-label': x[2], className: i === 8 || i === 9 ? 'rte-gap' : null, onMouseDown: function (e) { e.preventDefault(); }, onClick: x[1] }, x[0]); })),
       h('div', { ref: ref, className: 'rte-area sop-body', contentEditable: true, suppressContentEditableWarning: true, role: 'textbox', 'aria-multiline': true, 'aria-label': t('body'), onInput: emit, onBlur: emit,
-        onPaste: function (e) { e.preventDefault(); var txt = (e.clipboardData || window.clipboardData).getData('text/plain'); document.execCommand('insertText', false, txt); emit(); } }));
+        onPaste: function (e) {
+          var cd = e.clipboardData || window.clipboardData, html = cd && cd.getData && cd.getData('text/html');
+          e.preventDefault();
+          if (html && /<(h\d|ul|ol|table|strong|b|em|i|p)\b/i.test(html)) document.execCommand('insertHTML', false, pasteHtml(html));
+          else document.execCommand('insertText', false, cd.getData('text/plain'));
+          emit();
+        } }));
   }
 
   /* ---------- SOP body with image lightbox ---------- */
@@ -1908,38 +1924,52 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   }
 
   /* ---------- AI helper inside the Content (CMS) editor ---------- */
+  /* ---------- AI for lessons (Kontent): prompts and answers, shared by the lesson panel and «AI bilan to‘ldirish» of a chapter.
+     Only the lesson's own text goes to the model — no employee data ---------- */
+  var AI_LANG = 'o‘zbek tili, lotin yozuvi (o‘ va g‘ harflarida ‘ belgisi)';
+  var AI_HEAD = 'Siz BURAQ Logistics kompaniyasining o‘quv platformasida SOP menejeriga yordam beruvchi AI-muharrirsiz. Kontent tili: ' + AI_LANG + '.\n';
+  function aiSrc(l) { return lessonText({ title: l.title, intro: l.intro, steps: l.steps, html: l.html, limit: l.limit }).slice(0, 24000); }
+  function aiHasText(l) { return plain(l.html).length > 40 || (l.steps || []).length > 0; }
+  /* kind: quiz · steps · intro · clarify · review · improve · custom; o: { n (questions), questions (employees' open questions), instr } */
+  function cmsAiPrompt(kind, l, o) {
+    o = o || {};
+    var head = AI_HEAD, text = aiSrc(l);
+    if (kind === 'quiz') return { json: true, prompt: head + 'Quyidagi standart asosida ' + (o.n || 5) + ' ta test savolini tuzing. Har bir savol standartdagi aniq qoida, muddat, raqam yoki mas’ul shaxsni tekshirsin; to‘g‘ri javob matnda bo‘lishi shart. 4 ta variant, bittasi to‘g‘ri, qolganlari ishonarli, lekin noto‘g‘ri. To‘g‘ri variant o‘rni har xil bo‘lsin.\nFaqat JSON massiv qaytaring: [{"q":"savol","options":["A","B","C","D"],"answer":0}] (answer — to‘g‘ri variant indeksi 0–3).\n' + ((l.quiz || []).length ? 'Mavjud savollarni takrorlamang: ' + l.quiz.map(function (x) { return x.q; }).join(' | ') + '\n' : '') + '\nSTANDART:\n' + text };
+    if (kind === 'steps') return { json: true, prompt: head + 'Quyidagi standartdan asosiy ish jarayonini 4–8 ta ketma-ket qadamga ajrating. Har qadam — bitta aniq harakat (kim nima qiladi, qachongacha). "who" — ishtirok etuvchi rollar zanjiri (kim → kimga), standartdagi nomlar bilan.\nFaqat JSON massiv qaytaring: [{"text":"harakat","who":["Omborchi","Logist"]}].\n\nSTANDART:\n' + text };
+    if (kind === 'intro') return { json: false, prompt: head + 'Quyidagi standart uchun darsning qisqa kirishini yozing: 1–2 gap, xodimga bu standart nima uchun kerakligini tushuntirsin. Faqat kirish matnini qaytaring, qo‘shtirnoqsiz va markdownsiz.\n\nSTANDART:\n' + text };
+    if (kind === 'clarify') return { json: false, prompt: head + 'Xodimlar ushbu standart bo‘yicha savollar berishgan. Standartning qaysi joylari noaniq ekanini aniqlang va har biri uchun standartga qo‘shiladigan aniq matnni taklif qiling. Tuzilma: har bir savol uchun "**Muammo:** …" va "**Taklif qilinadigan matn:** …". Faqat standartga tayanib yozing; standartda javob bo‘lmasa, buni ochiq ayting va SOP menejeri aniqlashtirishi kerakligini yozing.\n\nSAVOLLAR:\n' + (o.questions || []).map(function (q, i) { return (i + 1) + '. ' + q; }).join('\n') + '\n\nSTANDART:\n' + text };
+    if (kind === 'review') return { json: false, prompt: head + 'Quyidagi standartni yangi xodim nigohi bilan tekshiring: u o‘qib, savolsiz bajara oladimi? Toping: noaniq joylar (kim, qachongacha, qancha, qayerda — aytilmagan), bir-biriga zid qoidalar, yetishmayotgan qadamlar, juda uzun yoki chalkash gaplar, imlo xatolari. Ko‘pi bilan 8 ta eng muhim topilma, muhimrog‘i birinchi. Har biri uchun: "**Joy:** …" (matndan qisqa iqtibos), "**Muammo:** …", "**Taklif:** …" (qo‘shiladigan yoki almashtiriladigan aniq matn). Faqat standartga tayaning, fakt, raqam va muddatlarni o‘ylab topmang — ma’lumot yetishmasa, "[SOP menejeri aniqlaydi]" deb yozing. Muammo bo‘lmasa, buni bir gapda ayting.\n\nSTANDART:\n' + text };
+    if (kind === 'improve') return { json: false, prompt: head + 'Quyidagi standart matnini o‘qish uchun tuzilmaga keltiring: aniq sarlavhalar (<h4>), qadamlar uchun raqamli ro‘yxat, "ESLATMA" va "MUHIM" joylar uchun <blockquote>, imlo xatolarini tuzating. MAZMUN, RAQAMLAR, MUDDATLAR VA TALABLARNI O‘ZGARTIRMANG, hech narsa qo‘shmang va olib tashlamang. Mavjud <img ...> va <div class="ilova"> teglarini o‘zgartirmasdan saqlang. Faqat quyidagi teglar: <h3>, <h4>, <p>, <strong>, <em>, <ul>, <ol>, <li>, <table>, <tr>, <th>, <td>, <blockquote>, <br>, <div class="ilova">, <img>. Faqat HTML qaytaring, izohsiz va ``` belgilarisiz.\n\nMATN (HTML):\n' + (l.html || '').slice(0, 30000) };
+    return { json: false, prompt: head + 'SOP menejeri topshirig‘i: ' + String(o.instr || '').trim() + '\n\nNatijani darsning YANGI TO‘LIQ standart matni sifatida HTML ko‘rinishida qaytaring. Faqat quyidagi teglar: <h3>, <h4>, <p>, <strong>, <em>, <ul>, <ol>, <li>, <table>, <tr>, <th>, <td>, <blockquote> (eslatma uchun), <br>. Mavjud <img ...> teglarini o‘zgartirmasdan saqlang. Faktlar, raqamlar va muddatlarni o‘ylab topmang: agar topshiriq yangi mavzu bo‘lsa va ma’lumot yetarli bo‘lmasa, [SOP menejeri to‘ldiradi] belgisini qo‘ying. Faqat HTML qaytaring, izohsiz va ``` belgilarisiz.\n\nJORIY MATN (HTML):\n' + (l.html || '').slice(0, 30000) + '\n\nDars nomi: ' + l.title };
+  }
+  function aiQuizOf(r) {
+    return (Array.isArray(r) ? r : []).filter(function (x) { return x && typeof x.q === 'string' && Array.isArray(x.options) && x.options.length >= 2 && x.options.every(function (o) { return typeof o === 'string'; }) && +x.answer >= 0 && +x.answer < x.options.length && +x.answer % 1 === 0; }).map(function (x) {
+      /* вариантов больше четырёх, а верный — дальше четвёртого: он встаёт четвёртым (а не помечается верным чужой) */
+      var o = x.options.map(String), a = +x.answer; if (a > 3) { o = o.slice(0, 3).concat([o[a]]); a = 3; }
+      return { q: x.q.trim(), options: o.slice(0, 4), answer: a }; });
+  }
+  function aiStepsOf(r) { return (Array.isArray(r) ? r : []).filter(function (x) { return x && typeof x.text === 'string' && x.text.trim(); }).map(function (x) { return { text: x.text.trim(), who: Array.isArray(x.who) ? x.who.map(String).filter(Boolean).slice(0, 5) : [] }; }); }
+  function aiIntroOf(r) { return String((r && r.text) || '').replace(/^```\w*\s*/, '').replace(/```\s*$/, '').trim().replace(/^["“«]|["”»]$/g, ''); }
   function CmsAI(p) {
     var t = p.t, sampler = p.sampler, draft = p.draft;
     var open = useState(true), busy = useState(null), res = useState(null), err = useState(''), instr = useState(''), qn = useState('5'), ctl = useRef(null);
     useEffect(function () { res[1](null); err[1](''); if (ctl.current) ctl.current.abort(); busy[1](null); }, [draft.id]);
-    var LANG = 'o‘zbek tili, lotin yozuvi (o‘ va g‘ harflarida ‘ belgisi)';
-    function src() { return lessonText({ title: draft.title, intro: draft.intro, steps: draft.steps, html: draft.html, limit: draft.limit }).slice(0, 24000); }
     function run(kind) {
       if (!sampler || busy[0]) return;
-      var text = src(), hasText = plain(draft.html).length > 40 || (draft.steps || []).length;
+      var hasText = plain(draft.html).length > 40 || (draft.steps || []).length;
       if (kind !== 'custom' && !hasText) { err[1](t('ai_empty_text')); return; }
       if (kind === 'custom' && !instr[0].trim()) return;
-      var head = 'Siz BURAQ Logistics kompaniyasining o‘quv platformasida SOP menejeriga yordam beruvchi AI-muharrirsiz. Kontent tili: ' + LANG + '.\n';
-      var prompt, json = false;
-      if (kind === 'quiz') { json = true; prompt = head + 'Quyidagi standart asosida ' + qn[0] + ' ta test savolini tuzing. Har bir savol standartdagi aniq qoida, muddat, raqam yoki mas’ul shaxsni tekshirsin; to‘g‘ri javob matnda bo‘lishi shart. 4 ta variant, bittasi to‘g‘ri, qolganlari ishonarli, lekin noto‘g‘ri. To‘g‘ri variant o‘rni har xil bo‘lsin.\nFaqat JSON massiv qaytaring: [{"q":"savol","options":["A","B","C","D"],"answer":0}] (answer — to‘g‘ri variant indeksi 0–3).\n' + ((draft.quiz || []).length ? 'Mavjud savollarni takrorlamang: ' + draft.quiz.map(function (x) { return x.q; }).join(' | ') + '\n' : '') + '\nSTANDART:\n' + text; }
-      else if (kind === 'steps') { json = true; prompt = head + 'Quyidagi standartdan asosiy ish jarayonini 4–8 ta ketma-ket qadamga ajrating. Har qadam — bitta aniq harakat (kim nima qiladi, qachongacha). "who" — ishtirok etuvchi rollar zanjiri (kim → kimga), standartdagi nomlar bilan.\nFaqat JSON massiv qaytaring: [{"text":"harakat","who":["Omborchi","Logist"]}].\n\nSTANDART:\n' + text; }
-      else if (kind === 'intro') { prompt = head + 'Quyidagi standart uchun darsning qisqa kirishini yozing: 1–2 gap, xodimga bu standart nima uchun kerakligini tushuntirsin. Faqat kirish matnini qaytaring, qo‘shtirnoqsiz va markdownsiz.\n\nSTANDART:\n' + text; }
-      else if (kind === 'clarify') { prompt = head + 'Xodimlar ushbu standart bo‘yicha savollar berishgan. Standartning qaysi joylari noaniq ekanini aniqlang va har biri uchun standartga qo‘shiladigan aniq matnni taklif qiling. Tuzilma: har bir savol uchun "**Muammo:** …" va "**Taklif qilinadigan matn:** …". Faqat standartga tayanib yozing; standartda javob bo‘lmasa, buni ochiq ayting va SOP menejeri aniqlashtirishi kerakligini yozing.\n\nSAVOLLAR:\n' + (p.questions || []).map(function (q, i) { return (i + 1) + '. ' + q; }).join('\n') + '\n\nSTANDART:\n' + text; }
-      else { prompt = head + 'SOP menejeri topshirig‘i: ' + instr[0].trim() + '\n\nNatijani darsning YANGI TO‘LIQ standart matni sifatida HTML ko‘rinishida qaytaring. Faqat quyidagi teglar: <h3>, <h4>, <p>, <strong>, <em>, <ul>, <ol>, <li>, <table>, <tr>, <th>, <td>, <blockquote> (eslatma uchun), <br>. Mavjud <img ...> teglarini o‘zgartirmasdan saqlang. Faktlar, raqamlar va muddatlarni o‘ylab topmang: agar topshiriq yangi mavzu bo‘lsa va ma’lumot yetarli bo‘lmasa, [SOP menejeri to‘ldiradi] belgisini qo‘ying. Faqat HTML qaytaring, izohsiz va ``` belgilarisiz.\n\nJORIY MATN (HTML):\n' + (draft.html || '').slice(0, 30000) + '\n\nDars nomi: ' + draft.title; }
-      if (kind === 'improve') { prompt = head + 'Quyidagi standart matnini o‘qish uchun tuzilmaga keltiring: aniq sarlavhalar (<h4>), qadamlar uchun raqamli ro‘yxat, "ESLATMA" va "MUHIM" joylar uchun <blockquote>, imlo xatolarini tuzating. MAZMUN, RAQAMLAR, MUDDATLAR VA TALABLARNI O‘ZGARTIRMANG, hech narsa qo‘shmang va olib tashlamang. Mavjud <img ...> va <div class="ilova"> teglarini o‘zgartirmasdan saqlang. Faqat quyidagi teglar: <h3>, <h4>, <p>, <strong>, <em>, <ul>, <ol>, <li>, <table>, <tr>, <th>, <td>, <blockquote>, <br>, <div class="ilova">, <img>. Faqat HTML qaytaring, izohsiz va ``` belgilarisiz.\n\nMATN (HTML):\n' + (draft.html || '').slice(0, 30000); }
+      var pr = cmsAiPrompt(kind, draft, { n: qn[0], questions: p.questions, instr: instr[0] }), prompt = pr.prompt, json = pr.json;
       var isHtml = kind === 'improve' || kind === 'custom';
       var c = new AbortController(); ctl.current = c;
       busy[1](kind); res[1](null); err[1]('');
-      var call = json ? sampler.json(prompt, { signal: c.signal }) : sampler(prompt, { signal: c.signal, modelTier: kind === 'intro' ? 'quick' : 'default', onText: isHtml || kind === 'clarify' ? function (x) { res[1]({ kind: kind, text: x.text, streaming: true }); } : undefined });
+      var call = json ? sampler.json(prompt, { signal: c.signal }) : sampler(prompt, { signal: c.signal, modelTier: kind === 'intro' ? 'quick' : 'default', onText: isHtml || kind === 'clarify' || kind === 'review' ? function (x) { res[1]({ kind: kind, text: x.text, streaming: true }); } : undefined });
       call.then(function (r) {
         if (kind === 'quiz') {
-          var qs = (Array.isArray(r) ? r : []).filter(function (x) { return x && typeof x.q === 'string' && Array.isArray(x.options) && x.options.length >= 2 && x.options.every(function (o) { return typeof o === 'string'; }) && +x.answer >= 0 && +x.answer < x.options.length && +x.answer % 1 === 0; }).map(function (x) {
-            /* вариантов больше четырёх, а верный — дальше четвёртого: он встаёт четвёртым (а не помечается верным чужой) */
-            var o = x.options.map(String), a = +x.answer; if (a > 3) { o = o.slice(0, 3).concat([o[a]]); a = 3; }
-            return { q: x.q.trim(), options: o.slice(0, 4), answer: a }; });
+          var qs = aiQuizOf(r);
           if (!qs.length) { err[1](t('ai_bad_json')); return; } res[1]({ kind: kind, quiz: qs });
         } else if (kind === 'steps') {
-          var st = (Array.isArray(r) ? r : []).filter(function (x) { return x && typeof x.text === 'string' && x.text.trim(); }).map(function (x) { return { text: x.text.trim(), who: Array.isArray(x.who) ? x.who.map(String).filter(Boolean).slice(0, 5) : [] }; });
+          var st = aiStepsOf(r);
           if (!st.length) { err[1](t('ai_bad_json')); return; } res[1]({ kind: kind, steps: st });
         } else {
           var txt = String(r.text || '').replace(/^```(?:html)?\s*/i, '').replace(/```\s*$/, '').trim();
@@ -1957,7 +1987,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       });
       res[1](null); p.say(t('ai_applied'));
     }
-    var r = res[0], tools = [['quiz', t('ai_quiz')], ['improve', t('ai_improve')], ['intro', t('ai_intro')], ['steps', t('ai_steps')]];
+    var r = res[0], tools = [['quiz', t('ai_quiz')], ['review', t('ai_review')], ['improve', t('ai_improve')], ['intro', t('ai_intro')], ['steps', t('ai_steps')]];
     if ((p.questions || []).length) tools.push(['clarify', t('ai_clarify')]);
     return h('section', { className: 'cms-ai' },
       h('button', { type: 'button', className: 'cms-ai-h', 'aria-expanded': open[0], onClick: function () { open[1](!open[0]); } },
@@ -1976,17 +2006,128 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           r.kind === 'quiz' ? h('ol', { className: 'ai-quiz-prev' }, r.quiz.map(function (q, i) { return h('li', { key: i }, h('b', null, q.q), h('ul', null, q.options.map(function (o, k) { return h('li', { key: k, className: k === q.answer ? 'ok' : '' }, (k === q.answer ? '✓ ' : '') + o); }))); }))
             : r.kind === 'steps' ? h('ol', { className: 'ai-quiz-prev' }, r.steps.map(function (s, i) { return h('li', { key: i }, s.text, s.who.length ? h('span', { className: 'lor-sm lor-muted' }, ' — ' + s.who.join(' → ')) : null); }))
             : r.kind === 'intro' ? h('p', { style: { margin: 0 } }, r.text)
-            : r.kind === 'clarify' ? h('div', { className: 'ai-md', dangerouslySetInnerHTML: { __html: mdLite(r.text) } })
+            : r.kind === 'clarify' || r.kind === 'review' ? h('div', { className: 'ai-md', dangerouslySetInnerHTML: { __html: mdLite(r.text) } })
             : h('div', { className: 'cms-ai-html sop-body', dangerouslySetInnerHTML: { __html: sanitize(r.streaming ? r.text : r.html) } }),
           r.truncated ? h('p', { className: 'lor-field-error', style: { margin: 0 } }, t('ai_truncated')) : null,
           r.streaming ? null : h('div', { className: 'cms-ai-act' },
             h(Btn, { variant: 'ghost', size: 'sm', onClick: function () { res[1](null); } }, t('discard')),
-            r.kind === 'clarify' ? null
+            r.kind === 'clarify' || r.kind === 'review' ? null
               : (r.kind === 'quiz' || r.kind === 'steps') ? h(F, null, h(Btn, { variant: 'outline', size: 'sm', onClick: function () { apply('replace'); } }, t('apply_replace')), h(Btn, { variant: 'primary', size: 'sm', onClick: function () { apply('add'); } }, t('apply_add')))
               : h(Btn, { variant: 'primary', size: 'sm', disabled: !!r.truncated, onClick: function () { apply(); } }, t('apply')))) : null) : null);
   }
 
   /* ---------- level texts, promotion notice, profile menu ---------- */
+  /* «Xodim ko‘rinishi»: the lesson as an employee reads it — from the editor's draft, before it is saved */
+  function LessonPreview(p) {
+    var t = p.t, l = p.draft, vid = l.video && ytId(l.video.src);
+    return h(Modal, { t: t, hid: 'pv-h', className: 'pv-modal', onClose: p.onClose },
+      h('span', { className: 'lor-eyebrow' }, t('pv_btn') + (p.section ? ' · ' + chTitle(p.section) : '')),
+      h('div', { className: cx('lor-lesson app-lesson pv-lesson', !vid && 'no-media') },
+        h('article', { className: 'lor-pane' },
+          h('h1', { className: 'lor-lesson-title', id: 'pv-h' }, l.title || '—'),
+          l.intro ? h('p', { className: 'lor-sop', style: { margin: 0 } }, l.intro) : null,
+          l.html ? h(SopBody, { html: l.html }) : null,
+          (l.steps || []).filter(function (x) { return x.text && x.text.trim(); }).length ? h('ol', { className: 'lor-steps' }, l.steps.filter(function (x) { return x.text && x.text.trim(); }).map(function (x, i) {
+            return h('li', { key: i, className: 'lor-step' }, h('span', { className: 'lor-step-n' }, pad(i + 1)),
+              h('div', null, h('p', null, x.text), x.who && x.who.length ? h('span', { className: 'lor-who' }, t('who') + ':', x.who.map(function (w, k) { return h(F, { key: k }, k ? h(Arrow, { length: 18 }) : null, h('b', null, w)); })) : null));
+          })) : null,
+          l.limit ? h('div', { className: 'lor-limit' }, h('span', { className: 'lor-eyebrow' }, t('limit')), l.limit) : null,
+          h('p', { className: 'lor-sm lor-muted pv-quiz' }, (l.quiz || []).length ? tpl(t('pv_quiz'), { n: l.quiz.length }) : t('no_test_t'))),
+        vid ? h('div', { className: 'lor-pane lor-pane-media' }, h(IntroVideo, { t: t, video: l.video })) : null),
+      h('div', { className: 'lor-modal-actions' }, h(Btn, { variant: 'primary', onClick: p.onClose }, t('pv_close'))));
+  }
+  /* «AI bilan to‘ldirish» of a chapter: for every lesson with text but without a test, intro or steps the AI drafts them, one
+     lesson after another; the SOP manager looks the list through, unticks what is not needed and applies. Before «Qo‘llash»
+     nothing changes; a test, intro or steps the lesson already has are never replaced */
+  var CHA_KINDS = ['quiz', 'intro', 'steps'];
+  function chaNeeds(l, k) { return aiHasText(l) && (k === 'quiz' ? !(l.quiz || []).length : k === 'intro' ? !String(l.intro || '').trim() : !(l.steps || []).length); }
+  function ChapterAI(p) {
+    var t = p.t, s = p.section, sampler = p.sampler;
+    var want = useState({ quiz: true, intro: true, steps: false }), qn = useState('5'), run = useState(null), res = useState({}), pick = useState({}), ctl = useRef(null), live = useRef(true);
+    useEffect(function () { return function () { live.current = false; if (ctl.current) ctl.current.abort(); }; }, []);
+    var todo = s.lessons.filter(function (l) { return CHA_KINDS.some(function (k) { return want[0][k] && chaNeeds(l, k); }); });
+    var cnt = {}; CHA_KINDS.forEach(function (k) { cnt[k] = s.lessons.filter(function (l) { return chaNeeds(l, k); }).length; });
+    function start() {
+      if (!sampler || run[0] || !todo.length) return;
+      var c = new AbortController(), list = todo.slice(), w = want[0], n = qn[0];
+      ctl.current = c; res[1]({}); pick[1]({});
+      (function next(i) {
+        if (!live.current) return;
+        if (i >= list.length || c.signal.aborted) { run[1](null); return; }
+        var l = list[i];
+        run[1]({ k: i, n: list.length, title: l.title });
+        Promise.all(CHA_KINDS.filter(function (k) { return w[k] && chaNeeds(l, k); }).map(function (k) {
+          var pr = cmsAiPrompt(k, l, { n: n });
+          return (pr.json ? sampler.json(pr.prompt, { signal: c.signal }) : sampler(pr.prompt, { signal: c.signal, modelTier: 'quick' }))
+            .then(function (r) { return [k, k === 'quiz' ? aiQuizOf(r) : k === 'steps' ? aiStepsOf(r) : aiIntroOf(r)]; },
+              function (e) { if (e && e.code === 'cancelled') throw e; return [k, null, e && (e.code === 'bad_json' || e.code === 'invalid_json') ? t('ai_bad_json') : aiErr(e, t)]; });
+        })).then(function (rs) {
+          if (!live.current) return;
+          var x = {}, er = null;
+          rs.forEach(function (r) { if (r[1] && r[1].length) x[r[0]] = r[1]; else er = er || r[2] || t('ai_bad_json'); });
+          var ok = Object.keys(x).length > 0;
+          res[1](function (o) { var c2 = Object.assign({}, o); c2[l.id] = { x: x, err: ok ? null : er }; return c2; });
+          if (ok) pick[1](function (o) { var c2 = Object.assign({}, o); c2[l.id] = true; return c2; });
+          next(i + 1);
+        }, function () { if (live.current) run[1](null); });
+      })(0);
+    }
+    function stop() { if (ctl.current) ctl.current.abort(); run[1](null); }
+    var ids = Object.keys(pick[0]).filter(function (id) { return pick[0][id] && res[0][id] && !res[0][id].err; });
+    function apply() {
+      if (!ids.length || (p.blocked && p.blocked(ids))) return;
+      var nq = 0, nl = 0;
+      p.update(function (d) {
+        d.course.sections.forEach(function (sec) {
+          if (sec.id !== s.id) return;
+          sec.lessons.forEach(function (l) {
+            var x = ids.indexOf(l.id) >= 0 && res[0][l.id].x, ch = false; if (!x) return;
+            if (x.quiz && !(l.quiz || []).length) { l.quiz = x.quiz; nq += x.quiz.length; ch = true; }
+            if (x.intro && !String(l.intro || '').trim()) { l.intro = x.intro; ch = true; }
+            if (x.steps && !(l.steps || []).length) { l.steps = x.steps; ch = true; }
+            if (ch) nl++;
+          });
+        });
+      });
+      p.onApplied(); p.say(tpl(t('cha_applied'), { n: nl, q: nq })); p.onClose();
+    }
+    var done = s.lessons.filter(function (l) { return res[0][l.id]; }), r0 = run[0];
+    function sum(x) { return [x.quiz ? tpl(t('cha_q'), { n: x.quiz.length }) : null, x.intro ? t('cha_i') : null, x.steps ? tpl(t('cha_s'), { n: x.steps.length }) : null].filter(Boolean).join(' · '); }
+    return h(Modal, { t: t, hid: 'cha-h', className: 'cha-modal', onClose: function () { stop(); p.onClose(); } },
+      h('h2', { className: 'lor-h', id: 'cha-h' }, '✦ ' + t('cha_title')),
+      h('p', { className: 'lor-muted', style: { margin: 0 } }, s.title),
+      h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, sampler === null ? t('ai_unavail') : t('cha_hint')),
+      h('div', { className: 'cha-opts' },
+        CHA_KINDS.map(function (k) {
+          return h('label', { key: k, className: cx('check', want[0][k] && 'is-on') },
+            h('input', { type: 'checkbox', checked: want[0][k], disabled: !!r0, onChange: function (e) { var w = Object.assign({}, want[0]); w[k] = e.target.checked; want[1](w); } }),
+            h('span', null, t('cha_' + k), h('small', null, ' · ' + tpl(t('cha_n'), { n: cnt[k] }))));
+        }),
+        h('label', { className: 'cms-ai-qn' }, t('q_count'), h('select', { className: 'lor-input slim', value: qn[0], disabled: !!r0 || !want[0].quiz, onChange: function (e) { qn[1](e.target.value); } }, ['3', '5', '8', '10'].map(function (n) { return h('option', { key: n, value: n }, n); })))),
+      r0 ? h('div', { className: 'cha-run', role: 'status' },
+        h('div', { className: 'lor-progress-track' }, h('div', { className: 'lor-progress-fill', style: { width: Math.round(r0.k * 100 / Math.max(1, r0.n)) + '%' } })),
+        h('span', { className: 'lor-sm' }, tpl(t('cha_run'), { k: r0.k + 1, n: r0.n, x: r0.title }))) : null,
+      done.length ? h('ul', { className: 'cha-res' }, done.map(function (l) {
+        var r = res[0][l.id];
+        return h('li', { key: l.id, className: cx(r.err && 'is-err') },
+          r.err ? h('div', { className: 'cha-row' }, h('b', null, l.title), h('small', { className: 'lor-field-error' }, r.err))
+            : h(F, null,
+              h('label', { className: 'check cha-row' }, h('input', { type: 'checkbox', checked: !!pick[0][l.id], onChange: function (e) { var o = Object.assign({}, pick[0]); o[l.id] = e.target.checked; pick[1](o); } }),
+                h('span', null, h('b', null, l.title), h('small', null, ' · ' + sum(r.x)))),
+              h('details', { className: 'cha-prev' }, h('summary', null, t('cha_look')),
+                r.x.intro ? h('p', { className: 'cha-intro' }, r.x.intro) : null,
+                r.x.quiz ? h('ol', { className: 'ai-quiz-prev' }, r.x.quiz.map(function (q, i) { return h('li', { key: i }, h('b', null, q.q), h('ul', null, q.options.map(function (o, k) { return h('li', { key: k, className: k === q.answer ? 'ok' : '' }, (k === q.answer ? '✓ ' : '') + o); }))); })) : null,
+                r.x.steps ? h('ol', { className: 'ai-quiz-prev' }, r.x.steps.map(function (x, i) { return h('li', { key: i }, x.text, x.who.length ? h('span', { className: 'lor-sm lor-muted' }, ' — ' + x.who.join(' → ')) : null); })) : null)));
+      })) : null,
+      !todo.length && !done.length ? h('p', { className: 'lor-sm' }, t('cha_none')) : null,
+      h('div', { className: 'lor-modal-actions' },
+        h(Btn, { variant: 'ghost', onClick: function () { stop(); p.onClose(); } }, t('cancel')),
+        r0 ? h(Btn, { variant: 'outline', onClick: stop }, t('ai_stop'))
+          : done.length ? h(F, null, todo.length && done.length < todo.length ? h(Btn, { variant: 'outline', onClick: start }, t('cha_again')) : null,
+            h(Btn, { variant: 'primary', arrow: true, disabled: !ids.length, onClick: apply }, tpl(t('cha_apply'), { n: ids.length })))
+          : h(Btn, { variant: 'primary', arrow: true, disabled: !sampler || !todo.length, onClick: start }, tpl(t('cha_start'), { n: todo.length }))));
+  }
+
   function lvlLib(lv, k) { return (lv && LEVEL_LIB[lv.id] ? LEVEL_LIB[lv.id][k] : null) || {}; }
   function levelGrow(lv, lang) { var o = (lv && lv.grow) || lvlLib(lv, 'grow'); return (o[lang] || o.uz || []).slice(); }
   function levelPerks(lv, lang) { var o = (lv && lv.perks) || lvlLib(lv, 'perks'); return (o[lang] || o.uz || []).slice(); }
@@ -7877,12 +8018,14 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         p.value ? h('button', { type: 'button', className: 'app-link danger', onClick: function () { p.onChange(null); } }, t('pf_photo_del')) : null,
         er[0] ? h('span', { className: 'lor-field-error' }, t('pf_photo_bad')) : h('span', { className: 'lor-sm lor-muted' }, t('pf_photo_hint'))));
   }
+  /* drawn over the page (a portal into <body>): a modal opened inside a sticky panel (Kontent: the chapter list) is not covered
+     by the page's own sticky parts, such as the lesson editor's save bar */
   function Modal(p) {
     useEffect(function () { function k(e) { if (e.key === 'Escape') p.onClose(); } window.addEventListener('keydown', k); return function () { window.removeEventListener('keydown', k); }; }, []);
-    return h('div', { className: 'lor-scrim', onMouseDown: function (e) { if (e.target === e.currentTarget) p.onClose(); } },
+    return ReactDOM.createPortal(h('div', { className: 'lor-scrim', onMouseDown: function (e) { if (e.target === e.currentTarget) p.onClose(); } },
       h('div', { className: cx('lor-modal pf-modal', p.className), role: 'dialog', 'aria-modal': true, 'aria-labelledby': p.hid },
         h('button', { type: 'button', className: 'lor-modal-x', 'aria-label': p.t('close'), onClick: p.onClose }, '×'),
-        p.children));
+        p.children)), document.body);
   }
   /* «Mening profilim»: everyone — photo, name, login (with the current password); the SOP manager also the own password */
   function ProfileModal(p) {
@@ -10423,6 +10566,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var dr = useState(null), draft = dr[0], cf = useState(false), notif = useState(null), baseRef = useRef(''), tab = useState(p.tab || 'lessons'), audSec = useState(null), delSec = useState(null);
     var openCh = useState(function () { var c = db.course.sections.filter(function (s) { return s.lessons.some(function (l) { return l.id === id; }); })[0]; return c ? c.id : null; });
     var rl = useState(0), jn = useState(false), sp = useState(null);   // a draft reload after a move / join / split; join confirm; split point
+    var chAI = useState(null), lvTo = useState(null), pv = useState(false), keys = useRef({});   // «AI bilan to‘ldirish» of a chapter; unsaved → which lesson next; employee preview
     useEffect(function () { var c = db.course.sections.filter(function (s) { return s.lessons.some(function (l) { return l.id === id; }); })[0]; if (c) openCh[1](c.id); }, [id]);
     useEffect(function () { if (p.tab) tab[1](p.tab); }, [p.tab]);
     useEffect(function () {
@@ -10435,7 +10579,9 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     useEffect(function () { if (!lesson && first) sel[1](first.id); }, [first && first.id]);
     function setD(fn) { var d = clone(draft); fn(d); dr[1](d); }
     function secUpdate(sid, fn) { p.update(function (d) { d.course.sections.forEach(function (s) { if (s.id === sid) fn(s); }); }); }
-    function addLesson(sid) { var nid = 'l' + Date.now().toString(36); p.update(function (d) { d.course.sections.forEach(function (s) { if (s.id === sid) s.lessons.push({ id: nid, title: 'Yangi dars', intro: '', html: '<p></p>', steps: [], limit: '', video: { title: '', duration: '05:00' }, quiz: [] }); }); }); sel[1](nid); }
+    function addLesson(sid) { var nid = 'l' + Date.now().toString(36); p.update(function (d) { d.course.sections.forEach(function (s) { if (s.id === sid) s.lessons.push({ id: nid, title: 'Yangi dars', intro: '', html: '<p></p>', steps: [], limit: '', video: { title: '', duration: '05:00' }, quiz: [] }); }); }); go(nid); }
+    /* another lesson while this one has unsaved edits: ask — save and go, go without saving, or stay */
+    function go(lid) { if (lid !== id && dirty()) { lvTo[1](lid); return; } sel[1](lid); }
     function addSection() { var nid = 's' + Date.now().toString(36); p.update(function (d) { d.course.sections.push({ id: nid, title: 'Yangi bob', officialOnly: false, lessons: [] }); }); openCh[1](nid); }
     function save() {
       var n = 0, clean = clone(draft); delete clean._v;
@@ -10448,9 +10594,20 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         d.requests.forEach(function (r) { if (r.type === 'question' && r.lessonId === draft.id && r.state === 'open') { r.state = 'closed'; r.unread = false; r.closedAt = Date.now(); if (((d.progress[r.userId] || {})[r.lessonId] || {}).status === 'question') setProg(d, r.userId, r.lessonId, { status: 'updated' }); notify(d, r.userId, t('n_updated') + ' · ' + draft.title, draft.id); n++; } });
       });
       baseRef.current = after;
-      if (plain(before) !== plain(after) && passers.length) notif[1]({ lessonId: clean.id, title: clean.title, before: before, after: after, passers: passers });
+      var ask = plain(before) !== plain(after) && passers.length > 0;
+      if (ask) notif[1]({ lessonId: clean.id, title: clean.title, before: before, after: after, passers: passers });
+      dr[1](Object.assign(clone(clean), { _v: draft._v }));
       setTimeout(function () { p.say(n ? t('saved_notified') + ' (' + n + ')' : t('saved')); }, 0);
+      return ask;   // those who passed it can be told about the change — stay on this lesson
     }
+    /* Ctrl+S / ⌘S saves the open lesson; closing the tab with unsaved edits — the browser asks */
+    keys.current = { save: tab[0] === 'lessons' && draft && lesson && draft.title.trim() ? save : null, dirty: tab[0] === 'lessons' && dirty() };
+    useEffect(function () {
+      function onKey(e) { if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.code === 'KeyS' || e.key === 's' || e.key === 'S') && keys.current.save) { e.preventDefault(); keys.current.save(); } }
+      function onLeave(e) { if (keys.current.dirty) { e.preventDefault(); e.returnValue = ''; return ''; } }
+      window.addEventListener('keydown', onKey); window.addEventListener('beforeunload', onLeave);
+      return function () { window.removeEventListener('keydown', onKey); window.removeEventListener('beforeunload', onLeave); };
+    }, []);
     function del() { p.update(function (d) { d.course.sections.forEach(function (s) { s.lessons = s.lessons.filter(function (l) { return l.id !== id; }); }); }); var nx = flat(db.course).filter(function (l) { return l.id !== id; })[0]; sel[1](nx && nx.id); }
     function move(arr, i, dlt) { var j = i + dlt; if (j < 0 || j >= arr.length) return; var x = arr[i]; arr[i] = arr[j]; arr[j] = x; }
     /* the lesson's place in its chapter: moves, joins and splits change the stored course — unsaved edits first have to be saved */
@@ -10499,6 +10656,17 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           return ds ? h(SecDelModal, Object.assign({}, p, { section: ds, title: chTitle(ds), onClose: function () { delSec[1](null); },
             onDone: function (gone) { delSec[1](null); if (gone.indexOf(id) >= 0) { var nx = flat(db.course).filter(function (l) { return gone.indexOf(l.id) < 0; })[0]; sel[1](nx && nx.id); } } })) : null;
         })(),
+        chAI[0] && db.course.sections.some(function (s) { return s.id === chAI[0]; }) ? h(ChapterAI, { t: t, sampler: p.sampler, say: p.say, update: p.update, section: db.course.sections.filter(function (s) { return s.id === chAI[0]; })[0],
+          blocked: function (ids) { if (ids.indexOf(id) >= 0 && dirty()) { p.say(t('cha_save_first')); return true; } return false; },
+          onApplied: function () { rl[1](function (x) { return x + 1; }); }, onClose: function () { chAI[1](null); } }) : null,
+        lvTo[0] && draft ? h(Modal, { t: t, hid: 'uns-h', className: 'uns-modal', onClose: function () { lvTo[1](null); } },
+          h('h2', { className: 'lor-h', id: 'uns-h' }, t('uns_title')),
+          h('p', null, tpl(t('uns_text'), { x: draft.title || '—' })),
+          h('div', { className: 'lor-modal-actions' },
+            h(Btn, { variant: 'ghost', onClick: function () { lvTo[1](null); } }, t('cancel')),
+            h(Btn, { variant: 'outline', onClick: function () { var to = lvTo[0]; lvTo[1](null); sel[1](to); } }, t('uns_drop')),
+            h(Btn, { variant: 'primary', disabled: !draft.title.trim(), onClick: function () { var to = lvTo[0]; lvTo[1](null); if (!save()) sel[1](to); } }, t('uns_save')))) : null,
+        pv[0] && draft ? h(LessonPreview, { t: t, draft: draft, section: secOfId(id), onClose: function () { pv[1](false); } }) : null,
         audSec[0] && db.course.sections.some(function (s) { return s.id === audSec[0]; }) ? h(AudienceModal, Object.assign({}, p, { section: db.course.sections.filter(function (s) { return s.id === audSec[0]; })[0], onClose: function () { audSec[1](null); } })) : null,
         h('aside', { className: 'cms-tree' },
           // the two ways in: a file (Word or .json) or an empty chapter to write by hand
@@ -10519,7 +10687,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
                 h('button', { type: 'button', className: 'ch-del', title: t('ch_del'), 'aria-label': t('ch_del') + ': ' + chTitle(s), onClick: function () { delSec[1](s.id); } }, h(Ico, { name: 'trash', size: 18 }))),
               isOpen ? h('div', { className: 'ch-body' },
                 s.lessons.length ? h('ul', { className: 'ch-lessons' }, s.lessons.map(function (l) {
-                  return h('li', { key: l.id }, h('button', { type: 'button', className: cx('cms-l', l.id === id && 'is-on'), onClick: function () { sel[1](l.id); } },
+                  return h('li', { key: l.id }, h('button', { type: 'button', className: cx('cms-l', l.id === id && 'is-on'), onClick: function () { go(l.id); } },
                     h('span', null, l.title || '—'), (l.quiz || []).length ? null : h('small', { className: 'ch-noq' }, t('ch_noq'))));
                 })) : h('p', { className: 'lor-sm lor-muted' }, t('ch_empty')),
                 h('button', { type: 'button', className: 'app-link', onClick: function () { addLesson(s.id); } }, '+ ' + t('add_lesson')),
@@ -10527,6 +10695,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
                   h('label', { className: 'lor-sm', htmlFor: 'ch-t-' + s.id }, t('sec_title')),
                   h('input', { id: 'ch-t-' + s.id, className: 'lor-input slim cms-sec-title', value: s.title, onChange: function (e) { var v = e.target.value; secUpdate(s.id, function (x) { x.title = v; }); } }),
                   h('label', { className: 'check' }, h('input', { type: 'checkbox', checked: !!s.officialOnly, onChange: function (e) { var v = e.target.checked; secUpdate(s.id, function (x) { x.officialOnly = v; }); } }), t('official_only')),
+                  s.lessons.length ? h(Btn, { variant: 'outline', size: 'sm', className: 'ch-ai', onClick: function () { chAI[1](s.id); } }, '✦ ' + t('cha_btn')) : null,
                   n && s.lessons.length ? h('button', { type: 'button', className: 'app-link ch-renum', title: tpl(t('ch_renum_h'), { n: n }), onClick: function () { chRenum(s.id); } }, t('ch_renum')) : null,
                   h('button', { type: 'button', className: 'app-link danger cms-sec-del', onClick: function () { delSec[1](s.id); } }, t('ch_del')))) : null);
           })),
@@ -10593,10 +10762,13 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
               h('div', { className: 'cms-mini' }, h('span', { className: 'lor-sm lor-muted' }, '◉ = ' + t('correct_opt')), h('button', { type: 'button', className: 'app-link danger', onClick: function () { setD(function (d) { d.quiz.splice(i, 1); }); } }, t('remove'))));
           }),
           h('div', null, h(Btn, { variant: 'outline', size: 'sm', onClick: function () { setD(function (d) { d.quiz.push({ q: '', options: ['', '', '', ''], answer: 0 }); }); } }, '+ ' + t('add_q'))),
-          h('div', { className: 'cms-foot' },
+          h('div', { className: 'cms-foot cms-save' },
             cf[0] ? h('span', { className: 'cms-confirm' }, t('confirm_del'), ' ', h(Btn, { variant: 'ghost', size: 'sm', onClick: function () { cf[1](false); } }, t('cancel')), h(Btn, { variant: 'outline', size: 'sm', onClick: del }, t('yes_del')))
               : h('button', { type: 'button', className: 'app-link danger', onClick: function () { cf[1](true); } }, t('del_lesson')),
-            h(Btn, { variant: 'primary', arrow: true, disabled: !draft.title.trim(), onClick: save }, t('save')))) : h('section', { className: 'box ch-guide' },
+            h('span', { className: cx('cms-state', dirty() && 'is-dirty'), role: 'status' }, dirty() ? '● ' + t('uns_dirty') : '✓ ' + t('uns_saved')),
+            h('div', { className: 'cms-save-acts' },
+              h(Btn, { variant: 'outline', size: 'sm', onClick: function () { pv[1](true); } }, t('pv_btn')),
+              h(Btn, { variant: 'primary', arrow: true, disabled: !draft.title.trim(), title: 'Ctrl+S', onClick: save }, t('save'))))) : h('section', { className: 'box ch-guide' },
           h('h2', { className: 'lor-h' }, t('ch_guide_t')),
           h('ol', null, ['ch_guide_1', 'ch_guide_2', 'ch_guide_3'].map(function (k) { return h('li', { key: k }, t(k)); })))));
   }

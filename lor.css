@@ -4569,3 +4569,33 @@ button.jf-name { padding: 0; background: none; border: 0; border-bottom: 1px sol
   .app-body.side-off .app-main { padding-left: var(--space-6); }
   .app-body.side-off .app-side.is-open { display: block; }
 }
+
+/* «Kontent» → уроки: «AI bilan to‘ldirish» главы, сохранение внизу, «Xodim ko‘rinishi», несохранённые правки */
+.cha-modal { max-width: 720px; max-height: calc(100dvh - 32px); overflow-y: auto; }
+.cha-opts { display: grid; gap: 8px; padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); background: var(--surface-sunken); }
+.cha-opts .check { color: var(--ink); align-items: flex-start; }
+.cha-opts .check small { color: var(--ink-muted); }
+.cha-opts .cms-ai-qn { margin-left: 0; }
+.cha-run { display: grid; gap: 6px; }
+.cha-res { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; max-height: 46vh; overflow-y: auto; }
+.cha-res > li { padding: 8px 6px; border-top: var(--hairline) solid var(--line); display: grid; gap: 4px; }
+.cha-res > li:first-child { border-top: 0; }
+.cha-row { color: var(--ink); align-items: flex-start; font-size: 14px; line-height: 20px; }
+.cha-row small { color: var(--ink-muted); font-size: 12px; }
+.cha-res > li.is-err .cha-row { display: grid; gap: 2px; }
+.cha-prev { margin-left: 24px; font-size: 13px; }
+.cha-prev summary { cursor: pointer; color: var(--blue-text); width: max-content; }
+.cha-prev[open] { display: grid; gap: 8px; }
+.cha-intro { font-style: italic; }
+.ch-ai { justify-self: start; }
+.cms-save { position: sticky; bottom: 0; z-index: 3; background: var(--glass-pop, var(--surface-raised)); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); margin: 0 calc(var(--space-6) * -1) calc(var(--space-6) * -1); padding: var(--space-3) var(--space-6); border-radius: 0 0 var(--radius-lg) var(--radius-lg); box-shadow: 0 -6px 16px -10px var(--scrim); }
+@media (max-width: 760px) { .cms-save { margin: 0 calc(var(--space-4) * -1) calc(var(--space-4) * -1); padding: var(--space-3) var(--space-4); } }
+@media (max-height: 460px) and (orientation: landscape) { .cms-save { margin: 0 calc(var(--space-4) * -1) calc(var(--space-4) * -1); padding: var(--space-3) var(--space-4); } }
+.cms-state { font-size: 13px; color: var(--ink-muted); margin-right: auto; }
+.cms-state.is-dirty { color: var(--red-text); }
+.cms-save-acts { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.uns-modal { max-width: 560px; }
+.pv-modal { max-width: min(1280px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow-y: auto; }
+.pv-lesson { margin: 0; }
+.pv-quiz { margin-top: var(--space-4); }
+.rte-bar button.rte-gap { margin-left: 8px; }

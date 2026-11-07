@@ -24,7 +24,11 @@ const aiCalls = [];
 const srv = await startDevServer({ fetch: (url, body) => { aiCalls.push(body); const q = body.messages[body.messages.length - 1].content;
   // вывод по анкете (HR-psixolog) и анализ коллектива (HR-tahlilchi) — JSON, как просит страница: у пунктов — evidence;
   // пункт без неё («Hammaga yoqadi») страница отбрасывает
-  const text = /HR-tahlilchi/.test(q) ? JSON.stringify({ summary: 'Ko‘pchilik o‘zini puxta deb tasvirlaydi', composition: 'Flegmatiklar ko‘p', strengths: ['Puxtalik'], gaps: ['Savdo tajribasi kam — muhokama uchun'], people: [{ n: 1, note: 'Hujjatlar bilan ishlashda tekshirish mumkin' }], risks: ['Sekin qaror'], actions: ['Savdo ko‘nikmasini muhokama qiling'], hiring: 'Faol savdo menejeri' })
+  // «Kontent»: test savollari, qisqa kirish, standartni tekshirish — по просьбе SOP-менеджера
+  const text = /ta test savolini tuzing/.test(q) ? JSON.stringify([{ q: 'Limit qancha?', options: ['100', '300 000 so‘m', '1 mln', 'Yo‘q'], answer: 1 }, { q: 'Kim tasdiqlaydi?', options: ['Rahbar', 'Mijoz', 'Haydovchi'], answer: 0 }])
+    : /darsning qisqa kirishini/.test(q) ? '“Bu standart harajatlarni to‘g‘ri rejalashtirishga yordam beradi.”'
+    : /yangi xodim nigohi/.test(q) ? '**Joy:** «limit»\n**Muammo:** muddat aytilmagan\n**Taklif:** [SOP menejeri aniqlaydi]'
+    : /HR-tahlilchi/.test(q) ? JSON.stringify({ summary: 'Ko‘pchilik o‘zini puxta deb tasvirlaydi', composition: 'Flegmatiklar ko‘p', strengths: ['Puxtalik'], gaps: ['Savdo tajribasi kam — muhokama uchun'], people: [{ n: 1, note: 'Hujjatlar bilan ishlashda tekshirish mumkin' }], risks: ['Sekin qaror'], actions: ['Savdo ko‘nikmasini muhokama qiling'], hiring: 'Faol savdo menejeri' })
     : /HR-psixolog/.test(q) ? JSON.stringify({ profile: 'Ko‘proq flegmatik uslubi (o‘z-o‘zini baholash)', summary: 'Puxta, barqaror xodim', strengths: [{ text: 'Barqarorlik', evidence: 'Neyrotizm: 4,0 / 5' }, { text: 'Hammaga yoqadi', evidence: '' }], growth: [{ text: 'Tezlik', evidence: '«Qaysi ish formati»: Masofadan' }], motivation: 'Aniq maqsad', communication: 'Xotirjam', management: [{ text: 'Vaqt bering', evidence: '«Tajriba»: 4 / 5' }], scales: [{ name: 'Neyrotizm', text: 'ehtimol, tig‘iz vaziyatda xotirjam' }], roles: [{ text: 'Mijozlar bilan telefon orqali ishlash', evidence: 'Muloqot: 4,1 / 5' }, { text: 'Bosh direktor', evidence: '' }], verify: ['Tig‘iz kunlarda qanday ishlaydi'], plan: ['Murabbiy biriktiring'], interview: [{ q: 'Bir xil ishlarni uzoq bajargan holatingizni aytib bering: nima qildingiz?', why: 'Sabr va barqarorlik: 3,3 / 5', listen: 'aniq misol va natija' }, { q: '' }] }) : 'Javob: ' + q;
   return { body: { model: body.model, stop_reason: 'end_turn', usage: { input_tokens: 10, output_tokens: 5 }, content: [{ type: 'text', text }] } }; } });
 const browser = await pw.chromium.launch();
@@ -834,6 +838,52 @@ try {
     assert.equal(titles()[4], '6.5. Eski nom'); assert.equal(await A.inputValue('#f-title'), '6.5. Eski nom');
     assert.match(await txt(A, 'body'), /Raqamlar tartiblandi: 1 ta dars o‘zgardi/);
     await shot(A, '25c-lesson-place');
+    // «AI bilan to‘ldirish»: урокам без теста и введения — черновик AI; просмотр, снятая галочка — урок не трогается.
+    // AI берёт только уроки с текстом — допишем в каждый абзац (как правка с другого устройства)
+    // вход самой страницы: новый вход вытеснил бы старое устройство (их не больше 10)
+    const tok = await A.evaluate(() => localStorage.getItem('lor-lms-token')), more = '<p>Uchrashuv harajatlari oldindan rejalashtiriladi va rahbar tasdiqlaydi.</p>';
+    const pr6 = srv.g.post({ token: tok, action: 'patch', ops: b6().lessons.map(l => ({ op: 'set', path: ['course', 'sections', { id: 'b6' }, 'lessons', { id: l.id }, 'html'], value: l.html + more })) });
+    assert.deepEqual(pr6.rejected || [], []);
+    await A.evaluate(() => LmsClient.sync()); await A.waitForTimeout(500); await lsPick('6.1.');
+    await A.locator('.ch-card.is-open').getByRole('button', { name: /AI bilan to‘ldirish/ }).click(); await A.waitForSelector('.cha-modal');
+    assert.match(await txt(A, '.cha-opts'), /Testi yo‘q darslarga test savollari · 6 ta dars\s+Kirishi yo‘q darslarga qisqa kirish · 6 ta dars/);
+    await A.locator('.cha-modal').getByRole('button', { name: 'Boshlash — 6 ta dars' }).click();
+    await A.waitForFunction(() => /Qo‘llash — 6 ta dars/.test(document.querySelector('.cha-modal').innerText), null, { timeout: 15000 });
+    assert.match(await txt(A, '.cha-res'), /6\.1\. Umumiy standart · 2 ta savol · kirish/);
+    await A.locator('.cha-res li', { hasText: '6.6.' }).locator('input').uncheck();
+    await A.locator('.cha-res li').first().locator('summary').click();
+    assert.match(await txt(A, '.cha-res li >> nth=0'), /Bu standart harajatlarni[\s\S]*Limit qancha\?[\s\S]*✓ 300 000 so‘m/);
+    await shot(A, '25d-chapter-ai');
+    await A.locator('.cha-modal').getByRole('button', { name: 'Qo‘llash — 5 ta dars' }).click(); await settle(A);
+    assert.deepEqual(b6().lessons.map(l => (l.quiz || []).length), [2, 2, 2, 2, 2, 0]);
+    assert.equal(b6().lessons[0].intro, 'Bu standart harajatlarni to‘g‘ri rejalashtirishga yordam beradi.', 'кавычки ответа сняты');
+    assert.match(await txt(A, 'body'), /AI natijasi 5 ta darsga qo‘shildi \(10 ta savol\)/);
+    assert.equal(await A.inputValue('#f-intro'), b6().lessons[0].intro, 'открытый урок показывает добавленное');
+    await lsPick('6.5.');
+    // проверка урока AI — советы, ничего не меняют; несохранённое — окно при переходе; Ctrl+S; вставка из Word; как видит сотрудник
+    await A.locator('.cms-ai').getByRole('button', { name: 'Standartni tekshirish' }).click();
+    await A.waitForSelector('.cms-ai-res .ai-md', { timeout: 10000 });
+    assert.match(await txt(A, '.cms-ai-res'), /Muammo: muddat aytilmagan/);
+    assert.equal(await A.locator('.cms-ai-res').getByRole('button', { name: 'Qo‘llash' }).count(), 0);
+    await A.fill('#f-title', '6.5. Eski nom (yangi)');
+    assert.match(await txt(A, '.cms-state'), /Saqlanmagan o‘zgarishlar/);
+    await lsPick('6.1.');
+    assert.match(await txt(A, '.uns-modal'), /«6\.5\. Eski nom \(yangi\)» darsida saqlanmagan o‘zgarishlar bor/);
+    await A.locator('.uns-modal').getByRole('button', { name: 'Saqlash va o‘tish' }).click(); await settle(A);
+    assert.equal(b6().lessons[4].title, '6.5. Eski nom (yangi)'); assert.equal(await A.inputValue('#f-title'), '6.1. Umumiy standart');
+    await A.fill('#f-title', '6.1. Umumiy standart va maqsad'); await A.keyboard.press('Control+s'); await settle(A);
+    assert.equal(b6().lessons[0].title, '6.1. Umumiy standart va maqsad', 'Ctrl+S сохраняет'); assert.match(await txt(A, '.cms-state'), /Saqlangan/);
+    await A.locator('.rte-area').click();
+    await A.evaluate(() => { const el = document.querySelector('.rte-area'), r = document.createRange(); r.selectNodeContents(el); r.collapse(false); getSelection().removeAllRanges(); getSelection().addRange(r);
+      const dt = new DataTransfer(); dt.setData('text/html', '<html><head><style>p{}</style></head><body><!--StartFragment--><h1>Word sarlavha</h1><p class=MsoNormal><span style="color:red">Oddiy <b>qalin</b> matn</span><o:p></o:p></p><p class=MsoNormal><o:p>&nbsp;</o:p></p><h3>Kichik</h3><table border=1><tr><td style="x">A</td><td>B</td></tr></table><!--EndFragment--></body></html>'); dt.setData('text/plain', 'x');
+      el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })); });
+    const pasted = await A.locator('.rte-area').innerHTML();
+    assert.ok(pasted.endsWith('<h3>Word sarlavha</h3><p>Oddiy <b>qalin</b> matn</p><h4>Kichik</h4><table><tbody><tr><td>A</td><td>B</td></tr></tbody></table>'), 'из Word — заголовки, жирный, таблица, без стилей: ' + pasted);
+    await A.locator('.cms-save').getByRole('button', { name: 'Xodim ko‘rinishi' }).click(); await A.waitForSelector('.pv-modal');
+    assert.match(await txt(A, '.pv-modal'), /6\.1\. Umumiy standart va maqsad\s+Bu standart harajatlarni[\s\S]*WORD SARLAVHA[\s\S]*Darsdan keyin test: 2 ta savol/i);
+    await A.locator('.pv-modal .lor-modal-actions').getByRole('button', { name: 'Yopish' }).click();
+    await A.locator('.cms-save').getByRole('button', { name: 'Saqlash' }).click(); await settle(A);
+    assert.ok(b6().lessons[0].html.includes('<h4>Kichik</h4>'));
     await A.locator('.ch-card.is-open .ch-del').click(); await A.waitForSelector('.ud-modal');
     await A.check('#sd-ok'); await A.locator('.ud-modal button', { hasText: 'Bobni o‘chirish' }).click(); await settle(A);
     assert.ok(!b6(), 'проверочная глава удалена');
