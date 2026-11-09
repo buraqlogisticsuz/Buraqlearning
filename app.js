@@ -5833,6 +5833,10 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     if (!items.length) return null;
     var may = p.canEdit !== false;
     return h('section', { className: 'box plan-box' },
+      /* for the employee: what the two probation months are for — a large heading and a note above the plan */
+      p.admin ? null : h('div', { className: 'plan-intro' },
+        h('h2', { className: 'plan-intro-h' }, t('pl_intro_t')),
+        h('p', { className: 'plan-intro-p' }, t('pl_intro'))),
       h('div', { className: 'plan-head' },
         h('div', null,
           h('span', { className: 'lor-eyebrow' }, t('pl_eyebrow')),

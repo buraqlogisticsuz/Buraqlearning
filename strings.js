@@ -3485,4 +3485,8 @@ Object.assign(APP_T.uz, { pl_added: 'Bosqich qo‘shildi', pl_deleted: 'Bosqich 
 Object.assign(APP_T.ru, { pl_added: 'Этап добавлен', pl_deleted: 'Этап удалён', pl_text: 'Текст этапа' });
 Object.assign(APP_T.en, { pl_added: 'Stage added', pl_deleted: 'Stage deleted', pl_text: 'Stage text' });
 Object.assign(APP_T.zh, { pl_added: '已添加阶段', pl_deleted: '已删除阶段', pl_text: '阶段内容' });
+Object.assign(APP_T.uz, { pl_intro_t: 'Sinov muddatidagi rejangiz', pl_intro: 'Agar siz sinov muddatida bo‘lsangiz, ikki oylik sinov muddati jarayonida nimalarni o‘rganishingiz kerak va oy oxirida nimalarni qila oladigan holatga kelishingiz kerak — quyida ko‘rsatilgan.' });
+Object.assign(APP_T.ru, { pl_intro_t: 'Ваш план на испытательный срок', pl_intro: 'Если вы на испытательном сроке, ниже указано, что именно вам нужно изучить за два месяца испытательного срока и к каким результатам вы должны прийти к концу каждого месяца.' });
+Object.assign(APP_T.en, { pl_intro_t: 'Your probation plan', pl_intro: 'If you are on probation, below is what you need to learn during the two-month probation period and what you should be able to do by the end of each month.' });
+Object.assign(APP_T.zh, { pl_intro_t: '您的试用期计划', pl_intro: '如果您正处于试用期，下面列出了在两个月试用期内需要学习的内容，以及每个月底您应当能够做到的事情。' });
 

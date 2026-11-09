@@ -1887,6 +1887,12 @@ body, .app-side, .box, .lor-input, .lor-tree { transition: background-color var(
 
 /* ---------- adaptation plan ---------- */
 .plan-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+/* the probation note above the plan: a large caps heading after a thin red rule (brand), the note in Medium */
+.plan-intro { display: flex; flex-direction: column; gap: 10px; padding: 18px 20px; border-radius: var(--radius-md); background: var(--blue-soft); border: var(--hairline) solid var(--line); border-left: 2px solid var(--red); }
+.plan-intro-h { margin: 0; font-size: 28px; line-height: 34px; font-weight: 400; text-transform: uppercase; letter-spacing: .01em; color: var(--ink); display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.plan-intro-h::before { content: ""; flex: none; width: 40px; height: 1.5px; background: var(--red); }
+.plan-intro-p { margin: 0; max-width: 72ch; font-size: 16px; line-height: 24px; font-weight: 500; color: var(--ink); }
+@media (max-width: 720px) { .plan-intro { padding: 14px 16px; } .plan-intro-h { font-size: 22px; line-height: 28px; } .plan-intro-p { font-size: 15px; line-height: 22px; } }
 .plan-sum { text-align: right; display: flex; flex-direction: column; }
 .plan-sum b { font-size: 22px; font-variant-numeric: tabular-nums; }
 .plan-late { color: var(--red); font-size: 12px; }

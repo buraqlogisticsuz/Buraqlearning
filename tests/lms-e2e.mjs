@@ -403,6 +403,8 @@ try {
     await A.locator('main .lor-tabs [role="tab"]').first().click(); await A.waitForTimeout(300);   // обратно к урокам
     await E.evaluate(() => LmsClient.sync()); await E.waitForTimeout(400); }
   await nav(E, 'path');
+  assert.match(await txt(E, '.plan-box .plan-intro'), /SINOV MUDDATIDAGI REJANGIZ\s+Agar siz sinov muddatida bo‘lsangiz, ikki oylik sinov muddati/, 'над планом — заголовок и пояснение');
+  if (shots) await E.locator('.plan-box').screenshot({ path: shots + '/29-plan.png' });
   { const li = E.locator('.plan-list li', { hasText: '1-OY. Moslashish va o‘rganish' });
     assert.equal(await li.locator('.plan-it-body').count(), 0, 'у сотрудника — название, текст свёрнут');
     await li.getByRole('button', { name: /Batafsil/ }).click();
