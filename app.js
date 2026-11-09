@@ -158,10 +158,22 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   function avgMinutes(db, u) { var st = (db.study || {})[u.id] || {}, sum = 0; for (var k in st) sum += st[k]; return sum / daysSince(u); }
   function streakOf(db, uid) { var s = studyMin(db, uid) >= GOAL ? 1 : 0; for (var i = 1; i < 400; i++) { if (studyMin(db, uid, dayKey(Date.now() - i * DAY)) >= GOAL) s++; else break; } return s; }
 
+  /* the study clock's state for the header chip: run — counting; page / hidden / away / idle — paused, and why.
+     A small store of its own: only the chip re-renders every second, not the whole page */
+  var STUDY = { st: 'page', sec: 0, subs: [] };
+  function studySet(st, sec) { if (STUDY.st === st && STUDY.sec === sec) return; STUDY.st = st; STUDY.sec = sec; STUDY.subs.forEach(function (f) { f(); }); }
+  function useStudyState() {
+    var s = useState(0);
+    useEffect(function () { var f = function () { s[1](function (x) { return x + 1; }); }; STUDY.subs.push(f); return function () { STUDY.subs = STUDY.subs.filter(function (g) { return g !== f; }); }; }, []);
+    return STUDY;
+  }
+  var STUDY_IDLE = 120e3, STUDY_IDLE_VIDEO = 15 * 60e3;   // no move, key or scroll for 2 min — pause; a lesson video playing — 15 min
   function TodayChip(p) {
-    var m = studyMin(p.db, p.user.id), pct = Math.min(100, m * 100 / GOAL);
-    return h('button', { type: 'button', className: cx('today-chip', m >= GOAL && 'is-done'), onClick: p.onClick, title: p.t('today_goal') + ': ' + p.t('goal_2h') },
-      h('span', null, p.t('today') + ' ' + hm(m) + ' / 2:00'), h('i', null, h('b', { style: { width: pct + '%' } })));
+    var S = useStudyState(), t = p.t, m = studyMin(p.db, p.user.id), pct = Math.min(100, m * 100 / GOAL), run = S.st === 'run', odd = !run && S.st !== 'page';
+    var why = t('st_' + S.st);
+    return h('button', { type: 'button', className: cx('today-chip', m >= GOAL && 'is-done', run ? 'is-run' : 'is-pause'), onClick: p.onClick, title: why + ' · ' + t('today_goal') + ': ' + t('goal_2h'), 'aria-label': t('today') + ' ' + hm(m) + ' / 2:00 · ' + why },
+      h('span', null, h('em', { className: 'st-dot', 'aria-hidden': true }), t('today') + ' ' + hm(m) + ' / 2:00', odd ? h('small', null, ' · ' + t('st_pause')) : null),
+      h('i', null, h('b', { style: { width: pct + '%' } })));
   }
 
   function DailyGoal(p) {
@@ -309,6 +321,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var t = p.t, u = p.user || {}, cv = useState(0), cvRef = useRef(0), sent = useState(false), onShot = useRef(null);   // cv: 0 — открыто, 1 — пока окно не в фокусе, 2 — до нажатия
     onShot.current = p.onShot;
     function cover(k) { if (k > cvRef.current) { cvRef.current = k; cv[1](k); } }
+    /* the study clock pauses while the protection cover is on */
+    useEffect(function () { document.documentElement.classList.toggle('grd-covered', cv[0] > 0); }, [cv[0]]);
     function open(all) { if (all || cvRef.current === 1) { cvRef.current = 0; cv[1](0); sent[1](false); } }
     useEffect(function () {
       var root = document.documentElement, mac = /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent || ''), combo = null, last = 0;
@@ -350,7 +364,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       var L = [[window, 'keydown', kd, true], [window, 'keyup', ku, true], [window, 'blur', blur, false], [window, 'focus', focus, false], [document, 'visibilitychange', vis, false],
         [document, 'contextmenu', block, true], [document, 'copy', block, true], [document, 'cut', block, true], [document, 'dragstart', block, true], [window, 'beforeprint', bp, false]];
       L.forEach(function (x) { x[0].addEventListener(x[1], x[2], x[3]); });
-      return function () { root.classList.remove('emp-guard'); L.forEach(function (x) { x[0].removeEventListener(x[1], x[2], x[3]); }); };
+      return function () { root.classList.remove('emp-guard', 'grd-covered'); L.forEach(function (x) { x[0].removeEventListener(x[1], x[2], x[3]); }); };
     }, []);
     /* плитка шире надписи (≈7 px на знак при 12 px), чтобы строка не обрезалась; редко и бледно — глазу почти не видно */
     var mark = [u.name, u.login, fmtDate(Date.now())].filter(Boolean).join(' · '), tw = Math.max(600, Math.round(mark.length * 7 + 120) * 2);
@@ -10316,22 +10330,62 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       else if (n.path) go({ name: 'path' }); else go({ name: 'home' });
     }
 
-    /* study-time tracker: counts only active, visible time on lesson / quiz pages or with the AI mentor open */
+    /* the study clock: a second counts only when all of these hold — a lesson or its test is open (or the AI mentor), the tab
+       is visible, this browser window has the focus (a lesson video playing inside counts), the protection cover is not on, and
+       the employee moved, typed or scrolled in the last 2 minutes (15 while a lesson video plays); the quiet seconds count when he
+       moves again, and a 2-minute silence keeps only 1 minute of them. Anything else — pause: another
+       page, another window or program, the tab hidden, the site closed or the account left. The seconds short of a minute stay
+       in this browser for today (localStorage) and go on next time; whole minutes go to the server. Two tabs do not count twice:
+       only the focused one runs, and it alone writes the seconds */
     var activeRef = useRef(false); activeRef.current = ready && (route.name === 'lesson' || route.name === 'quiz' || ai[0]);
-    var lastAct = useRef(Date.now()), acc = useRef(0), prevMin = useRef(studyMin(db, u.id));
+    var lastAct = useRef(Date.now()), prevMin = useRef(studyMin(db, u.id));
     useEffect(function () {
-      function act() { lastAct.current = Date.now(); }
-      var evs = ['mousemove', 'keydown', 'scroll', 'touchstart', 'click'];
-      evs.forEach(function (e) { window.addEventListener(e, act, { passive: true }); });
-      var id = setInterval(function () {
-        if (!activeRef.current || document.visibilityState !== 'visible' || Date.now() - lastAct.current > 5 * 60e3) return;
-        acc.current += 15;
-        if (acc.current >= 60) {
-          var add = Math.floor(acc.current / 60); acc.current -= add * 60;
+      var key = 'lor-study-sec:' + u.id, day = todayKey(), lastTick = Date.now(), last = 'page';
+      function load() { try { var x = JSON.parse(localStorage.getItem(key) || 'null'); return x && x.d === todayKey() && x.s >= 0 && x.s < 60 ? x.s : 0; } catch (e) { return 0; } }
+      function keep(v) { try { localStorage.setItem(key, JSON.stringify({ d: day, s: v })); } catch (e) {} }
+      /* sec — counted seconds short of a minute; pend — seconds since the last move: they count once the employee moves, scrolls,
+         switches away or leaves (he was reading), and only 1 minute of them if he went quiet for 2 minutes (he walked away) */
+      var sec = load(), pend = 0;
+      function commit(v) {
+        if (!v) return;
+        sec += v;
+        if (sec >= 60) {
+          var add = Math.floor(sec / 60); sec -= add * 60;
           p.update(function (d) { d.study = d.study || {}; var st = d.study[u.id] = d.study[u.id] || {}, k = todayKey(), before = st[k] || 0; st[k] = before + add; if (before < GOAL && st[k] >= GOAL) notify(d, u.id, t('goal_done') + ' ✓'); });
         }
-      }, 15000);
-      return function () { clearInterval(id); evs.forEach(function (e) { window.removeEventListener(e, act); }); };
+        keep(sec);
+      }
+      function act() { lastAct.current = Date.now(); if (pend) { var v = pend; pend = 0; commit(v); } }
+      function reason() {
+        if (!activeRef.current) return 'page';
+        if (document.visibilityState !== 'visible') return 'hidden';
+        var a = document.activeElement, vid = !!a && a.tagName === 'IFRAME';
+        if (!document.hasFocus() || document.documentElement.classList.contains('grd-covered')) return 'away';
+        return Date.now() - lastAct.current > (vid ? STUDY_IDLE_VIDEO : STUDY_IDLE) ? 'idle' : 'run';
+      }
+      function tick() {
+        var now = Date.now(), dt = Math.max(0, Math.min(5, Math.round((now - lastTick) / 1000)));   // a sleeping computer adds at most 5 s
+        lastTick = now;
+        if (todayKey() !== day) { day = todayKey(); sec = 0; pend = 0; }
+        var r = reason();
+        if (r === 'run') pend += dt;
+        else if (last === 'run') { var v = pend; pend = 0; commit(r === 'idle' ? Math.min(v, 60) : v); }   // went quiet / switched away / left the lesson
+        else sec = load();   // another tab may have counted meanwhile
+        last = r;
+        studySet(r, sec);
+      }
+      function now() { setTimeout(tick, 0); }
+      var evs = ['mousemove', 'keydown', 'wheel', 'touchstart', 'pointerdown'];
+      evs.forEach(function (e) { window.addEventListener(e, act, { passive: true }); });
+      document.addEventListener('scroll', act, { passive: true, capture: true });   // any scrolled box — the lesson text, the test
+      window.addEventListener('focus', now); window.addEventListener('blur', now); document.addEventListener('visibilitychange', now);
+      var id = setInterval(tick, 1000);
+      return function () {
+        clearInterval(id); if (pend) keep(sec + Math.min(pend, 59)); studySet('page', sec);   // leaving the account — the seconds wait for next time
+        evs.forEach(function (e) { window.removeEventListener(e, act); });
+        document.removeEventListener('scroll', act, { capture: true });
+        window.removeEventListener('focus', now); window.removeEventListener('blur', now); document.removeEventListener('visibilitychange', now);
+      };
     }, []);
     var todayMin = studyMin(db, u.id);
     useEffect(function () { if (prevMin.current < GOAL && todayMin >= GOAL) p.say('✓ ' + t('goal_done')); prevMin.current = todayMin; }, [todayMin]);

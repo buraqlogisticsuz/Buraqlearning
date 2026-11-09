@@ -447,6 +447,23 @@ try {
   await E.waitForTimeout(300); await shot(E, 'panel-yashirin');
   await E.locator('.side-tg').click(); await E.waitForTimeout(200);
   assert.ok(await E.locator('.app-side').isVisible(), 'панель снова на месте');
+  // часы учёбы в шапке: на уроке идут (красная точка), другое окно — пауза «pauza» с причиной, вернулся — снова идут;
+  // на главной — пауза без надписи (там время не считается); неполная минута лежит в браузере
+  { await E.bringToFront();
+    const chipNow = () => E.evaluate(() => { const c = document.querySelector('.today-chip'); return { cls: c.className, txt: c.textContent, title: c.title }; });
+    await E.mouse.move(300, 300); await E.waitForTimeout(1300);
+    assert.match((await chipNow()).cls, /is-run/, 'на уроке время идёт');
+    await E.evaluate(() => { Object.defineProperty(document, 'hasFocus', { value: () => false, configurable: true }); window.dispatchEvent(new Event('blur')); }); await E.waitForTimeout(400);
+    let c = await chipNow(); assert.ok(/is-pause/.test(c.cls) && /pauza/.test(c.txt) && /boshqa oyna/.test(c.title), JSON.stringify(c));
+    await E.evaluate(() => { delete document.hasFocus; window.dispatchEvent(new Event('focus')); }); await E.mouse.move(320, 310); await E.waitForTimeout(1300);
+    assert.match((await chipNow()).cls, /is-run/, 'вернулся — снова идёт');
+    assert.ok(await E.evaluate(() => Object.keys(localStorage).some(k => /^lor-study-sec:/.test(k))), 'неполная минута — в браузере');
+    await E.locator('a[href="#home"]:visible').first().click(); await E.waitForTimeout(500);
+    const later = E.locator('.lor-scrim .lor-modal button', { hasText: 'Keyinroq' });   // уходит с урока — «Keyinroq»
+    if (await later.count()) { await later.first().click(); await E.waitForTimeout(500); }
+    c = await chipNow(); assert.ok(/is-pause/.test(c.cls) && !/pauza/.test(c.txt) && /faqat dars va test/.test(c.title), JSON.stringify(c));
+    await openLesson(E, '4.1. Test standarti');
+    for (let k = 0; k < 3 && await E.locator('.lor-scrim .lor-modal').count(); k++) { await E.keyboard.press('Escape'); await E.waitForTimeout(300); } }
   step('видео урока: ссылка YouTube встраивается, защита урока её не прячет; «Videoni yashirish» — текст во всю ширину, выбор помнится; без ссылки окна видео нет; левую панель уроков можно скрыть и вернуть');
 
   // ---------- ИИ-наставник через сервер ----------
