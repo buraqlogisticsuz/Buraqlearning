@@ -384,7 +384,29 @@ try {
   await E.locator('.bell-wrap button').first().click(); await E.waitForTimeout(300);
   await E.locator('.notif-pop-h button').first().click(); await E.waitForTimeout(300);
   await E.keyboard.press('Escape');
+  // шаблон плана: этап — название и длинный текст (без обрезки на 300 знаках); вставка целиком — первая строка становится
+  // названием; срок меняется списком (этап переходит в другую колонку); удаление — с подтверждением
+  { await nav(A, 'cms'); await A.locator('main .lor-tabs [role="tab"]', { hasText: 'Adaptatsiya rejasi' }).click(); await A.waitForTimeout(400);
+    const long = '1-OY. Moslashish va o‘rganish\nMaqsad: xodim kompaniyani, o‘z o‘rnini va ish qoidalarini tushunadi.\nBilishi kerak:\n- Kompaniya haqida: nima bilan shug‘ullanadi, missiyasi va qadriyatlari\n- Asosiy xizmatlari, mijozlari kimlar va raqobatchilari\n- Bo‘lim jarayonlari: har bir bosqichda kim nima qiladi\n' + 'Qo‘shimcha izoh. '.repeat(30);
+    await A.fill('#pl-new-30', long); await A.locator('#pl-new-30').press('Control+Enter'); await settle(A);
+    const it = srv.g.state().planTpl.find(x => (x.title || {}).uz === '1-OY. Moslashish va o‘rganish');
+    assert.ok(it && it.day === 30 && it.text.uz.length > 500 && /^Maqsad:/.test(it.text.uz), 'название и длинный текст: ' + JSON.stringify(it && it.text));
+    assert.equal(await A.inputValue('#plh-' + it.id), '1-OY. Moslashish va o‘rganish');
+    assert.match(await A.inputValue('#plh-p1'), /^Anketa, mol-mulk/, 'у старого пункта первая строка — название');
+    await A.selectOption('#pld-' + it.id, '60'); await settle(A);
+    assert.equal(srv.g.state().planTpl.find(x => x.id === it.id).day, 60, 'этап перенесён в «60 kun»');
+    const n0 = srv.g.state().planTpl.length, last = srv.g.state().planTpl.filter(x => x.day === 30).slice(-1)[0];
+    await A.locator('.pa-item', { has: A.locator('#plt-' + last.id) }).locator('.pa-del').click();
+    assert.match(await txt(A, '.pa-confirm'), /Bosqich o‘chirilsinmi\?/); await A.locator('.pa-confirm').getByRole('button', { name: 'Bekor qilish' }).click(); await settle(A);
+    assert.equal(srv.g.state().planTpl.length, n0, 'отмена — этап на месте');
+    assert.deepEqual(await rejected(A), [], 'сервер принял шаблон плана');
+    await A.locator('main .lor-tabs [role="tab"]').first().click(); await A.waitForTimeout(300);   // обратно к урокам
+    await E.evaluate(() => LmsClient.sync()); await E.waitForTimeout(400); }
   await nav(E, 'path');
+  { const li = E.locator('.plan-list li', { hasText: '1-OY. Moslashish va o‘rganish' });
+    assert.equal(await li.locator('.plan-it-body').count(), 0, 'у сотрудника — название, текст свёрнут');
+    await li.getByRole('button', { name: /Batafsil/ }).click();
+    assert.equal(await li.locator('.plan-it-body ul li').count(), 3, '«- …» — список'); assert.match(await li.locator('.plan-it-body').innerText(), /Maqsad: xodim kompaniyani[\s\S]*Bilishi kerak:/); }
   assert.equal(await E.locator('.plan-box .plan-col').count(), 2, 'план адаптации — две колонки, 30 и 60 дней');
   assert.match(await txt(E, '.plan-box'), /30 \/ 60 kun/); assert.doesNotMatch(await txt(E, '.plan-box'), /90 kun/);
   await E.locator('.plan-item input').first().check(); await E.waitForTimeout(300);
@@ -461,6 +483,13 @@ try {
     let c = await chipNow(); assert.ok(/is-pause/.test(c.cls) && /pauza/.test(c.txt) && /boshqa oyna/.test(c.title), JSON.stringify(c));
     await E.evaluate(() => { delete document.hasFocus; window.dispatchEvent(new Event('focus')); }); await E.mouse.move(320, 310); await E.waitForTimeout(1300);
     assert.match((await chipNow()).cls, /is-run/, 'вернулся — снова идёт');
+    // 6 минут без движения — часы стоят, страница обновляется; после — пауза до первого движения мышью
+    await E.evaluate(() => { const n = Date.now; Date.now = () => n() + 7 * 60e3; });
+    await E.waitForEvent('load', { timeout: 6000 }); await watchSync(E); await E.waitForSelector('.today-chip', { state: 'attached' }); await E.waitForTimeout(1300);
+    c = await chipNow(); assert.ok(/is-pause/.test(c.cls) && /6 daqiqa/.test(c.title), JSON.stringify(c));
+    assert.match(await txt(E, 'body'), /sahifa yangilandi, vaqt to‘xtatildi/);
+    await E.mouse.move(330, 320); await E.mouse.move(345, 330, { steps: 3 }); await E.waitForTimeout(1300);
+    assert.match((await chipNow()).cls, /is-run/, 'пошевелил мышью — время снова идёт');
     assert.ok(await E.evaluate(() => Object.keys(localStorage).some(k => /^lor-study-sec:/.test(k))), 'неполная минута — в браузере');
     await E.locator('a[href="#home"]:visible').first().click(); await E.waitForTimeout(500);
     const later = E.locator('.lor-scrim .lor-modal button', { hasText: 'Keyinroq' });   // уходит с урока — «Keyinroq»

@@ -139,7 +139,9 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     useEffect(function () { var f = function () { s[1](function (x) { return x + 1; }); }; STUDY.subs.push(f); return function () { STUDY.subs = STUDY.subs.filter(function (g) { return g !== f; }); }; }, []);
     return STUDY;
   }
-  var STUDY_IDLE = 120e3, STUDY_IDLE_VIDEO = 15 * 60e3;   // no move, key or scroll for 2 min — pause; a lesson video playing — 15 min
+  /* no move, key or scroll for 6 min — the clock stops and the page reloads (a lesson video playing — 15 min); of the quiet
+     time at most 2 min count (he may have been reading), the rest — no (he walked away) */
+  var STUDY_IDLE = 6 * 60e3, STUDY_IDLE_VIDEO = 15 * 60e3, STUDY_QUIET = 120, IDLE_RL = 'lor-idle-rl';
   var STUDY_ROUTES = ['lesson', 'quiz', 'drill', 'cases'];   // where study time counts: lessons, tests, AI-trenajyor, Keyslar (+ the AI mentor)
   function hms(s) { s = Math.max(0, Math.floor(s)); return Math.floor(s / 3600) + ':' + pad(Math.floor(s / 60) % 60) + ':' + pad(s % 60); }
   function TodayChip(p) {
@@ -5790,6 +5792,25 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   /* текст на нескольких языках: свой, иначе узбекский, иначе любой заполненный (пункт добавили, работая на русском) */
   function anyLang(o, lang) { if (!o) return ''; if (typeof o === 'string') return o; if (o[lang]) return o[lang]; if (o.uz) return o.uz; for (var k in o) if (o[k]) return o[k]; return ''; }
   function planText(x, lang) { return anyLang(x.text, lang); }
+  /* a stage: a short name (title) and a long text — goal, what to know, what to do. An old item has only text:
+     its first line is the name */
+  /* an old one-line item pasted from Word kept its paragraphs as double spaces — they are lines again */
+  function planLines(tx) { tx = String(tx || '').trim(); return tx.indexOf('\n') < 0 ? tx.replace(/[ \u00a0]{2,}/g, '\n') : tx; }
+  function planTitle(x, lang) { var tt = anyLang(x.title, lang).trim(); return tt || planLines(planText(x, lang)).split('\n')[0]; }
+  function planBody(x, lang) { var tx = planText(x, lang); return anyLang(x.title, lang).trim() ? tx.trim() : planLines(tx).split('\n').slice(1).join('\n').trim(); }
+  /* the text as the employee reads it: «- …», «• …», «1. …» — a list; a short line ending in «:» — a subheading */
+  var PL_BUL = /^\s*(?:[-–—•*·]|\d+[.)])\s+/;
+  function PlanText(p) {
+    var out = [], ul = null;
+    String(p.text || '').split('\n').forEach(function (l, i) {
+      var x = l.trim();
+      if (!x) { ul = null; return; }
+      if (PL_BUL.test(x)) { if (!ul) { ul = []; out.push(h('ul', { key: 'u' + i }, ul)); } ul.push(h('li', { key: i }, x.replace(PL_BUL, ''))); return; }
+      ul = null;
+      out.push(x.length <= 80 && /:$/.test(x) ? h('b', { key: i }, x) : h('p', { key: i }, x));
+    });
+    return h('div', { className: 'plan-it-body' }, out);
+  }
   function planDue(u, day) { return (u.startedAt || Date.now()) + day * DAY; }
   function planDone(u, id) { return (u.plan || {})[id]; }
   function planStat(db, u) {
@@ -5808,7 +5829,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   }
 
   function PlanBox(p) {
-    var t = p.t, db = p.db, u = p.u, lang = p.lang, items = planItems(db, u), st = planStat(db, u), now = Date.now();
+    var t = p.t, db = p.db, u = p.u, lang = p.lang, items = planItems(db, u), st = planStat(db, u), now = Date.now(), op = useState({});
     if (!items.length) return null;
     var may = p.canEdit !== false;
     return h('section', { className: 'box plan-box' },
@@ -5828,12 +5849,14 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
             h('b', null, tpl(t('pl_day'), { n: day })),
             h('span', { className: 'lor-sm lor-muted' }, fmtDate(due))),
           h('ul', { className: 'plan-list' }, list.map(function (x) {
-            var d = planDone(u, x.id);
+            var d = planDone(u, x.id), body = planBody(x, lang), isOpen = !!op[0][x.id];
             return h('li', { key: x.id, className: cx(d && 'is-done', !d && due < now && 'is-late') },
               h('label', { className: 'plan-item' },
                 h('input', { type: 'checkbox', checked: !!d, disabled: !may, onChange: function () { togglePlan(p, u.id, x.id); } }),
-                h('span', null, planText(x, lang),
-                  d ? h('small', null, t('pl_done_by') + ' ' + userOf(db, d.by).name + ' · ' + fmtDate(d.at)) : null)));
+                h('span', null, h('span', { className: 'plan-it-t' }, planTitle(x, lang)),
+                  d ? h('small', null, t('pl_done_by') + ' ' + userOf(db, d.by).name + ' · ' + fmtDate(d.at)) : null)),
+              body ? h('button', { type: 'button', className: 'app-link plan-more', 'aria-expanded': isOpen, onClick: function () { var m = Object.assign({}, op[0]); m[x.id] = !isOpen; op[1](m); } }, isOpen ? t('pl_less') + ' ▴' : t('pl_more') + ' ▾') : null,
+              body && isOpen ? h(PlanText, { text: body }) : null);
           })));
       })),
       h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t(p.admin ? 'pl_hint_admin' : 'pl_hint')));
@@ -5969,22 +5992,46 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   }
 
   /* ---------- admin: the plan template ----------
-     две колонки (30 / 60 дней); пункт — карточка: номер, текст (правится на месте, высота по тексту), программа и
-     удаление значком; новый пункт — строкой внизу своей колонки (Enter или «+») */
-  function planRows(s) { return Math.max(2, Math.min(8, String(s || '').split('\n').reduce(function (a, l) { return a + Math.max(1, Math.ceil(l.length / 34)); }, 0))); }
+     две колонки (30 / 60 дней); этап — карточка: номер, название, длинный текст (высота по тексту, без обрезки),
+     срок (перенос в другую колонку), ↑ ↓, удаление с подтверждением; новый этап — внизу колонки: название или весь текст
+     (первая строка — название), Ctrl+Enter или «Qo‘shish» */
+  var PL_TITLE_MAX = 200, PL_TEXT_MAX = 8000;
+  function planRows(s, min) { return Math.max(min || 2, Math.min(40, String(s || '').split('\n').reduce(function (a, l) { return a + Math.max(1, Math.ceil(l.length / 60)); }, 0))); }
+  /* pasted text: the first line — the name, the rest — the text; Word's stray spaces and empty lines go */
+  function planSplit(raw) {
+    var ls = planLines(String(raw || '').replace(/\r/g, '')).split('\n').map(function (l) { return l.replace(/^[ \t\u00a0]+|[ \t\u00a0]+$/g, ''); });
+    while (ls.length && !ls[0].trim()) ls.shift();
+    var title = (ls.shift() || '').trim(), body = ls.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+    if (title.length > PL_TITLE_MAX) { body = (title + (body ? '\n' + body : '')); title = title.slice(0, 80).replace(/\s+\S*$/, '') + '…'; }
+    return { title: title, body: body.slice(0, PL_TEXT_MAX) };
+  }
   function PlanAddRow(p) {
     var t = p.t, v = useState('');
-    function go(e) { if (e) e.preventDefault(); var x = v[0].trim(); if (!x) return; p.onAdd(x); v[1](''); }
+    function go(e) { if (e) e.preventDefault(); if (!v[0].trim()) return; p.onAdd(planSplit(v[0])); v[1](''); }
     return h('form', { className: 'pa-add', onSubmit: go },
-      h('input', { className: 'lor-input slim', id: 'pl-new-' + p.day, value: v[0], placeholder: t('pl_new_ph'), 'aria-label': t('pl_add') + ' · ' + tpl(t('pl_day'), { n: p.day }), maxLength: 300, onChange: function (e) { v[1](e.target.value); } }),
-      h('button', { type: 'submit', className: 'pa-plus', disabled: !v[0].trim(), title: t('pl_add'), 'aria-label': t('pl_add') }, h(Ico, { name: 'plus', size: 18 })));
+      h('textarea', { className: 'lor-input pa-new', id: 'pl-new-' + p.day, value: v[0], rows: planRows(v[0], 2), placeholder: t('pl_new_ph'), 'aria-label': t('pl_add') + ' · ' + tpl(t('pl_day'), { n: p.day }), maxLength: PL_TITLE_MAX + PL_TEXT_MAX,
+        onChange: function (e) { v[1](e.target.value); }, onKeyDown: function (e) { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) go(e); } }),
+      h('div', { className: 'pa-add-row' },
+        h('span', { className: 'lor-sm lor-muted' }, t('pl_add_key')),
+        h('button', { type: 'submit', className: 'pa-plus', disabled: !v[0].trim(), title: t('pl_add'), 'aria-label': t('pl_add') }, h(Ico, { name: 'plus', size: 18 }), h('span', null, t('pl_add_btn')))));
   }
   function PlanAdmin(p) {
-    var t = p.t, db = p.db, list = planTplOf(db);
+    var t = p.t, db = p.db, list = planTplOf(db), cf = useState(null);
     function save(id, fn) { p.update(function (d) { d.planTpl = (d.planTpl || []).map(function (x) { if (x.id !== id) return x; var c = clone(x); fn(c); return c; }); }); }
-    function remove(id) { p.update(function (d) { d.planTpl = (d.planTpl || []).filter(function (x) { return x.id !== id; }); }); p.say(t('pl_deleted')); }
-    function create(day, text) {
-      p.update(function (d) { var o = { id: 'pl' + nextId(d), day: day, track: null, text: {} }; o.text[p.lang] = text; d.planTpl = (d.planTpl || []).concat([o]); });
+    function setLang(c, k, v) { if (typeof c[k] !== 'object' || !c[k]) c[k] = c[k] ? { uz: c[k] } : {}; c[k][p.lang] = v; }
+    /* an old item (text only): on the first edit its first line becomes the name, the rest — the text */
+    function edit(x, k, v) { save(x.id, function (c) { if (!anyLang(c.title, p.lang).trim()) { setLang(c, 'title', planTitle(x, p.lang)); setLang(c, 'text', planBody(x, p.lang)); } setLang(c, k, v); }); }
+    function remove(id) { cf[1](null); p.update(function (d) { d.planTpl = (d.planTpl || []).filter(function (x) { return x.id !== id; }); }); p.say(t('pl_deleted')); }
+    /* ↑ ↓ — swaps with the neighbour of the same column */
+    function move(id, dl) {
+      p.update(function (d) {
+        var all = d.planTpl || [], i = all.findIndex(function (x) { return x.id === id; }); if (i < 0) return;
+        var same = all.map(function (x, k) { return x.day === all[i].day ? k : -1; }).filter(function (k) { return k >= 0; }), at = same.indexOf(i), j = same[at + dl];
+        if (j == null) return; var tmp = all[i]; all[i] = all[j]; all[j] = tmp;
+      });
+    }
+    function create(day, x) {
+      p.update(function (d) { var o = { id: 'pl' + nextId(d), day: day, title: {}, text: {} }; o.title[p.lang] = x.title; o.text[p.lang] = x.body; d.planTpl = (d.planTpl || []).concat([o]); });
       p.say(t('pl_added'));
     }
     return h('div', { className: 'cs-admin' },
@@ -5995,13 +6042,23 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         return h('section', { key: day, className: 'pa-col', 'aria-label': tpl(t('pl_day'), { n: day }) },
           h('header', { className: 'pa-col-h' }, h('span', { className: 'pa-day' }, tpl(t('pl_day'), { n: day })), h('span', { className: 'lor-count' }, items.length)),
           items.length ? h('ol', { className: 'pa-list' }, items.map(function (x, i) {
-            var txt = planText(x, p.lang);
+            var name = planTitle(x, p.lang), txt = planBody(x, p.lang);
             return h('li', { key: x.id, className: 'pa-item' },
               h('span', { className: 'pa-n', 'aria-hidden': true }, i + 1),
               h('div', { className: 'pa-body' },
-                h('textarea', { className: 'pa-text', id: 'plt-' + x.id, rows: planRows(txt), value: txt, 'aria-label': t('pl_text') + ' ' + (i + 1), onChange: function (e) { var v = e.target.value; save(x.id, function (c) { if (typeof c.text === 'string') c.text = { uz: c.text }; c.text[p.lang] = v; }); } }),
-                h('div', { className: 'pa-foot' },
-                  h('button', { type: 'button', className: 'pa-del', title: t('remove'), 'aria-label': t('remove') + ': ' + txt.slice(0, 60), onClick: function () { remove(x.id); } }, h(Ico, { name: 'trash', size: 17 })))));
+                h('input', { className: 'pa-title', id: 'plh-' + x.id, value: name, maxLength: PL_TITLE_MAX, placeholder: t('pl_title_ph'), 'aria-label': t('pl_title_l') + ' ' + (i + 1), onChange: function (e) { edit(x, 'title', e.target.value); } }),
+                h('textarea', { className: 'pa-text', id: 'plt-' + x.id, rows: planRows(txt, 3), value: txt, maxLength: PL_TEXT_MAX, placeholder: t('pl_body_ph'), 'aria-label': t('pl_text') + ' ' + (i + 1), onChange: function (e) { edit(x, 'text', e.target.value); } }),
+                cf[0] === x.id ? h('div', { className: 'pa-foot pa-confirm', role: 'alert' },
+                    h('span', { className: 'lor-sm' }, t('pl_del_q') + ' «' + name.slice(0, 60) + '»'),
+                    h(Btn, { variant: 'ghost', size: 'sm', onClick: function () { cf[1](null); } }, t('cancel')),
+                    h(Btn, { variant: 'outline', size: 'sm', onClick: function () { remove(x.id); } }, t('yes_del')))
+                  : h('div', { className: 'pa-foot' },
+                    h('select', { className: 'lor-input slim pa-day-sel', id: 'pld-' + x.id, 'aria-label': t('pl_when'), value: x.day, onChange: function (e) { var v = +e.target.value; save(x.id, function (c) { c.day = v; }); } },
+                      PLAN_DAYS.map(function (dd) { return h('option', { key: dd, value: dd }, tpl(t('pl_day'), { n: dd })); })),
+                    h('button', { type: 'button', className: 'pa-ic', disabled: i === 0, title: t('up'), 'aria-label': t('up'), onClick: function () { move(x.id, -1); } }, '↑'),
+                    h('button', { type: 'button', className: 'pa-ic', disabled: i === items.length - 1, title: t('down'), 'aria-label': t('down'), onClick: function () { move(x.id, 1); } }, '↓'),
+                    h('span', { className: 'pa-gap' }),
+                    h('button', { type: 'button', className: 'pa-del', title: t('remove'), 'aria-label': t('remove') + ': ' + name.slice(0, 60), onClick: function () { cf[1](x.id); } }, h(Ico, { name: 'trash', size: 17 })))));
           })) : h('p', { className: 'lor-sm lor-muted pa-empty' }, t('pl_col_empty')),
           h(PlanAddRow, { t: t, day: day, onAdd: function (x) { create(day, x); } }));
       })));
@@ -10387,12 +10444,16 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
 
     /* the study clock: a second counts only when all of these hold — a lesson, its test, AI-trenajyor or Keyslar is open (or the AI mentor), the tab
        is visible, this browser window has the focus (a lesson video playing inside counts), the protection cover is not on, and
-       the employee moved, typed or scrolled in the last 2 minutes (15 while a lesson video plays); the quiet seconds count when he
-       moves again, and a 2-minute silence keeps only 1 minute of them. Anything else — pause: another
+       the employee moved, typed or scrolled in the last 6 minutes (15 while a lesson video plays); the quiet seconds count when he
+       moves again, and a 6-minute silence keeps only 2 minutes of them and reloads the page (not on a test, AI-trenajyor, the
+       AI mentor, an open window or a half-typed text — nothing is lost); after that the clock waits for the first move.
+       Anything else — pause: another
        page, another window or program, the tab hidden, the site closed or the account left. The seconds short of a minute stay
        in this browser for today (localStorage) and go on next time; whole minutes go to the server. Two tabs do not count twice:
        only the focused one runs, and it alone writes the seconds */
     var activeRef = useRef(false); activeRef.current = ready && (STUDY_ROUTES.indexOf(route.name) >= 0 || ai[0]);
+    /* reloading after a long silence must lose nothing: not on a test or AI-trenajyor, not with the AI mentor or a window open */
+    var rlOkRef = useRef(false); rlOkRef.current = ready && route.name !== 'quiz' && route.name !== 'drill' && !ai[0];
     var lastAct = useRef(Date.now()), prevMin = useRef(studyMin(db, u.id));
     useEffect(function () {
       var key = 'lor-study-sec:' + u.id, day = todayKey(), lastTick = Date.now(), last = 'page';
@@ -10400,7 +10461,15 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       function keep(v) { try { localStorage.setItem(key, JSON.stringify({ d: day, s: v })); } catch (e) {} }
       /* sec — counted seconds short of a minute; pend — seconds since the last move: they count once the employee moves, scrolls,
          switches away or leaves (he was reading), and only 1 minute of them if he went quiet for 2 minutes (he walked away) */
-      var sec = load(), pend = 0;
+      var sec = load(), pend = 0, idleRl = false;
+      try { idleRl = sessionStorage.getItem(IDLE_RL) === '1'; } catch (e) {}
+      if (idleRl) { lastAct.current = 0; setTimeout(function () { p.say(t('idle_reloaded')); }, 400); }   // reloaded for silence: the clock waits for a move
+      function typed() { return Array.prototype.some.call(document.querySelectorAll('textarea, input:not([type]), input[type="text"], input[type="search"], [contenteditable="true"]'), function (el) { return String(el.value != null ? el.value : el.textContent).trim(); }); }
+      function reloadNow() {
+        if (idleRl || !rlOkRef.current || document.querySelector('.lor-scrim') || typed()) return;
+        idleRl = true; try { sessionStorage.setItem(IDLE_RL, '1'); } catch (e) {}
+        location.reload();   // pagehide keeps the counted seconds
+      }
       function commit(v) {
         if (!v) return;
         sec += v;
@@ -10411,14 +10480,18 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         keep(sec); show();
       }
       /* the chip: counted seconds + the quiet ones, at most a minute of them (more is cut if he walked away — no jump back) */
-      function show() { studySet(last, sec + Math.min(pend, 60)); }
-      function act() { lastAct.current = Date.now(); if (pend) { var v = pend; pend = 0; commit(v); } }
+      function show() { studySet(last, sec + Math.min(pend, STUDY_QUIET)); }
+      function act() {
+        lastAct.current = Date.now();
+        if (idleRl) { idleRl = false; try { sessionStorage.removeItem(IDLE_RL); } catch (e) {} }
+        if (pend) { var v = pend; pend = 0; commit(v); }
+      }
+      function quiet() { var a = document.activeElement, vid = !!a && a.tagName === 'IFRAME'; return Date.now() - lastAct.current > (vid ? STUDY_IDLE_VIDEO : STUDY_IDLE); }
       function reason() {
         if (!activeRef.current) return 'page';
         if (document.visibilityState !== 'visible') return 'hidden';
-        var a = document.activeElement, vid = !!a && a.tagName === 'IFRAME';
         if (!document.hasFocus() || document.documentElement.classList.contains('grd-covered')) return 'away';
-        return Date.now() - lastAct.current > (vid ? STUDY_IDLE_VIDEO : STUDY_IDLE) ? 'idle' : 'run';
+        return quiet() ? 'idle' : 'run';
       }
       function tick() {
         var now = Date.now(), dt = Math.max(0, Math.min(5, Math.round((now - lastTick) / 1000)));   // a sleeping computer adds at most 5 s
@@ -10426,15 +10499,22 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         if (todayKey() !== day) { day = todayKey(); sec = 0; pend = 0; }
         var r = reason();
         if (r === 'run') pend += dt;
-        else if (last === 'run') { var v = pend; pend = 0; commit(r === 'idle' ? Math.min(v, 60) : v); }   // went quiet / switched away / left the lesson
+        else if (last === 'run') { var v = pend; pend = 0; commit(r === 'idle' ? Math.min(v, STUDY_QUIET) : v); }   // went quiet / switched away / left the lesson
         else sec = load();   // another tab may have counted meanwhile
         last = r;
         show();
+        if (quiet()) reloadNow();   // 6 minutes without a move on the site — the page starts afresh, the clock stays stopped
       }
       function now() { setTimeout(tick, 0); }
-      var evs = ['mousemove', 'keydown', 'wheel', 'touchstart', 'pointerdown'];
+      /* only a real move counts: the browser sends a «mousemove» on the spot after the page is drawn and restores the scroll
+         after a reload — neither is the employee */
+      var mpos = null;
+      function mmove(e) { var k = e.screenX + ':' + e.screenY; if (k === mpos) return; var first = mpos == null; mpos = k; if (!first) act(); }
+      function scrolled() { if (!idleRl) act(); }
+      var evs = ['keydown', 'wheel', 'touchstart', 'pointerdown'];
       evs.forEach(function (e) { window.addEventListener(e, act, { passive: true }); });
-      document.addEventListener('scroll', act, { passive: true, capture: true });   // any scrolled box — the lesson text, the test
+      window.addEventListener('mousemove', mmove, { passive: true });
+      document.addEventListener('scroll', scrolled, { passive: true, capture: true });   // any scrolled box — the lesson text, the test
       window.addEventListener('focus', now); window.addEventListener('blur', now); document.addEventListener('visibilitychange', now);
       function bye() { var v = Math.min(pend, 59); pend = 0; commit(v); }   // the tab is closing — a full minute goes to the server (queue), the rest waits here
       window.addEventListener('pagehide', bye);
@@ -10443,7 +10523,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         window.removeEventListener('pagehide', bye);
         clearInterval(id); if (pend) keep(Math.min(59, sec + Math.min(pend, 59))); studySet('page', 0);   // leaving the account — the seconds wait for next time
         evs.forEach(function (e) { window.removeEventListener(e, act); });
-        document.removeEventListener('scroll', act, { capture: true });
+        window.removeEventListener('mousemove', mmove);
+        document.removeEventListener('scroll', scrolled, { capture: true });
         window.removeEventListener('focus', now); window.removeEventListener('blur', now); document.removeEventListener('visibilitychange', now);
       };
     }, []);
