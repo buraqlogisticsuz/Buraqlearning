@@ -453,6 +453,9 @@ try {
     const chipNow = () => E.evaluate(() => { const c = document.querySelector('.today-chip'); return { cls: c.className, txt: c.textContent, title: c.title }; });
     await E.mouse.move(300, 300); await E.waitForTimeout(1300);
     assert.match((await chipNow()).cls, /is-run/, 'на уроке время идёт');
+    { const sec = x => { const m = x.match(/(\d+):(\d\d):(\d\d) \/ 2:00:00/); return m ? +m[1] * 3600 + +m[2] * 60 + +m[3] : -1; };
+      const a = sec((await chipNow()).txt); await E.mouse.move(310, 305); await E.waitForTimeout(2200); await E.mouse.move(305, 300); await E.waitForTimeout(1100);
+      const b = sec((await chipNow()).txt); assert.ok(a >= 0 && b >= a + 2, 'часы идут по секундам: ' + a + ' → ' + b); }
     await E.evaluate(() => { Object.defineProperty(document, 'hasFocus', { value: () => false, configurable: true }); window.dispatchEvent(new Event('blur')); }); await E.waitForTimeout(400);
     let c = await chipNow(); assert.ok(/is-pause/.test(c.cls) && /pauza/.test(c.txt) && /boshqa oyna/.test(c.title), JSON.stringify(c));
     await E.evaluate(() => { delete document.hasFocus; window.dispatchEvent(new Event('focus')); }); await E.mouse.move(320, 310); await E.waitForTimeout(1300);
@@ -462,7 +465,9 @@ try {
     const later = E.locator('.lor-scrim .lor-modal button', { hasText: 'Keyinroq' });   // уходит с урока — «Keyinroq»
     if (await later.count()) { await later.first().click(); await E.waitForTimeout(500); }
     await E.waitForFunction(() => /^#home|^$/.test(location.hash), null, { timeout: 5000 }); await E.waitForTimeout(1300);   // часы обновляются раз в секунду
-    c = await chipNow(); assert.ok(/is-pause/.test(c.cls) && !/pauza/.test(c.txt) && /faqat dars va test/.test(c.title), JSON.stringify(c));
+    c = await chipNow(); assert.ok(/is-pause/.test(c.cls) && !/pauza/.test(c.txt) && /darslar, testlar, Keyslar va AI-trenajyorda/.test(c.title), JSON.stringify(c));
+    await nav(E, 'drill'); await E.mouse.move(280, 290); await E.waitForTimeout(1300);
+    assert.match((await chipNow()).cls, /is-run/, 'в AI-trenajyor время тоже идёт');
     await openLesson(E, '4.1. Test standarti');
     for (let k = 0; k < 3 && await E.locator('.lor-scrim .lor-modal').count(); k++) { await E.keyboard.press('Escape'); await E.waitForTimeout(300); } }
   // мол-мулк: SOP-менеджер закрепляет вещь → у сотрудника вкладка «Mol-mulk 1» → «Qabul qildim» → SOP-менеджеру уведомление

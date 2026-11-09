@@ -129,7 +129,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   function avgMinutes(db, u) { var st = (db.study || {})[u.id] || {}, sum = 0; for (var k in st) sum += st[k]; return sum / daysSince(u); }
   function streakOf(db, uid) { var s = studyMin(db, uid) >= GOAL ? 1 : 0; for (var i = 1; i < 400; i++) { if (studyMin(db, uid, dayKey(Date.now() - i * DAY)) >= GOAL) s++; else break; } return s; }
 
-  /* the study clock's state for the header chip: run — counting; page / hidden / away / idle — paused, and why.
+  /* the study clock's state for the header chip: run — counting; page / hidden / away / idle — paused, and why;
+     sec — seconds of today on top of the whole minutes on the server (the chip ticks every second, not once a minute).
      A small store of its own: only the chip re-renders every second, not the whole page */
   var STUDY = { st: 'page', sec: 0, subs: [] };
   function studySet(st, sec) { if (STUDY.st === st && STUDY.sec === sec) return; STUDY.st = st; STUDY.sec = sec; STUDY.subs.forEach(function (f) { f(); }); }
@@ -139,11 +140,13 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     return STUDY;
   }
   var STUDY_IDLE = 120e3, STUDY_IDLE_VIDEO = 15 * 60e3;   // no move, key or scroll for 2 min — pause; a lesson video playing — 15 min
+  var STUDY_ROUTES = ['lesson', 'quiz', 'drill', 'cases'];   // where study time counts: lessons, tests, AI-trenajyor, Keyslar (+ the AI mentor)
+  function hms(s) { s = Math.max(0, Math.floor(s)); return Math.floor(s / 3600) + ':' + pad(Math.floor(s / 60) % 60) + ':' + pad(s % 60); }
   function TodayChip(p) {
-    var S = useStudyState(), t = p.t, m = studyMin(p.db, p.user.id), pct = Math.min(100, m * 100 / GOAL), run = S.st === 'run', odd = !run && S.st !== 'page';
+    var S = useStudyState(), t = p.t, m = studyMin(p.db, p.user.id), all = m * 60 + (S.sec || 0), pct = Math.min(100, all * 100 / (GOAL * 60)), run = S.st === 'run', odd = !run && S.st !== 'page';
     var why = t('st_' + S.st);
     return h('button', { type: 'button', className: cx('today-chip', m >= GOAL && 'is-done', run ? 'is-run' : 'is-pause'), onClick: p.onClick, title: why + ' · ' + t('today_goal') + ': ' + t('goal_2h'), 'aria-label': t('today') + ' ' + hm(m) + ' / 2:00 · ' + why },
-      h('span', null, h('em', { className: 'st-dot', 'aria-hidden': true }), t('today') + ' ' + hm(m) + ' / 2:00', odd ? h('small', null, ' · ' + t('st_pause')) : null),
+      h('span', null, h('em', { className: 'st-dot', 'aria-hidden': true }), t('today') + ' ' + hms(all) + ' / 2:00:00', odd ? h('small', null, ' · ' + t('st_pause')) : null),
       h('i', null, h('b', { style: { width: pct + '%' } })));
   }
 
@@ -10467,14 +10470,14 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       else if (n.path) go({ name: 'path' }); else go({ name: 'home' });
     }
 
-    /* the study clock: a second counts only when all of these hold — a lesson or its test is open (or the AI mentor), the tab
+    /* the study clock: a second counts only when all of these hold — a lesson, its test, AI-trenajyor or Keyslar is open (or the AI mentor), the tab
        is visible, this browser window has the focus (a lesson video playing inside counts), the protection cover is not on, and
        the employee moved, typed or scrolled in the last 2 minutes (15 while a lesson video plays); the quiet seconds count when he
        moves again, and a 2-minute silence keeps only 1 minute of them. Anything else — pause: another
        page, another window or program, the tab hidden, the site closed or the account left. The seconds short of a minute stay
        in this browser for today (localStorage) and go on next time; whole minutes go to the server. Two tabs do not count twice:
        only the focused one runs, and it alone writes the seconds */
-    var activeRef = useRef(false); activeRef.current = ready && (route.name === 'lesson' || route.name === 'quiz' || ai[0]);
+    var activeRef = useRef(false); activeRef.current = ready && (STUDY_ROUTES.indexOf(route.name) >= 0 || ai[0]);
     var lastAct = useRef(Date.now()), prevMin = useRef(studyMin(db, u.id));
     useEffect(function () {
       var key = 'lor-study-sec:' + u.id, day = todayKey(), lastTick = Date.now(), last = 'page';
@@ -10490,8 +10493,10 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           var add = Math.floor(sec / 60); sec -= add * 60;
           p.update(function (d) { d.study = d.study || {}; var st = d.study[u.id] = d.study[u.id] || {}, k = todayKey(), before = st[k] || 0; st[k] = before + add; if (before < GOAL && st[k] >= GOAL) notify(d, u.id, t('goal_done') + ' ✓'); });
         }
-        keep(sec);
+        keep(sec); show();
       }
+      /* the chip: counted seconds + the quiet ones, at most a minute of them (more is cut if he walked away — no jump back) */
+      function show() { studySet(last, sec + Math.min(pend, 60)); }
       function act() { lastAct.current = Date.now(); if (pend) { var v = pend; pend = 0; commit(v); } }
       function reason() {
         if (!activeRef.current) return 'page';
@@ -10509,16 +10514,19 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         else if (last === 'run') { var v = pend; pend = 0; commit(r === 'idle' ? Math.min(v, 60) : v); }   // went quiet / switched away / left the lesson
         else sec = load();   // another tab may have counted meanwhile
         last = r;
-        studySet(r, sec);
+        show();
       }
       function now() { setTimeout(tick, 0); }
       var evs = ['mousemove', 'keydown', 'wheel', 'touchstart', 'pointerdown'];
       evs.forEach(function (e) { window.addEventListener(e, act, { passive: true }); });
       document.addEventListener('scroll', act, { passive: true, capture: true });   // any scrolled box — the lesson text, the test
       window.addEventListener('focus', now); window.addEventListener('blur', now); document.addEventListener('visibilitychange', now);
+      function bye() { var v = Math.min(pend, 59); pend = 0; commit(v); }   // the tab is closing — a full minute goes to the server (queue), the rest waits here
+      window.addEventListener('pagehide', bye);
       var id = setInterval(tick, 1000);
       return function () {
-        clearInterval(id); if (pend) keep(sec + Math.min(pend, 59)); studySet('page', sec);   // leaving the account — the seconds wait for next time
+        window.removeEventListener('pagehide', bye);
+        clearInterval(id); if (pend) keep(Math.min(59, sec + Math.min(pend, 59))); studySet('page', 0);   // leaving the account — the seconds wait for next time
         evs.forEach(function (e) { window.removeEventListener(e, act); });
         document.removeEventListener('scroll', act, { capture: true });
         window.removeEventListener('focus', now); window.removeEventListener('blur', now); document.removeEventListener('visibilitychange', now);
