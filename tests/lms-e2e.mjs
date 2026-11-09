@@ -183,7 +183,7 @@ try {
   step('сотрудник принял условия');
   await shot(E, '3-after-terms');
 
-  // анкета: личные данные со сканом паспорта → контакты → опыт → мол-мулк
+  // анкета: личные данные со сканом паспорта → контакты → опыт
   await E.fill('#f-lastName', 'Karimova'); await E.fill('#f-firstName', 'Dilnoza'); await E.fill('#f-birth', '1998-04-12');
   await E.fill('#f-passport', 'AA 1234567'); await E.fill('#f-address', 'Toshkent sh., Chilonzor');
   const pdf = Buffer.concat([Buffer.from('%PDF-1.4\n'), Buffer.alloc(6000, 65)]);
@@ -192,15 +192,13 @@ try {
   await E.fill('#f-phone', '+998 90 123 45 67'); await E.fill('#f-telegram', '@dilnoza'); await E.fill('#f-emgName', 'Ona'); await E.fill('#f-emgPhone', '+998 90 765 43 21');
   await click(E, 'Saqlash va davom etish');
   await E.selectOption('#f-education', 'Oliy (bakalavr)'); await E.fill('#f-years', '2');
-  await click(E, 'Saqlash va davom etish', { wait: 300 });            // «Tillar» обязателен
+  await click(E, 'Anketani yakunlash', { wait: 300 });                 // «Tillar» обязателен — анкета не уходит
   assert.equal(await E.locator('.ac-chip').count(), 5, 'Tillar: O‘zbek, Rus, Xitoy, Turk, Boshqa');
   await E.locator('.ac-chip', { hasText: 'Rus' }).click(); await E.locator('.ac-chip', { hasText: 'O‘zbek' }).click();
   await E.locator('.ac-chip', { hasText: 'Boshqa' }).click(); await E.fill('#f-languages-other', 'ingliz');
   await shot(E, '3-langs');
-  await click(E, 'Saqlash va davom etish');
-  await shot(E, '4-assets');
-  await E.getByText('Menga hozircha kompaniya mol-mulki berilmagan').click();
-  await E.getByText('Moddiy javobgarlik.', { exact: false }).click();
+  // мол-мулка в анкете больше нет: последний шаг — «Tajriba», сразу «Anketani yakunlash»
+  assert.equal(await E.locator('.lor-stepper li').count(), 3, 'шаги: shaxsiy · aloqa · tajriba');
   await click(E, 'Anketani yakunlash', { wait: 800 });
   await settle(E);
   const me1 = srv.g.state().users.find(u => u.id === emp.id);
@@ -462,6 +460,29 @@ try {
     const later = E.locator('.lor-scrim .lor-modal button', { hasText: 'Keyinroq' });   // уходит с урока — «Keyinroq»
     if (await later.count()) { await later.first().click(); await E.waitForTimeout(500); }
     c = await chipNow(); assert.ok(/is-pause/.test(c.cls) && !/pauza/.test(c.txt) && /faqat dars va test/.test(c.title), JSON.stringify(c));
+    await openLesson(E, '4.1. Test standarti');
+    for (let k = 0; k < 3 && await E.locator('.lor-scrim .lor-modal').count(); k++) { await E.keyboard.press('Escape'); await E.waitForTimeout(300); } }
+  // мол-мулк: SOP-менеджер закрепляет вещь → у сотрудника вкладка «Mol-mulk 1» → «Qabul qildim» → SOP-менеджеру уведомление
+  { await nav(A, 'assets'); await A.getByRole('button', { name: /Mol-mulk biriktirish/ }).first().click();
+    await A.selectOption('#f-asg-uid', String(emp.id)); await A.fill('#f-asg-name', 'Lenovo ThinkPad E14'); await A.fill('#f-asg-serial', 'BQ-0042');
+    await A.getByRole('button', { name: 'Biriktirish' }).click(); await settle(A);
+    const it = () => (srv.g.state().assets || []).find(a => a.serial === 'BQ-0042');
+    assert.equal(it().status, 'issued');
+    await E.evaluate(() => LmsClient.sync()); await E.waitForTimeout(500);
+    const tab = E.locator('a[href="#assets"]:visible').first();
+    assert.match(await tab.innerText(), /Mol-mulk\s*1/, 'вкладка «Mol-mulk» сверху — со счётчиком выданного');
+    await tab.click(); await E.waitForTimeout(600);
+    const later = E.locator('.lor-scrim .lor-modal button', { hasText: 'Keyinroq' }); if (await later.count()) { await later.first().click(); await E.waitForTimeout(500); }
+    assert.match(await txt(E, '.as-pending'), /Sizga berildi — qabul qiling · 1[\s\S]*Lenovo ThinkPad E14/i);
+    await E.locator('.as-pending').getByRole('button', { name: /Qabul qildim/ }).click(); await settle(E);
+    assert.equal(it().status, 'active'); assert.ok(it().confirmedAt);
+    const n = srv.g.state().notifications.find(x => x.kind === 'asset_in' && x.userId === srv.g.state().users.find(u => u.login === srv.admin.login).id);
+    assert.ok(n && n.assetIn.k === 'ok' && n.assetIn.items[0] === 'Lenovo ThinkPad E14', 'SOP-менеджеру — «qabul qildi»');
+    await A.evaluate(() => LmsClient.sync()); await A.waitForTimeout(500);
+    await A.locator('button.lor-bell').first().click(); await A.waitForTimeout(400);
+    assert.match(await txt(A, '.notif-pop'), /mol-mulkni qabul qildi: Lenovo ThinkPad E14/);
+    await A.keyboard.press('Escape'); await A.mouse.click(5, 500);
+    assert.deepEqual(await rejected(E), [], 'сервер принял «Qabul qildim»');
     await openLesson(E, '4.1. Test standarti');
     for (let k = 0; k < 3 && await E.locator('.lor-scrim .lor-modal').count(); k++) { await E.keyboard.press('Escape'); await E.waitForTimeout(300); } }
   step('видео урока: ссылка YouTube встраивается, защита урока её не прячет; «Videoni yashirish» — текст во всю ширину, выбор помнится; без ссылки окна видео нет; левую панель уроков можно скрыть и вернуть');

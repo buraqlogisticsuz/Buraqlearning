@@ -4611,3 +4611,7 @@ button.jf-name { padding: 0; background: none; border: 0; border-bottom: 1px sol
 .today-chip small { font-size: 11px; opacity: .8; }
 @keyframes st-pulse { 0%, 100% { box-shadow: 0 0 0 0 var(--red-soft); } 50% { box-shadow: 0 0 0 4px transparent; } }
 @media (prefers-reduced-motion: reduce) { .today-chip.is-run .st-dot { animation: none; } }
+
+/* «Mol-mulk» сотрудника: «Hammasini qabul qildim» в шапке блока выданного; ссылка «Ro‘yxatda yo‘q narsa…» внизу */
+.as-pending .as-block-h .as-all { align-self: flex-start; margin-top: 6px; }
+.as-self { margin: 0; }

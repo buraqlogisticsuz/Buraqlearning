@@ -420,7 +420,7 @@ const pickN = n => ({ userId: n.userId, kind: n.kind, route: n.route, err: n.err
 test('since: та же версия — без данных; после правки — новое состояние', () => {
   const { D, A } = platform();
   const v = D({ action: 'load' });
-  assert.deepEqual(D({ action: 'since', rev: v.rev }), { ok: true, v: 21, ai: false, rev: v.rev, same: true });
+  assert.deepEqual(D({ action: 'since', rev: v.rev }), { ok: true, v: 22, ai: false, rev: v.rev, same: true });
   A({ action: 'patch', ops: [{ op: 'set', path: ['notifications', { id: 9 }], value: { id: 9, userId: 10427, text: 'yangi' }, after: null }] });
   const n = D({ action: 'since', rev: v.rev });
   assert.equal(n.rev, v.rev + 1); assert.equal(n.state.notifications[0].text, 'yangi');
@@ -1065,4 +1065,18 @@ test('цены (v21): объявленные и доступные — сотр�
   assert.equal(A({ action: 'load' }).state.prices.length, 3, 'SOP-менеджер видит и черновик');
   const r = D({ action: 'patch', ops: [pl('p9', 'published', { mode: 'all' }), { op: 'set', path: ['prices', { id: 'p1' }, 'items', { id: 'i1' }, 'price'], value: '1' }] });
   assert.equal(r.rejected.length, 2, 'сотрудник цены не меняет');
+});
+
+test('мол-мулк (v22): сотрудник принял выданное — уведомление SOP-менеджеру; чужие виды уведомлений другим — нет', () => {
+  const { g, A, D } = platform();
+  assert.deepEqual(rejected(A({ action: 'patch', ops: [{ op: 'set', path: ['assets', { id: 'a1' }], value: { id: 'a1', uid: 10427, type: 'laptop', name: 'Noutbuk', qty: 1, status: 'issued', src: 'hr', at: 1 } }] })), []);
+  const r = D({ action: 'patch', ops: [
+    { op: 'set', path: ['assets', { id: 'a1' }, 'status'], value: 'active' },
+    { op: 'set', path: ['assets', { id: 'a1' }, 'confirmedAt'], value: 5 },
+    { op: 'set', path: ['notifications', { id: 41 }], value: { id: 41, userId: 10001, kind: 'asset_in', assetIn: { k: 'ok', uid: 10427, name: 'Dilnoza Karimova', items: ['Noutbuk'] }, route: 'assets' }, after: null },
+    { op: 'set', path: ['notifications', { id: 42 }], value: { id: 42, userId: 10001, kind: 'asset', asset: { k: 'assigned', name: 'X' } }, after: null }] });
+  assert.deepEqual(rejected(r), ['уведомление другому — только о своём действии'], 'принять — можно, «выдано» от имени сотрудника — нет');
+  const a = g.state().assets.find(x => x.id === 'a1');
+  assert.equal(a.status, 'active'); assert.equal(a.confirmedAt, 5);
+  assert.ok(g.state().notifications.some(n => n.kind === 'asset_in' && n.userId === 10001), 'SOP-менеджер получил «qabul qildi»');
 });

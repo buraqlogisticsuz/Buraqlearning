@@ -21,7 +21,7 @@
  *
  * Запрос — POST с JSON { action, token, … }, ответ — JSON { ok, … } или { ok: false, code, error }.
  */
-var LMS_VERSION = 21;          // 21: цены — «Kontent → Narxlar», сотрудникам в «Baza» (prices); 20: защита правок (id карточек, тест — одна попытка, балл и статусы, минуты учёбы, уведомления другим);  2: файлы — отдельно на Диске, действие file; 3: ИИ через Claude API (действие ai);
+var LMS_VERSION = 22;          // 22: «Qabul qildim» — уведомление SOP-менеджеру и CEO (asset_in); 21: цены — «Kontent → Narxlar», сотрудникам в «Baza» (prices); 20: защита правок (id карточек, тест — одна попытка, балл и статусы, минуты учёбы, уведомления другим);  2: файлы — отдельно на Диске, действие file; 3: ИИ через Claude API (действие ai);
                                // 4: адресаты идей — CEO, Project Manager, руководитель компании (свой вход, role 'leader');
                                // 5: у идеи несколько адресатов (to — список), repliedBy — кто ответил;
                                // 6: свой профиль — имя и фото, смена логина и пароля (действие account);
@@ -874,12 +874,13 @@ function checkNew_(top, me, value) {
   var uid = String(me.id);
   if (!value || typeof value !== 'object') return 'пустая запись';
   // себе — любое уведомление; другим (v20) — только о своём действии: идея руководству, попытка снимка экрана,
-  // сверхзадача сдана на проверку, ошибка от наставника, ответ PM / руководителя на идею. Поздравление с уровнем — только себе
+  // сверхзадача сдана на проверку, ошибка от наставника, ответ PM / руководителя на идею, «Qabul qildim» по мол-мулку (v22).
+  // Поздравление с уровнем — только себе
   if (top === 'notifications') {
     if (String(value.userId) === uid) return null;
     if (value.promo) return 'поздравление с уровнем отправляет SOP-менеджер';
     var lead = me.role === 'leader' || lvl_(me) === 'boss';
-    var okKind = value.kind === 'shot' || value.kind === 'ini_in' || (value.kind === 'xt' && value.xt && value.xt.k === 'sub') || (value.kind === 'err' && me.mentor) || (value.kind === 'ini' && lead);
+    var okKind = value.kind === 'shot' || value.kind === 'ini_in' || value.kind === 'asset_in' || (value.kind === 'xt' && value.xt && value.xt.k === 'sub') || (value.kind === 'err' && me.mentor) || (value.kind === 'ini' && lead);
     return okKind && !value.text ? null : 'уведомление другому — только о своём действии';
   }
   if (top === 'errors') {
