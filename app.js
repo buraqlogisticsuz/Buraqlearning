@@ -2439,6 +2439,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           h('span', { className: 'lor-sm lor-muted' }, r.need && r.inLevel < r.need ? tpl(t('xp_to_next'), { n: r.need - r.inLevel }) : r.next ? t('xp_enough') : t('top_level'))) : null,
         p.theme ? h(ThemeBlock, { t: t, value: p.theme.v, onChange: p.theme.set }) : null,
         p.hint ? h(HintSwitch, { t: t, on: p.hint.on, onToggle: p.hint.toggle }) : null,
+        h(SysNotifySwitch, { t: t }),
         h('div', { className: 'user-pop-links' },
           p.onProfile ? h('button', { type: 'button', role: 'menuitem', className: 'profile', onClick: function () { o[1](false); p.onProfile(); } }, t('nav_profile')) : null,
           p.onPath ? h('button', { type: 'button', role: 'menuitem', onClick: function () { o[1](false); p.onPath(); } }, t('nav_path')) : null,
@@ -6385,6 +6386,60 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     },
       h('span', { className: 'hint-sw-t' }, h('b', null, t('hint_label')), h('small', null, t(on ? 'hint_on' : 'hint_off'))),
       h('span', { className: 'sw', 'aria-hidden': true }, h('i', null)));
+  }
+
+  /* ---------- system notifications (Windows / macOS) ----------
+     While the site is open in some tab — even hidden behind CRM or minimised — a new notification (and for the SOP manager a
+     new request in «So‘rovlar») also shows in the corner of the screen; a click opens it on the site. Switched on per browser
+     in the profile menu (the browser asks for permission once). Looking at the site — only the bell, no pop-up. The tab title
+     carries the count: «(3) BURAQ o‘quv platformasi» */
+  var SYSN_KEY = 'lor-sysnotif', SYSN = { subs: [] }, BASE_TITLE = document.title, SN_ICON = 'icons/icon-192.png';
+  function sysnOk() { return typeof window.Notification === 'function'; }
+  function sysnOn() { try { return sysnOk() && Notification.permission === 'granted' && localStorage.getItem(SYSN_KEY) === 'on'; } catch (e) { return false; } }
+  function sysnSet(v) { try { if (v) localStorage.setItem(SYSN_KEY, 'on'); else localStorage.removeItem(SYSN_KEY); } catch (e) {} SYSN.subs.forEach(function (f) { f(); }); }
+  function sysnShow(title, body, tag, onClick) {
+    try { var n = new Notification(title, { body: body, tag: tag, icon: SN_ICON }); n.onclick = function () { try { window.focus(); } catch (e) {} if (onClick) onClick(); if (n.close) n.close(); }; } catch (e) {}
+  }
+  function SysNotifySwitch(p) {
+    var t = p.t, s = useState(0);
+    useEffect(function () { var f = function () { s[1](function (x) { return x + 1; }); }; SYSN.subs.push(f); return function () { SYSN.subs = SYSN.subs.filter(function (g) { return g !== f; }); }; }, []);
+    if (!sysnOk()) return null;
+    var on = sysnOn(), denied = Notification.permission === 'denied';
+    function toggle() {
+      if (on) { sysnSet(false); SAY('sn_said_off'); return; }
+      if (denied) { SAY('sn_denied'); return; }
+      Promise.resolve(Notification.requestPermission()).then(function (r) {
+        if (r === 'granted') { sysnSet(true); sysnShow('BURAQ', t('sn_test'), 'buraq-test'); SAY('sn_said_on'); } else { sysnSet(false); SAY('sn_denied'); }
+      });
+    }
+    return h('button', { type: 'button', className: cx('hint-sw', 'sn-sw', on && 'is-on'), role: 'switch', 'aria-checked': on, onClick: toggle },
+      h('span', { className: 'hint-sw-t' }, h('b', null, t('sn_label')), h('small', null, t(on ? 'sn_on' : denied ? 'sn_blocked' : 'sn_off'))),
+      h('span', { className: 'sw', 'aria-hidden': true }, h('i', null)));
+  }
+  function sysnReqText(db, r, t) {
+    var who = userOf(db, r.userId).name || '—', l = r.lessonId ? findLesson(db.course, r.lessonId) : null;
+    return tpl(t('sn_req_' + (['question', 'exam', 'access', 'level'].indexOf(r.type) >= 0 ? r.type : 'other')), { name: who, x: l ? l.title : '' }).replace(/\s+[—·]\s*$/, '');
+  }
+  /* the watcher: new unread notifications of this person (and open requests for the SOP manager) since the page opened.
+     Called before any early return of the cabinet: hooks keep their order */
+  function useSysNotify(db, u, t, lang, onNotif, onReq) {
+    var seen = useRef(null), cb = useRef({}); cb.current = { n: onNotif, r: onReq };
+    var mine = db.notifications.filter(function (n) { return n.userId === u.id && !n.read; }), reqs = onReq ? db.requests.filter(function (r) { return r.state === 'open'; }) : [];
+    var cnt = mine.length + reqs.length, sig = mine.map(function (n) { return 'n' + n.id; }).concat(reqs.map(function (r) { return 'r' + r.id; })).join(',');
+    useEffect(function () { document.title = (cnt ? '(' + cnt + ') ' : '') + BASE_TITLE; }, [cnt]);
+    useEffect(function () { return function () { document.title = BASE_TITLE; }; }, []);
+    useEffect(function () {
+      var keys = sig ? sig.split(',') : [];
+      if (!seen.current) { seen.current = {}; keys.forEach(function (k) { seen.current[k] = 1; }); return; }
+      var fresh = keys.filter(function (k) { return !seen.current[k]; }); fresh.forEach(function (k) { seen.current[k] = 1; });
+      if (!fresh.length || !sysnOn() || (document.visibilityState === 'visible' && document.hasFocus())) return;
+      fresh.slice(0, 3).forEach(function (k) {
+        var id = k.slice(1);
+        if (k[0] === 'n') { var n = mine.filter(function (x) { return String(x.id) === id; })[0]; if (n) sysnShow('BURAQ', notifText(n, db, lang, t), 'buraq-' + k, function () { cb.current.n(n); }); }
+        else { var r = reqs.filter(function (x) { return String(x.id) === id; })[0]; if (r) sysnShow('BURAQ · ' + t('nav_inbox'), sysnReqText(db, r, t), 'buraq-' + k, function () { cb.current.r(r); }); }
+      });
+      if (fresh.length > 3) sysnShow('BURAQ', tpl(t('sn_more'), { n: fresh.length - 3 }), 'buraq-more');
+    }, [sig]);
   }
 
   /* ---------- day / night ----------
@@ -10404,6 +10459,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var r = useHashRoute(EMP_ROUTES, { name: 'home' }), route = r[0], dr = useState(false), ai = useState(false);
     var ini = useState(false), sv = useState(false), pHide = useState(false), tour = useState(false), gate = useState(false), gateInit = useRef(false), intro = useState(false), qn = useState(false), qnThx = useState(false);
     var pal = useState(false); usePalette(pal[0], pal[1]);
+    useSysNotify(db, u, t, p.lang, function (n) { openNotif(n); }, null);   // before any early return: hooks keep their order
     /* левая панель уроков: можно скрыть (кнопка на её краю) — страница во всю ширину; выбор помнит браузер */
     var sideOff = useState(function () { try { return localStorage.getItem('lor-side') === 'off'; } catch (e) { return false; } });
     /* the lessons list on the left — only on a lesson and its test; Home, Vazifalar, Baza… use the whole width.
@@ -11293,6 +11349,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var t = p.t, db = p.db, r = useHashRoute(ADM_ROUTES, { name: lv === 'boss' ? 'monitor' : 'inbox' }), route = r[0];
     var openN = db.requests.filter(function (x) { return x.state === 'open'; }).length + xtReview(db).length;
     function go(x) { r[1](x); window.scrollTo(0, 0); }
+    function admNotif(n) { p.update(function (d) { d.notifications.forEach(function (x) { if (x.id === n.id) x.read = true; }); }); go({ name: n.route === 'mentor' ? 'quality' : n.route === 'ideas' ? 'feedback' : (n.route || 'inbox'), tab: n.kind === 'errfix' ? 'err' : (n.tab || null), ym: n.ym || null }); }
+    useSysNotify(db, p.user, t, p.lang, admNotif, lv === 'boss' ? null : function () { go({ name: 'inbox' }); });
     var ai = useState(false), tour = useState(false), pal = useState(false);
     usePalette(pal[0], pal[1]);
     var hintOn = !!p.user.hints;
@@ -11317,7 +11375,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         hint: hint, theme: theme, onSearch: function () { pal[1](true); }, onHelp: function () { go({ name: 'help' }); }, links: [{ key: 'help', label: t('nav_help'), onClick: function () { go({ name: 'help' }); } }, { key: 'export', label: t('exp_btn'), onClick: function () { exportAll(p.say, t); } }],
         notifs: db.notifications.filter(function (n) { return n.userId === p.user.id; }), fmtNotif: function (n) { return notifText(n, db, p.lang, t); },
         onReadAll: function () { p.update(function (d) { d.notifications.forEach(function (n) { if (n.userId === p.user.id) n.read = true; }); }); },
-        onNotif: function (n) { p.update(function (d) { d.notifications.forEach(function (x) { if (x.id === n.id) x.read = true; }); }); go({ name: n.route === 'mentor' ? 'quality' : n.route === 'ideas' ? 'feedback' : (n.route || 'inbox'), tab: n.kind === 'errfix' ? 'err' : (n.tab || null), ym: n.ym || null }); } }),   // идеи у CEO / руководителя — «Fikrlar»
+        onNotif: admNotif }),   // идеи у CEO / руководителя — «Fikrlar»
       h('div', { className: 'app-body no-side' }, h('main', { className: 'app-main', id: 'main' },
         lv === 'boss' ? h('div', { className: 'ro-bar', role: 'note' }, h(Ico, { name: 'lock', size: 16 }), h('span', null, t('ro_bar'))) : null,
         h('div', { className: 'page-anim', key: route.name + (route.id || route.uid || route.lessonId || '') + (route.tab || '') + (route.ym || '') }, main), h(Foot, { t: t, onTerms: p.showTerms, admin: true, say: p.say }))),

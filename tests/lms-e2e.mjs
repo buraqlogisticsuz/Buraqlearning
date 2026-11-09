@@ -459,6 +459,7 @@ try {
     await E.locator('a[href="#home"]:visible').first().click(); await E.waitForTimeout(500);
     const later = E.locator('.lor-scrim .lor-modal button', { hasText: 'Keyinroq' });   // уходит с урока — «Keyinroq»
     if (await later.count()) { await later.first().click(); await E.waitForTimeout(500); }
+    await E.waitForFunction(() => /^#home|^$/.test(location.hash), null, { timeout: 5000 }); await E.waitForTimeout(1300);   // часы обновляются раз в секунду
     c = await chipNow(); assert.ok(/is-pause/.test(c.cls) && !/pauza/.test(c.txt) && /faqat dars va test/.test(c.title), JSON.stringify(c));
     await openLesson(E, '4.1. Test standarti');
     for (let k = 0; k < 3 && await E.locator('.lor-scrim .lor-modal').count(); k++) { await E.keyboard.press('Escape'); await E.waitForTimeout(300); } }
@@ -483,6 +484,31 @@ try {
     assert.match(await txt(A, '.notif-pop'), /mol-mulkni qabul qildi: Lenovo ThinkPad E14/);
     await A.keyboard.press('Escape'); await A.mouse.click(5, 500);
     assert.deepEqual(await rejected(E), [], 'сервер принял «Qabul qildim»');
+    // уведомления на компьютере (Windows / macOS): SOP-менеджер включает в меню профиля — браузер спрашивает разрешение,
+    // приходит пробное; пока он в другом окне, новая заявка сотрудника — в углу экрана; в заголовке вкладки — счётчик
+    await A.evaluate(() => {
+      window.__sn = [];
+      window.Notification = function (title, o) { window.__sn.push({ title, body: o && o.body, tag: o && o.tag }); this.close = () => {}; };
+      window.Notification.permission = 'default';
+      window.Notification.requestPermission = () => { window.Notification.permission = 'granted'; return Promise.resolve('granted'); };
+    });
+    await A.locator('.user-btn').first().click(); await A.waitForTimeout(300);
+    assert.match(await txt(A, '.sn-sw'), /Kompyuter bildirishnomalari\s*O‘chirilgan/);
+    await A.locator('.sn-sw').click(); await A.waitForTimeout(400);
+    assert.match(await txt(A, '.sn-sw'), /Yoqilgan/);
+    assert.equal((await A.evaluate(() => window.__sn))[0].tag, 'buraq-test', 'пробное уведомление');
+    await A.keyboard.press('Escape'); await A.mouse.click(5, 500);
+    await A.evaluate(() => { Object.defineProperty(document, 'hasFocus', { value: () => false, configurable: true }); });
+    const eTk = await E.evaluate(() => localStorage.getItem('lor-lms-token'));
+    const lid = srv.g.state().course.sections.flatMap(s => s.lessons).find(l => l.title === '4.1. Test standarti').id;
+    assert.deepEqual(srv.g.post({ token: eTk, action: 'patch', ops: [{ op: 'set', path: ['requests', { id: 'q-sn' }], value: { id: 'q-sn', type: 'question', userId: emp.id, lessonId: lid, text: 'Packing list qachon?', at: Date.now(), state: 'open', unread: true }, after: null }] }).rejected || [], []);
+    await A.evaluate(() => LmsClient.sync()); await A.waitForTimeout(700);
+    const sn = await A.evaluate(() => window.__sn);
+    assert.ok(sn.some(x => x.tag === 'buraq-rq-sn' && /savol — 4\.1\. Test standarti/.test(x.body)), JSON.stringify(sn));
+    assert.match(await A.evaluate(() => document.title), /^\(\d+\) BURAQ o‘quv platformasi$/, 'счётчик в заголовке вкладки');
+    await A.evaluate(() => { delete document.hasFocus; });
+    srv.g.post({ token: eTk, action: 'patch', ops: [{ op: 'set', path: ['requests', { id: 'q-sn' }, 'state'], value: 'closed' }] });
+    await A.evaluate(() => LmsClient.sync()); await A.waitForTimeout(400);
     await openLesson(E, '4.1. Test standarti');
     for (let k = 0; k < 3 && await E.locator('.lor-scrim .lor-modal').count(); k++) { await E.keyboard.press('Escape'); await E.waitForTimeout(300); } }
   step('видео урока: ссылка YouTube встраивается, защита урока её не прячет; «Videoni yashirish» — текст во всю ширину, выбор помнится; без ссылки окна видео нет; левую панель уроков можно скрыть и вернуть');
