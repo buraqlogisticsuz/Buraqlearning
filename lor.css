@@ -4615,3 +4615,23 @@ button.jf-name { padding: 0; background: none; border: 0; border-bottom: 1px sol
 /* «Mol-mulk» сотрудника: «Hammasini qabul qildim» в шапке блока выданного; ссылка «Ro‘yxatda yo‘q narsa…» внизу */
 .as-pending .as-block-h .as-all { align-self: flex-start; margin-top: 6px; }
 .as-self { margin: 0; }
+
+/* «Fayldan qo‘shish» (Keyslar, Jurnallar, Terminologiya) */
+.si-acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.si-modal { max-width: 760px; max-height: calc(100dvh - 32px); overflow-y: auto; }
+.si-drop { display: grid; gap: 4px; place-items: center; text-align: center; padding: var(--space-6) var(--space-4); border: 1.5px dashed var(--border); border-radius: var(--radius-md); background: var(--surface-sunken); cursor: pointer; }
+.si-drop.is-over, .si-drop:hover { border-color: var(--blue-text); }
+.si-drop b { font-weight: 500; color: var(--blue-text); }
+.si-res { display: grid; gap: 8px; }
+.si-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; max-height: 44vh; overflow-y: auto; }
+.si-list li { padding: 7px 6px; border-top: var(--hairline) solid var(--line); }
+.si-list li:first-child { border-top: 0; }
+.si-list li.is-dup { opacity: .7; }
+.si-list .check { align-items: flex-start; color: var(--ink); font-size: 14px; line-height: 20px; }
+.si-list .check input { margin-top: 2px; }
+.si-list small { color: var(--ink-muted); font-size: 12px; }
+.si-list small.si-dup { color: var(--red-text); }
+.si-sub { display: block; color: var(--ink-muted); font-size: 12.5px; line-height: 18px; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.si-ai { display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; padding: 10px 12px; border-radius: var(--radius-md); background: var(--blue-soft); }
+.si-table th small { font-weight: 400; color: var(--ink-muted); }
+.si-pub { grid-template-columns: 1fr 1fr; }

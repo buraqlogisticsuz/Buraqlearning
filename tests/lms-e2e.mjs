@@ -928,6 +928,36 @@ try {
     await A.check('#sd-ok'); await A.locator('.ud-modal button', { hasText: 'Bobni o‘chirish' }).click(); await settle(A);
     assert.ok(!b6(), 'проверочная глава удалена');
   }
+  // «Fayldan qo‘shish»: термины из CSV (столбцы по заголовку, своя категория из файла), журнал из CSV (типы столбцов по
+  // значениям), кейсы из текста с пометками «Vaziyat / Harakatlar / Xulosa» — сначала просмотр, добавляется отмеченное
+  { const tabK = async name => { await A.locator('main .lor-tabs [role="tab"]', { hasText: name }).click(); await A.waitForTimeout(400); };
+    const up = async (name, text) => { await A.getByRole('button', { name: /Fayldan qo‘shish/ }).first().click(); await A.waitForSelector('.si-modal'); await A.setInputFiles('#si-file', { name, mimeType: 'text/plain', buffer: Buffer.from(text) }); await A.locator('.si-res').waitFor({ timeout: 5000 }); };
+    const n0 = (srv.g.state().terms || []).length;
+    await tabK('Terminologiya');
+    await up('atamalar.csv', 'Atama;Ta’rif;Toifa\nCMR;Xalqaro avtomobil yuk xati — haydovchi bilan birga yuradi.;Hujjat\nDeklaratsiya;Bojxonaga yuk haqida beriladigan rasmiy ariza: tarkibi va qiymati.;Bojxona\n');
+    assert.match(await txt(A, '.si-res'), /2 ta atama topildi[\s\S]*CMR · Hujjatlar[\s\S]*Deklaratsiya · Bojxona/i);
+    await A.locator('.si-pub label', { hasText: 'Darhol' }).click();
+    await A.locator('.si-modal').getByRole('button', { name: 'Qo‘shish — 2 ta' }).click(); await settle(A);
+    const tm = srv.g.state().terms.filter(x => ['CMR', 'Deklaratsiya'].includes(x.term));
+    assert.equal(srv.g.state().terms.length, n0 + 2); assert.deepEqual(tm.map(x => x.cat + ' ' + x.status).sort(), ['customs published', 'doc published']);
+    await tabK('Jurnallar');
+    await up('Qabul jurnali.csv', 'Sana;Mijoz;Og‘irlik, kg\n05.11.2026;Aziz;230\n06.11.2026;Bek;120,5\n');
+    assert.match(await txt(A, '.si-res'), /3 ta ustun · 2 ta yozuv/i);
+    await A.locator('.si-modal').getByRole('button', { name: /Jurnalni yaratish/ }).click(); await settle(A);
+    const jr = srv.g.state().journals.find(x => x.title === 'Qabul jurnali');
+    assert.deepEqual(jr.columns.map(c => c.label + ':' + c.type), ['Sana:date', 'Mijoz:text', 'Og‘irlik, kg:number']);
+    assert.deepEqual(jr.rows.map(r => r.v.c1), ['2026-11-05', '2026-11-06']); assert.equal(jr.status, 'draft');
+    await tabK('Keyslar');
+    await up('keyslar.txt', '# Keys 1: Mijoz yukni kech oldi\nVaziyat: Bojxonada hujjat kechikdi, mijozga xabar bermadik.\nHarakatlar:\n- Qo‘ng‘iroq qildik\n- Chegirma berdik\nXulosa: Kechikishda birinchi bo‘lib o‘zimiz xabar beramiz.\n# Keys 2: Ombor\nVaziyat: Qutilar bir xil markalangan edi.\n');
+    assert.match(await txt(A, '.si-res'), /2 ta keys topildi[\s\S]*Mijoz yukni kech oldi[\s\S]*2 ta harakat · ✓ xulosa bor[\s\S]*○ xulosa yo‘q/i);
+    await shot(A, '25e-fayldan-keys');
+    await A.locator('.si-pub label', { hasText: 'Darhol' }).click();
+    await A.locator('.si-modal').getByRole('button', { name: 'Qo‘shish — 2 ta' }).click(); await settle(A);
+    const cs = srv.g.state().cases.filter(c => ['Mijoz yukni kech oldi', 'Ombor'].includes(c.title));
+    assert.deepEqual(cs.map(c => c.title + ' ' + c.status).sort(), ['Mijoz yukni kech oldi published', 'Ombor draft'], 'без вывода — черновик');
+    assert.match(await txt(A, 'body'), /2 ta qo‘shildi; 1 tasi qoralama/);
+    assert.deepEqual(await rejected(A), [], 'сервер принял добавленное из файлов');
+    await A.locator('main .lor-tabs [role="tab"]').first().click(); await A.waitForTimeout(300); }
   // главу можно удалить: пустую — сразу из окна; с уроками — после галочки «Ha, bobni darslari bilan o‘chiraman»
   const nSec = srv.g.state().course.sections.length;
   await A.getByRole('button', { name: '+ Yangi bob' }).click(); await settle(A);

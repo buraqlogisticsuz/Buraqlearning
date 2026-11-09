@@ -4349,7 +4349,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     return h('div', { className: 'cs-admin' },
       h('div', { className: 'cs-admin-h' },
         h('div', null, h('h2', { className: 'lor-h' }, t('cs_admin_t')), h('p', { className: 'lor-sm lor-muted', style: { margin: '4px 0 0' } }, t('cs_admin_s'))),
-        h(Btn, { variant: 'primary', arrow: true, onClick: startNew }, t('cs_new'))),
+        h('div', { className: 'si-acts' }, h(SmartImportBtn, Object.assign({}, p, { kind: 'cases' })), h(Btn, { variant: 'primary', arrow: true, onClick: startNew }, t('cs_new')))),
       h('div', { className: 'tiles' },
         [[t('cs_t_all'), list.length], [t('cs_t_pub'), list.filter(function (c) { return c.status === 'published'; }).length], [t('cs_t_draft'), list.filter(function (c) { return c.status === 'draft'; }).length],
           [t('cs_t_sop'), list.filter(function (c) { return (c.lessonIds || []).length; }).length]].map(function (x) { return h('div', { key: x[0], className: 'tile' }, h('span', { className: 'lor-eyebrow' }, x[0]), h('b', null, x[1])); })),
@@ -5117,7 +5117,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     return h('div', { className: 'cs-admin' },
       h('div', { className: 'cs-admin-h' },
         h('div', null, h('h2', { className: 'lor-h' }, t('jr_admin_t')), h('p', { className: 'lor-sm lor-muted', style: { margin: '4px 0 0' } }, t('jr_admin_s'))),
-        h(Btn, { variant: 'primary', arrow: true, onClick: function () { start(null); } }, t('jr_new'))),
+        h('div', { className: 'si-acts' }, h(SmartImportBtn, Object.assign({}, p, { kind: 'journal' })), h(Btn, { variant: 'primary', arrow: true, onClick: function () { start(null); } }, t('jr_new')))),
       list.length ? h('div', { className: 'lor-table-wrap' }, h('table', { className: 'lor-table' },
         h('thead', null, h('tr', null, h('th', null, t('jr_title')), h('th', null, t('ac_title')), h('th', null, t('ac_can_add')), h('th', null, t('jr_rows')), h('th', null, t('jf_col')), h('th', null, t('status')), h('th', { 'aria-label': 'act' }))),
         h('tbody', null, list.map(function (j) {
@@ -5143,6 +5143,196 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     if (!String(x.short || '').trim()) e.short = t('fill_required');
     if (String(x.def || '').trim().length < 20) e.def = t('tm_short_def');
     return e;
+  }
+  /* ---------- «Fayldan qo‘shish» for Keyslar, Jurnallar, Terminologiya: the file is read in the browser, its structure is
+     found by itself (a header row, «Atama — ta’rif» lines, case sections «Vaziyat / Harakatlar / Natija / Xulosa / Xatolar»),
+     the result is shown first and only what is ticked is added; unstructured case text — split by the AI ---------- */
+  function siPlain(html) { return String(html || '').replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&amp;/g, '&').trim(); }
+  function siTableRows(html) {
+    var doc = new DOMParser().parseFromString(html, 'text/html');
+    return Array.prototype.map.call(doc.querySelectorAll('tr'), function (tr) { return Array.prototype.map.call(tr.children, function (td) { return td.textContent.replace(/\s+/g, ' ').trim(); }); })
+      .filter(function (r) { return r.some(Boolean); });
+  }
+  /* any file → { rows } (Excel, CSV, a Word table) and / or { lines, blocks } (Word paragraphs, plain text) */
+  function siRead(file) {
+    var n = file.name.toLowerCase();
+    return file.arrayBuffer().then(function (buf) {
+      if (/\.docx$/.test(n)) return parseDocx(buf).then(function (doc) {
+        var rows = []; doc.blocks.forEach(function (b) { if (b.k === 'html' && /<table/i.test(b.html)) rows = rows.concat(siTableRows(b.html)); });
+        var blocks = doc.blocks.filter(function (b) { return b.k !== 'html'; }).map(function (b) { return { k: b.k, lvl: b.lvl || 0, text: b.k === 'h' ? b.text : siPlain(b.html) }; }).filter(function (b) { return b.text; });
+        return { rows: rows, blocks: blocks };
+      });
+      if (isZip(buf)) return parseXLSX(buf).then(function (rows) { return { rows: rows.map(function (r) { return r.map(function (x) { return x == null ? '' : x; }); }), blocks: [] }; });
+      var txt = decodeText(buf);
+      if (/\.(csv|tsv)$/.test(n)) return { rows: parseCSV(txt), blocks: [] };
+      return { rows: [], blocks: txt.split(/\r\n|\n|\r/).map(function (l) { var m = /^\s*#{1,4}\s+(.*)$/.exec(l); return m ? { k: 'h', lvl: 1, text: m[1].trim() } : { k: /^\s*([-•*]|\d+[.)])\s+/.test(l) ? 'li' : 'p', lvl: 0, text: l.replace(/^\s*[-•*]\s+/, '').trim() }; }).filter(function (b) { return b.text; }) };
+    });
+  }
+  function siHeadIdx(head, re) { for (var i = 0; i < head.length; i++) if (re.test(String(head[i] || ''))) return i; return -1; }
+  function siCat(x) {
+    x = String(x || '').toLowerCase();
+    return /bojxona|deklar|sertifikat|tamožen|тамож|customs/.test(x) ? 'customs' : /ombor|qabul|tsd|склад|warehouse/.test(x) ? 'warehouse' : /transport|mashina|fura|haydovchi|yo‘l|logist|перевоз|truck/.test(x) ? 'transport'
+      : /hujjat|invoys|invoice|packing|cmr|shartnoma|документ/.test(x) ? 'doc' : 'general';
+  }
+  function siShort(def) { var s = String(def || '').replace(/\s+/g, ' ').trim(), m = /^(.{10,90}?[.!?])(\s|$)/.exec(s); return (m ? m[1] : s.slice(0, 90)).replace(/[.]$/, ''); }
+  /* terms: a table (Atama | Qisqa | Ta’rif | Toifa — by the header, else by position) or lines «Atama — ta’rif»; a heading with text under it */
+  function siTerms(src, have) {
+    var out = [], seen = {};
+    function add(term, short, def, cat) {
+      term = String(term || '').replace(/\s+/g, ' ').trim().replace(/[:—–-]+$/, '').trim(); def = String(def || '').replace(/\s+/g, ' ').trim(); short = String(short || '').trim() || siShort(def);
+      if (!term || term.length > 80 || (!def && !short)) return;
+      var k = term.toLowerCase(); if (seen[k]) return; seen[k] = 1;
+      out.push({ term: term, short: short.slice(0, 120), def: def || short, cat: TERM_CATS.indexOf(cat) >= 0 ? cat : cat && siCat(cat) !== 'general' ? siCat(cat) : siCat(term + ' ' + def), exists: !!have[k] });   // the file's own category wins
+    }
+    var rows = src.rows || [];
+    if (rows.length) {
+      var head = rows[0].map(String), it = siHeadIdx(head, /atama|termin|term|термин|so.z|nom|название/i), id = siHeadIdx(head, /ta.rif|izoh|tushun|defin|определ|описан|ma.no|значен/i),
+        is = siHeadIdx(head, /qisqa|short|кратк/i), ic = siHeadIdx(head, /toifa|kategor|categ|катег|soha|bo.lim/i), hasHead = it >= 0 && (id >= 0 || is >= 0);
+      if (!hasHead) { it = 0; if (head.length >= 3) { is = 1; id = 2; } else { id = 1; is = -1; } ic = -1; }
+      rows.slice(hasHead ? 1 : 0).forEach(function (r) { add(r[it], is >= 0 ? r[is] : '', id >= 0 ? r[id] : '', ic >= 0 ? String(r[ic] || '').toLowerCase() : ''); });
+    }
+    var bl = src.blocks || [];
+    bl.forEach(function (b, i) {
+      var m = /^\s*(?:\d+[.)]\s*)?([^—–:]{2,70}?)\s+(?:—|–|-)\s+(.{3,})$/.exec(b.text) || /^\s*(?:\d+[.)]\s*)?([^:]{2,60}):\s+(.{3,})$/.exec(b.text);
+      if (m) { add(m[1], '', m[2]); return; }
+      if (b.k === 'h' && bl[i + 1] && bl[i + 1].k !== 'h') add(b.text, '', bl[i + 1].text);
+    });
+    return out;
+  }
+  /* a journal from a table: the first row — column names (when it looks like one), types by the values (number, date, text) */
+  function siJournal(src, name) {
+    var rows = (src.rows || []).filter(function (r) { return r.some(function (x) { return String(x).trim(); }); }); if (!rows.length) return null;
+    var w = Math.min(12, rows.reduce(function (m, r) { return Math.max(m, r.length); }, 0));
+    var r0 = rows[0], textHead = r0.filter(function (x) { return String(x).trim(); }).length >= Math.min(2, w) && r0.every(function (x) { return typeof x !== 'number' && !/^\s*[\d.,\s-]+\s*$/.test(String(x)) || !String(x).trim(); });
+    var head = textHead ? r0 : [], data = (textHead ? rows.slice(1) : rows).slice(0, 2000), cols = [];
+    for (var i = 0; i < w; i++) {
+      var vals = data.map(function (r) { return r[i]; }).filter(function (x) { return String(x == null ? '' : x).trim(); });
+      var num = vals.length && vals.every(function (x) { return typeof x === 'number' || /^-?[\d\s]+([.,]\d+)?$/.test(String(x).trim()); });
+      var dt = vals.length && vals.filter(function (x) { return (typeof x === 'number' ? x > 30000 && x < 80000 : /\d{1,4}[-./]\d{1,2}[-./]\d{2,4}/.test(String(x))) && pDate(x); }).length >= vals.length * 0.8 && !/narx|soni|kg|summa|price|qty|son\b/i.test(String(head[i] || ''));
+      cols.push({ key: 'c' + (i + 1), label: String(head[i] || '').trim() || tpl(T('uz')('si_col_n'), { n: i + 1 }), type: dt ? 'date' : num ? 'number' : 'text', opt: vals.length < data.length });
+    }
+    var out = data.map(function (r) { var v = {}; cols.forEach(function (c, i) { var x = r[i]; v[c.key] = x == null || x === '' ? '' : c.type === 'date' ? (pDate(x) || String(x)) : String(x).trim(); }); return v; });
+    return { title: String(name || '').replace(/\.[^.]+$/, '').replace(/[_]+/g, ' ').trim() || 'Jurnal', columns: cols, rows: out };
+  }
+  /* cases: each heading (Word) or «# …» line starts a case; inside — labelled parts, the rest is the situation */
+  var SI_PART = [['situation', /^(vaziyat|holat|situatsiya|ситуация|situation|nima bo.ldi)\s*[:—–-]?\s*/i], ['actions', /^(harakat(lar)?|nima qildik|qadamlar|действия|actions?)\s*[:—–-]?\s*/i],
+    ['result', /^(natija|результат|result)\s*[:—–-]?\s*/i], ['lesson', /^(xulosa|saboq|dars|вывод|урок|lesson)\s*[:—–-]?\s*/i], ['mistakes', /^(xato(lar)?|ошибк\S*|mistakes?)\s*[:—–-]?\s*/i]];
+  function siCaseArea(x) { x = String(x || '').toLowerCase(); return /ombor|склад/.test(x) ? 'warehouse' : /bojxona|тамож/.test(x) ? 'customs' : /mijoz|клиент/.test(x) ? 'clients' : /fura|mashina|haydovchi|transport|yo‘l/.test(x) ? 'transport' : /ofis|офис/.test(x) ? 'office' : /crm|kompyuter|it\b|1c/.test(x) ? 'it' : 'other'; }
+  function siCases(src) {
+    var bl = src.blocks || [], cases = [], cur = null, part = 'situation', labelled = false;
+    var lv = bl.filter(function (b) { return b.k === 'h'; }).map(function (b) { return b.lvl; }), top = lv.length ? Math.min.apply(null, lv) : null;
+    function start(title) { cur = { title: title.replace(/^\s*(keys|case|holat)\s*\d*\s*[.:)—–-]\s*/i, '').trim() || title, situation: '', actions: [], result: '', lesson: '', mistakes: '' }; cases.push(cur); part = 'situation'; }
+    bl.forEach(function (b) {
+      if (b.k === 'h' && b.lvl === top) { start(b.text); return; }
+      if (!cur) start(b.text.length < 90 ? b.text : 'Keys ' + (cases.length + 1));
+      var x = b.text, hit = null;
+      SI_PART.some(function (pp) { var m = pp[1].exec(x); if (m) { hit = pp[0]; x = x.slice(m[0].length).trim(); return true; } return false; });
+      if (hit) { part = hit; labelled = true; if (!x) return; }
+      if (part === 'actions') cur.actions.push(x.replace(/^\d+[.)]\s*/, ''));
+      else cur[part] = (cur[part] ? cur[part] + '\n' : '') + x;
+    });
+    cases = cases.filter(function (c) { return c.situation || c.actions.length || c.lesson; }).map(function (c) { return Object.assign(c, { area: siCaseArea(c.title + ' ' + c.situation) }); });
+    return { cases: cases, labelled: labelled, text: bl.map(function (b) { return (b.k === 'h' ? '# ' : '') + b.text; }).join('\n') };
+  }
+  function SmartImport(p) {
+    var t = p.t, kind = p.kind, db = p.db;
+    var st = useState(null), err = useState(''), pick = useState({}), pub = useState(false), busy = useState(false), jt = useState(''), drag = useState(false);
+    var r = st[0];
+    var have = {}; (db.terms || []).forEach(function (x) { have[String(x.term || '').toLowerCase()] = 1; });
+    function load(file) {
+      if (!file) return;
+      err[1](''); st[1](null); busy[1](true);
+      siRead(file).then(function (src) {
+        var res = kind === 'terms' ? { items: siTerms(src, have) } : kind === 'journal' ? { j: siJournal(src, file.name) } : Object.assign({ src: src }, siCases(src));
+        if (kind === 'cases') res.items = res.cases;
+        var n = kind === 'journal' ? (res.j && res.j.rows.length) : res.items.length;
+        if (!n) { err[1](t('si_none')); return; }
+        if (kind === 'journal') jt[1](res.j.title);
+        var pk = {}; (res.items || []).forEach(function (x, i) { pk[i] = !x.exists; }); pick[1](pk);
+        st[1](res);
+      }, function () { err[1](t('si_bad')); }).then(function () { busy[1](false); });
+    }
+    function aiSplit() {
+      if (!p.sampler || busy[0] || !r) return;
+      busy[1](true); err[1]('');
+      var prompt = AI_HEAD + 'Quyidagi matnda kompaniyaning haqiqiy ish holatlari (keyslar) yozilgan. Ularni alohida keyslarga ajrating. Faqat matndagi faktlarga tayaning, hech narsa o‘ylab topmang; matnda yo‘q qism bo‘sh qolsin.\n' +
+        'Faqat JSON massiv qaytaring: [{"title":"qisqa sarlavha","situation":"nima bo‘ldi","actions":["qadam"],"result":"natija","lesson":"xulosa — xodim nimani o‘rganishi kerak","mistakes":"xatolar"}]\n\nMATN:\n' + r.text.slice(0, 24000);
+      p.sampler.json(prompt, {}).then(function (x) {
+        var list = (Array.isArray(x) ? x : []).filter(function (c) { return c && c.title; }).map(function (c) { return { title: String(c.title).slice(0, 90), situation: String(c.situation || ''), actions: Array.isArray(c.actions) ? c.actions.map(String).filter(Boolean).slice(0, 10) : [], result: String(c.result || ''), lesson: String(c.lesson || ''), mistakes: String(c.mistakes || ''), area: siCaseArea(c.title + ' ' + c.situation) }; });
+        if (!list.length) { err[1](t('ai_bad_json')); return; }
+        var pk = {}; list.forEach(function (c, i) { pk[i] = true; }); pick[1](pk);
+        st[1](Object.assign({}, r, { items: list, cases: list, labelled: true, ai: true }));
+      }, function (e) { err[1](aiErr(e, t)); }).then(function () { busy[1](false); });
+    }
+    function save() {
+      var now = Date.now(), n = 0, drafts = 0;
+      if (kind === 'journal') {
+        var j = r.j;
+        p.update(function (d) {
+          d.journals = d.journals || [];
+          var nj = Object.assign(blankJournal(), { id: 'j' + nextId(d), status: pub[0] ? 'published' : 'draft', title: String(jt[0] || j.title).trim() || j.title, desc: tpl(t('si_from'), { x: p.fileName || '' }).trim(), columns: j.columns,
+            rows: j.rows.map(function (v, i) { return { id: 'r' + nextId(d) + i, at: now - i, by: p.user.id, v: v }; }) });
+          d.journals.unshift(nj);
+        });
+        p.say(tpl(t('si_added_j'), { n: j.rows.length })); p.onClose(); return;
+      }
+      var items = r.items.filter(function (x, i) { return pick[0][i]; });
+      p.update(function (d) {
+        items.forEach(function (x, i) {
+          if (kind === 'terms') {
+            var tm = Object.assign(blankTerm(), { id: 't' + nextId(d) + i, at: now, term: x.term, short: x.short, def: x.def, cat: x.cat });
+            tm.status = pub[0] && !Object.keys(termErrors(tm, t)).length ? 'published' : 'draft'; if (pub[0] && tm.status === 'draft') drafts++;
+            d.terms = d.terms || []; d.terms.unshift(tm);
+          } else {
+            var c = Object.assign(blankCase(), { id: 'c' + nextId(d) + i, at: now, by: p.user.id, title: x.title, area: x.area, situation: x.situation, actions: x.actions.length ? x.actions : [''], result: x.result, lesson: x.lesson, mistakes: x.mistakes });
+            c.status = pub[0] && !Object.keys(caseErrors(c, t)).length ? 'published' : 'draft'; if (pub[0] && c.status === 'draft') drafts++;
+            d.cases = d.cases || []; d.cases.unshift(c);
+          }
+          n++;
+        });
+      });
+      p.say(drafts ? tpl(t('si_added_draft'), { n: n, m: drafts }) : tpl(t('si_added'), { n: n })); p.onClose();
+    }
+    var cnt = r && r.items ? r.items.filter(function (x, i) { return pick[0][i]; }).length : 0;
+    var accept = kind === 'cases' ? '.docx,.txt,.md' : kind === 'journal' ? '.xlsx,.csv,.tsv,.docx' : '.xlsx,.csv,.tsv,.docx,.txt';
+    return h(Modal, { t: t, hid: 'si-h', className: 'si-modal', onClose: p.onClose },
+      h('h2', { className: 'lor-h', id: 'si-h' }, t('si_title_' + kind)),
+      h('p', { className: 'lor-sm lor-muted' }, t('si_hint_' + kind)),
+      h('label', { className: cx('si-drop', drag[0] && 'is-over'), htmlFor: 'si-file', onDragOver: function (e) { e.preventDefault(); drag[1](true); }, onDragLeave: function () { drag[1](false); },
+        onDrop: function (e) { e.preventDefault(); drag[1](false); var f = e.dataTransfer.files && e.dataTransfer.files[0]; if (f) { p.setName(f.name); load(f); } } },
+        h('b', null, busy[0] ? t('clk_wait') : '⇪ ' + t('si_pick')), h('span', { className: 'lor-sm lor-muted' }, t('si_drop') + ' · ' + accept.replace(/,/g, ', '))),
+      h('input', { id: 'si-file', type: 'file', className: 'sr-only', accept: accept, onChange: function (e) { var f = e.target.files && e.target.files[0]; e.target.value = ''; if (f) { p.setName(f.name); load(f); } } }),
+      err[0] ? h('p', { className: 'lor-field-error' }, err[0]) : null,
+      r && kind === 'journal' ? h('div', { className: 'si-res' },
+        h('span', { className: 'lor-eyebrow' }, tpl(t('si_found_journal'), { c: r.j.columns.length, n: r.j.rows.length })),
+        h(Field, { name: 'si-jt', label: t('jr_title'), value: jt[0], onChange: jt[1] }),
+        h('div', { className: 'lor-table-wrap' }, h('table', { className: 'lor-table si-table' },
+          h('thead', null, h('tr', null, r.j.columns.map(function (c) { return h('th', { key: c.key }, c.label, h('small', null, ' · ' + t('ct_' + c.type))); }))),
+          h('tbody', null, r.j.rows.slice(0, 5).map(function (v, i) { return h('tr', { key: i }, r.j.columns.map(function (c) { return h('td', { key: c.key }, cellText(db, c, v[c.key])); })); })))),
+        r.j.rows.length > 5 ? h('p', { className: 'lor-sm lor-muted' }, tpl(t('si_more'), { n: r.j.rows.length - 5 })) : null) : null,
+      r && kind !== 'journal' ? h('div', { className: 'si-res' },
+        h('span', { className: 'lor-eyebrow' }, tpl(t(kind === 'terms' ? 'si_found_terms' : 'si_found_cases'), { n: r.items.length }) + (r.ai ? ' · AI' : '')),
+        kind === 'cases' && !r.labelled && !r.ai ? h('div', { className: 'si-ai' }, h('span', { className: 'lor-sm' }, t('si_ai_hint')),
+          h(Btn, { variant: 'outline', size: 'sm', disabled: !p.sampler || busy[0], onClick: aiSplit }, busy[0] ? t('ai_thinking') : '✦ ' + t('si_ai'))) : null,
+        h('ul', { className: 'si-list' }, r.items.map(function (x, i) {
+          return h('li', { key: i, className: cx(x.exists && 'is-dup') }, h('label', { className: 'check' },
+            h('input', { type: 'checkbox', checked: !!pick[0][i], onChange: function (e) { var o = Object.assign({}, pick[0]); o[i] = e.target.checked; pick[1](o); } }),
+            kind === 'terms' ? h('span', null, h('b', null, x.term), x.exists ? h('small', { className: 'si-dup' }, ' · ' + t('si_exists')) : null, h('small', null, ' · ' + t('tc_' + x.cat)), h('span', { className: 'si-sub' }, x.def))
+              : h('span', null, h('b', null, x.title), h('small', null, ' · ' + t('ia_' + x.area)), h('span', { className: 'si-sub' }, [x.situation.slice(0, 140), x.actions.length ? tpl(t('si_n_act'), { n: x.actions.length }) : '', x.lesson ? '✓ ' + t('si_has_lesson') : '○ ' + t('si_no_lesson')].filter(Boolean).join(' · ')))));
+        }))) : null,
+      r ? h('div', { className: 'aud-modes si-pub', role: 'radiogroup', 'aria-label': t('si_status') }, [[false, t('si_draft')], [true, t('si_pub')]].map(function (o) {
+        return h('label', { key: String(o[0]), className: cx('aud-mode', pub[0] === o[0] && 'is-on') }, h('input', { type: 'radio', name: 'si-pub', checked: pub[0] === o[0], onChange: function () { pub[1](o[0]); } }), o[1]);
+      })) : null,
+      h('div', { className: 'lor-modal-actions' },
+        h(Btn, { variant: 'ghost', onClick: p.onClose }, t('cancel')),
+        r ? h(Btn, { variant: 'primary', arrow: true, disabled: kind !== 'journal' && !cnt, onClick: save }, kind === 'journal' ? t('si_add_j') : tpl(t('si_add'), { n: cnt })) : null));
+  }
+  /* the button in the list header and its window */
+  function SmartImportBtn(p) {
+    var o = useState(false), nm = useState('');
+    return h(F, null,
+      h(Btn, { variant: 'outline', onClick: function () { o[1](true); } }, '⇪ ' + p.t('si_btn')),
+      o[0] ? h(SmartImport, Object.assign({}, p, { fileName: nm[0], setName: nm[1], onClose: function () { o[1](false); } })) : null);
   }
   function TermsAdmin(p) {
     var t = p.t, db = p.db, sampler = p.sampler, list = termsAll(db).sort(function (a, b) { return a.term.localeCompare(b.term); });
@@ -5225,7 +5415,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     return h('div', { className: 'cs-admin' },
       h('div', { className: 'cs-admin-h' },
         h('div', null, h('h2', { className: 'lor-h' }, t('tm_admin_t')), h('p', { className: 'lor-sm lor-muted', style: { margin: '4px 0 0' } }, t('tm_admin_s'))),
-        h(Btn, { variant: 'primary', arrow: true, onClick: function () { start(null); } }, t('tm_new'))),
+        h('div', { className: 'si-acts' }, h(SmartImportBtn, Object.assign({}, p, { kind: 'terms' })), h(Btn, { variant: 'primary', arrow: true, onClick: function () { start(null); } }, t('tm_new')))),
       list.length ? h('div', { className: 'lor-table-wrap' }, h('table', { className: 'lor-table' },
         h('thead', null, h('tr', null, h('th', null, t('tm_term')), h('th', null, t('tm_cat')), h('th', null, t('tm_short')), h('th', null, t('ac_title')), h('th', null, t('status')), h('th', { 'aria-label': 'act' }))),
         h('tbody', null, list.map(function (x) {
