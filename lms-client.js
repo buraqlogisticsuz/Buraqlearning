@@ -4,7 +4,8 @@
    - Данные: копия последнего ответа сервера (lor-lms-cache) — страница открывается и без сети.
    - Правки: очередь на устройстве (lor-lms-queue) → сервер пачками; без сети ждут и уходят сами.
      Пока правка не дошла, она наложена поверх данных сервера — на экране её видно сразу.
-   - Раз в 30 секунд, при возврате на вкладку и при появлении сети — «что нового» (since).
+   - Раз в 30 секунд, при возврате на вкладку и при появлении сети — «что нового» (since). Вкладка в фоне —
+     тоже раз в 30 секунд (браузер может реже), если включены уведомления на компьютере.
    - Язык и вход — только на этом устройстве, на сервер не уходят. */
 (function (root) {
   'use strict';
@@ -201,7 +202,12 @@
   api.build = root.LMS_BUILD || '';
 
   if (!DEMO) {
-    setInterval(function () { if (token && document.visibilityState !== 'hidden') api.sync().catch(function () {}); }, POLL_MS);
+    // вкладка свёрнута или открыта другая — проверяем дальше, только если включены уведомления на компьютере (иначе они не придут)
+    api.pollTick = function () {
+      var bg = false; try { bg = get('lor-sysnotif') === 'on' && root.Notification && root.Notification.permission === 'granted'; } catch (e) {}
+      if (token && (document.visibilityState !== 'hidden' || bg)) return api.sync().catch(function () {});
+    };
+    setInterval(function () { api.pollTick(); }, POLL_MS);
     document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') { checkBuild(); if (token) api.sync().catch(function () {}); } });
     setInterval(checkBuild, 5 * 60e3);
     root.addEventListener('online', function () { retryMs = 0; if (token) api.sync().catch(function () {}); });

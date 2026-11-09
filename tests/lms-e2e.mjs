@@ -502,7 +502,10 @@ try {
     const eTk = await E.evaluate(() => localStorage.getItem('lor-lms-token'));
     const lid = srv.g.state().course.sections.flatMap(s => s.lessons).find(l => l.title === '4.1. Test standarti').id;
     assert.deepEqual(srv.g.post({ token: eTk, action: 'patch', ops: [{ op: 'set', path: ['requests', { id: 'q-sn' }], value: { id: 'q-sn', type: 'question', userId: emp.id, lessonId: lid, text: 'Packing list qachon?', at: Date.now(), state: 'open', unread: true }, after: null }] }).rejected || [], []);
-    await A.evaluate(() => LmsClient.sync()); await A.waitForTimeout(700);
+    // вкладка в фоне (свёрнута / открыта другая) — проверка «что нового» идёт дальше, раз включены уведомления
+    await A.evaluate(() => { Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true }); return LmsClient.pollTick(); });
+    await A.waitForTimeout(700);
+    await A.evaluate(() => { delete document.visibilityState; });
     const sn = await A.evaluate(() => window.__sn);
     assert.ok(sn.some(x => x.tag === 'buraq-rq-sn' && /savol — 4\.1\. Test standarti/.test(x.body)), JSON.stringify(sn));
     assert.match(await A.evaluate(() => document.title), /^\(\d+\) BURAQ o‘quv platformasi$/, 'счётчик в заголовке вкладки');
