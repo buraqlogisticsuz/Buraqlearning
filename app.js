@@ -1739,7 +1739,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     return xp;
   }
   function sectionPassed(db, u, sid) { var s = db.course.sections.filter(function (x) { return x.id === sid; })[0]; if (!s || !s.lessons.length) return true;
-    var ids = trackSecIds(db, u); if (ids && ids.indexOf(sid) < 0) return true; return s.lessons.every(function (l) { return (prog(db, u.id)[l.id] || {}).status === 'passed'; }); }
+    if (!secFor(s, u)) return true; return s.lessons.every(function (l) { return (prog(db, u.id)[l.id] || {}).status === 'passed'; }); }
   function avgScoreOf(db, u) { var pr = prog(db, u.id), sc = []; for (var k in pr) if (pr[k].status === 'passed' && pr[k].score != null) sc.push(pr[k].score); return sc.length ? sc.reduce(function (a, b) { return a + b; }, 0) / sc.length : 0; }
   function rankOf(db, u) {
     var L = levelsOf(db), li = Math.min(u.level || 0, Math.max(0, L.length - 1)), lv = L[li], total = xpOf(db, u), inL = Math.max(0, total - (u.levelXpBase || 0));
@@ -5765,42 +5765,28 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     }, [open]);
   }
 
-  /* ======================= FEATURES 8: training programmes per position + the 30/60 adaptation plan ======================= */
+  /* ======================= FEATURES 8: who studies which chapter + the 30/60 adaptation plan ======================= */
 
-  function tracksOf(db) { return db.tracks || []; }
-  function trackById(db, id) { return tracksOf(db).filter(function (x) { return x.id === id; })[0]; }
-  /* an explicit assignment wins; otherwise the position decides; no match = the whole course */
-  function trackOf(db, u) {
-    if (!u || u.role === 'admin') return null;
-    if (u.trackId) return trackById(db, u.trackId) || null;
-    return tracksOf(db).filter(function (t) { return (t.positions || []).indexOf(u.position) >= 0; })[0] || null;
-  }
-  function trackTitle(t, lang) { return !t ? '' : anyLang(t.title, lang); }
-  function trackDesc(t, lang) { return !t ? '' : anyLang(t.desc, lang); }
-  function trackSecIds(db, u) { var t = trackOf(db, u); return t && (t.sections || []).length ? t.sections : null; }
+  /* «Dasturlar» (programmes per position) are gone: who studies a chapter is set on the chapter itself («Kimlar o‘qiydi»).
+     Old data (db.tracks, users[].trackId, planTpl[].track) stays on the server and is ignored */
   /* who studies a chapter (section.aud): everyone, or whoever matches a position, a department or a name (any of them).
-     No aud — the programme (tracks) decides, as before; section.users of v11 — names */
+     No aud — everyone; section.users of v11 — names */
   function audOf(s) { return s.aud || ((s.users || []).length ? { users: s.users } : null); }
   function audHas(a) { return !!(a && (a.all || (a.positions || []).length || (a.depts || []).length || (a.users || []).length)); }
   function audMatch(a, u) { return !!(a.all || (a.positions || []).indexOf(u.position) >= 0 || (a.depts || []).indexOf(u.department) >= 0 || (a.users || []).some(function (x) { return String(x) === String(u.id); })); }
-  function secFor(s, u, ids) { var a = audOf(s); return audHas(a) ? audMatch(a, u) : !ids || ids.indexOf(s.id) >= 0; }
-  function courseSections(db, u) { var ids = trackSecIds(db, u); return db.course.sections.filter(function (s) { return secFor(s, u, ids); }); }
+  function secFor(s, u) { var a = audOf(s); return audHas(a) ? audMatch(a, u) : true; }
+  function courseSections(db, u) { return db.course.sections.filter(function (s) { return secFor(s, u); }); }
   /* flat(), but only the sections that belong to this employee’s programme */
   function trackFlat(db, u) {
     var out = [];
     courseSections(db, u).forEach(function (s) { s.lessons.forEach(function (l) { out.push(Object.assign({}, l, { sectionId: s.id, sectionTitle: s.title, officialOnly: s.officialOnly })); }); });
     return out;
   }
-  function inTrack(db, u, lid) { return trackFlat(db, u).some(function (l) { return l.id === lid; }); }
-  function trackUsers(db, id) { return db.users.filter(function (u) { return u.role === 'employee' && (trackOf(db, u) || {}).id === id; }); }
 
   /* ---------- adaptation plan ---------- */
   var PLAN_DAYS = [30, 60];       // колонки плана; «90 дней» убрана — её прежние пункты не показываются и не считаются
   function planTplOf(db) { return (db.planTpl || []).filter(function (x) { return PLAN_DAYS.indexOf(x.day) >= 0; }); }
-  function planItems(db, u) {
-    var tr = trackOf(db, u);
-    return planTplOf(db).filter(function (x) { return !x.track || (tr && x.track === tr.id); });
-  }
+  function planItems(db) { return planTplOf(db); }   // one plan for everyone (programmes are gone)
   /* текст на нескольких языках: свой, иначе узбекский, иначе любой заполненный (пункт добавили, работая на русском) */
   function anyLang(o, lang) { if (!o) return ''; if (typeof o === 'string') return o; if (o[lang]) return o[lang]; if (o.uz) return o.uz; for (var k in o) if (o[k]) return o[k]; return ''; }
   function planText(x, lang) { return anyLang(x.text, lang); }
@@ -5853,15 +5839,11 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t(p.admin ? 'pl_hint_admin' : 'pl_hint')));
   }
 
-  /* ---------- admin: programmes ---------- */
-  function blankTrack() { return { id: null, title: { uz: '', ru: '', en: '', zh: '' }, desc: { uz: '', ru: '', en: '', zh: '' }, positions: [], sections: [] }; }
-  /* the picker's value for a chapter: its own list, or — for an old chapter — what the programmes gave it */
+  /* the picker's value for a chapter: its own list; an old chapter without one — everyone */
   function secAudience(db, s) {
     var a = audOf(s);
     if (audHas(a)) return { all: !!a.all, positions: (a.positions || []).slice(), depts: (a.depts || []).slice(), users: (a.users || []).map(String) };
-    var trs = tracksOf(db).filter(function (x) { return (x.sections || []).length; }), inT = trs.filter(function (x) { return x.sections.indexOf(s.id) >= 0; });
-    var pos = []; inT.forEach(function (x) { (x.positions || []).forEach(function (q) { if (pos.indexOf(q) < 0) pos.push(q); }); });
-    return { all: inT.length === trs.length, positions: inT.length === trs.length ? [] : pos, depts: [], users: [] };
+    return { all: true, positions: [], depts: [], users: [] };
   }
   function applyAudience(d, sid, a) {
     d.course.sections.forEach(function (s) {
@@ -5946,9 +5928,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var a = useState(function () {
       if (same) return secAudience(db, secs.filter(function (s) { return s.id === sec.id; })[0]);
       if (ch.aud) return { all: !!ch.aud.all, positions: ch.aud.positions || [], depts: ch.aud.depts || [], users: [] };
-      if (ch.tracks === 'all') return { all: true, positions: [], depts: [], users: [] };
-      var pos = []; tracksOf(db).forEach(function (x) { if (ch.tracks.indexOf(x.id) >= 0) (x.positions || []).forEach(function (q) { if (pos.indexOf(q) < 0) pos.push(q); }); });
-      return { all: !pos.length, positions: pos, depts: [], users: [] };
+      return { all: true, positions: [], depts: [], users: [] };
     });
     var q = sec.lessons.reduce(function (n, l) { return n + l.quiz.length; }, 0);
     function go() {
@@ -5988,67 +5968,6 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       h('div', { className: 'lor-modal-actions' }, h(Btn, { variant: 'ghost', onClick: p.onClose }, t('cancel')), h(Btn, { variant: 'primary', arrow: true, onClick: go }, t('imp_go'))));
   }
 
-  function TracksAdmin(p) {
-    var t = p.t, db = p.db, list = tracksOf(db), ed = useState(null), draft = ed[0], er = useState(''), del = useState(false);
-    var POS = uniq(db.users.filter(function (u) { return u.role === 'employee'; }).map(function (u) { return u.position; })).concat(['Ombor mudiri']).filter(function (x, i, a) { return a.indexOf(x) === i; }).sort();
-    function setD(fn) { var c = clone(draft); fn(c); ed[1](c); }
-    function save() {
-      var c = clone(draft);
-      if (!trackTitle(c, p.lang).trim() && !c.title.uz.trim()) { er[1](t('fill_required')); return; }
-      if (!c.sections.length) { er[1](t('trk_need_sec')); return; }
-      p.update(function (d) {
-        d.tracks = d.tracks || [];
-        if (c.id) d.tracks = d.tracks.map(function (x) { return x.id === c.id ? Object.assign({}, x, c) : x; });
-        else { c.id = 'tr' + nextId(d); d.tracks.push(c); }
-      });
-      ed[1](null); p.say(t('trk_saved'));
-    }
-    function remove() { var id = draft.id; p.update(function (d) { d.tracks = (d.tracks || []).filter(function (x) { return x.id !== id; }); d.users.forEach(function (u) { if (u.trackId === id) delete u.trackId; }); }); ed[1](null); p.say(t('trk_deleted')); }
-
-    if (draft) return h('div', { className: 'cms-case-edit' },
-      h('div', { className: 'page-head' },
-        h('div', null, h('span', { className: 'lor-eyebrow' }, t('trk_eyebrow')), h('h2', { className: 'lor-title' }, draft.id ? t('trk_edit') : t('trk_new'))),
-        h(Btn, { variant: 'ghost', onClick: function () { ed[1](null); } }, t('cancel'))),
-      h('section', { className: 'box cs-form' },
-        er[0] ? h('p', { className: 'lor-field-error', style: { margin: 0 } }, er[0]) : null,
-        h('div', { className: 'lor-form-grid' }, ['uz', 'ru', 'en', 'zh'].map(function (lg) {
-          return h(Field, { key: lg, name: 'trk-t-' + lg, label: t('trk_title') + ' · ' + lg.toUpperCase(), required: lg === 'uz', value: draft.title[lg] || '', onChange: function (v) { setD(function (c) { c.title[lg] = v; }); } });
-        })),
-        h(Field, { name: 'trk-d', span: true, multiline: true, rows: 2, label: t('trk_desc') + ' · ' + p.lang.toUpperCase(), value: (draft.desc || {})[p.lang] || '', onChange: function (v) { setD(function (c) { c.desc = c.desc || {}; c.desc[p.lang] = v; }); } }),
-        h('h3', { className: 'cms-h' }, t('trk_sections')),
-        h('div', { className: 'ac-chips' }, db.course.sections.filter(function (s) { return !audHas(audOf(s)); }).map(function (s) {
-          return h('label', { key: s.id, className: cx('ac-chip', draft.sections.indexOf(s.id) >= 0 && 'is-on') },
-            h('input', { type: 'checkbox', checked: draft.sections.indexOf(s.id) >= 0, onChange: function () { setD(function (c) { var i = c.sections.indexOf(s.id); if (i < 0) c.sections.push(s.id); else c.sections.splice(i, 1); }); } }),
-            s.title, h('small', null, ' · ' + s.lessons.length));
-        })),
-        h('h3', { className: 'cms-h' }, t('trk_positions')),
-        h('div', { className: 'ac-chips' }, POS.map(function (x) {
-          return h('label', { key: x, className: cx('ac-chip', draft.positions.indexOf(x) >= 0 && 'is-on') },
-            h('input', { type: 'checkbox', checked: draft.positions.indexOf(x) >= 0, onChange: function () { setD(function (c) { var i = c.positions.indexOf(x); if (i < 0) c.positions.push(x); else c.positions.splice(i, 1); }); } }), x);
-        })),
-        h('span', { className: 'lor-field-hint' }, t('trk_positions_h')),
-        h('div', { className: 'cms-foot' },
-          draft.id ? (del[0] ? h('span', { className: 'cms-confirm' }, t('confirm_del'), ' ', h(Btn, { variant: 'ghost', size: 'sm', onClick: function () { del[1](false); } }, t('cancel')), h(Btn, { variant: 'outline', size: 'sm', onClick: remove }, t('yes_del')))
-            : h('button', { type: 'button', className: 'app-link danger', onClick: function () { del[1](true); } }, t('trk_delete'))) : h('span'),
-          h(Btn, { variant: 'primary', arrow: true, onClick: save }, t('save')))));
-
-    return h('div', { className: 'cs-admin' },
-      h('div', { className: 'cs-admin-h' },
-        h('div', null, h('h2', { className: 'lor-h' }, t('trk_admin_t')), h('p', { className: 'lor-sm lor-muted', style: { margin: '4px 0 0' } }, t('trk_admin_s'))),
-        h(Btn, { variant: 'primary', arrow: true, onClick: function () { ed[1](blankTrack()); er[1](''); del[1](false); } }, t('trk_new'))),
-      h('div', { className: 'trk-grid' }, list.map(function (x) {
-        var ls = x.sections.reduce(function (n, id) { var s = db.course.sections.filter(function (y) { return y.id === id; })[0]; return n + (s ? s.lessons.length : 0); }, 0);
-        return h('button', { key: x.id, type: 'button', className: 'trk-card', onClick: function () { ed[1](clone(x)); er[1](''); del[1](false); window.scrollTo(0, 0); } },
-          h('div', { className: 'trk-card-h' }, h('span', { className: 'cs-ico' }, h(Ico, { name: 'target', size: 18 })), h('b', null, trackTitle(x, p.lang))),
-          h('p', { className: 'cs-sit' }, trackDesc(x, p.lang)),
-          h('div', { className: 'trk-meta' },
-            h('span', null, tpl(t('trk_n_lessons'), { n: ls })),
-            h('span', null, tpl(t('trk_n_people'), { n: trackUsers(db, x.id).length })),
-            h('span', { className: 'cs-tag' }, (x.positions || []).join(', ') || t('trk_no_pos'))));
-      })),
-      h('p', { className: 'lor-sm lor-muted' }, t('trk_rest_note')));
-  }
-
   /* ---------- admin: the plan template ----------
      две колонки (30 / 60 дней); пункт — карточка: номер, текст (правится на месте, высота по тексту), программа и
      удаление значком; новый пункт — строкой внизу своей колонки (Enter или «+») */
@@ -6062,7 +5981,6 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   }
   function PlanAdmin(p) {
     var t = p.t, db = p.db, list = planTplOf(db);
-    var trackOpts = [['', t('pl_all_tracks')]].concat(tracksOf(db).map(function (y) { return [y.id, trackTitle(y, p.lang)]; }));
     function save(id, fn) { p.update(function (d) { d.planTpl = (d.planTpl || []).map(function (x) { if (x.id !== id) return x; var c = clone(x); fn(c); return c; }); }); }
     function remove(id) { p.update(function (d) { d.planTpl = (d.planTpl || []).filter(function (x) { return x.id !== id; }); }); p.say(t('pl_deleted')); }
     function create(day, text) {
@@ -6083,8 +6001,6 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
               h('div', { className: 'pa-body' },
                 h('textarea', { className: 'pa-text', id: 'plt-' + x.id, rows: planRows(txt), value: txt, 'aria-label': t('pl_text') + ' ' + (i + 1), onChange: function (e) { var v = e.target.value; save(x.id, function (c) { if (typeof c.text === 'string') c.text = { uz: c.text }; c.text[p.lang] = v; }); } }),
                 h('div', { className: 'pa-foot' },
-                  h('select', { className: 'lor-input slim pa-track', id: 'pltr-' + x.id, 'aria-label': t('trk_title'), value: x.track || '', onChange: function (e) { var v = e.target.value; save(x.id, function (c) { c.track = v || null; }); } },
-                    trackOpts.map(function (o) { return h('option', { key: o[0], value: o[0] }, o[1]); })),
                   h('button', { type: 'button', className: 'pa-del', title: t('remove'), 'aria-label': t('remove') + ': ' + txt.slice(0, 60), onClick: function () { remove(x.id); } }, h(Ico, { name: 'trash', size: 17 })))));
           })) : h('p', { className: 'lor-sm lor-muted pa-empty' }, t('pl_col_empty')),
           h(PlanAddRow, { t: t, day: day, onAdd: function (x) { create(day, x); } }));
@@ -6523,8 +6439,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     else if (c.type === 'sec') {
       var sec = db.course.sections.filter(function (x) { return x.id === c.sid; })[0];
       if (!sec) return null;
-      q.s = sec.title; var ids = trackSecIds(db, u);
-      if (!sec.lessons.length || (ids && ids.indexOf(sec.id) < 0)) { q.na = true; cur = max = 1; }
+      q.s = sec.title;
+      if (!sec.lessons.length || !secFor(sec, u)) { q.na = true; cur = max = 1; }   // the chapter is not for him
       else { max = sec.lessons.length; cur = sec.lessons.filter(function (l) { return (prog(db, u.id)[l.id] || {}).status === 'passed'; }).length; }
     }
     else if (c.type === 'course') cur = trackPct(db, u);
@@ -7339,7 +7255,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       r.lesson = l ? l.title : r.part < 0 && intro ? lessons[0].title : null;
       r.words = r.cut && l ? plain(l.html).split(/\s+/).filter(Boolean).length : 0;
     });
-    return { section: { id: id, title: title, officialOnly: false, lessons: lessons }, aud: null, tracks: [], rows: rows, plan: plan };
+    return { section: { id: id, title: title, officialOnly: false, lessons: lessons }, aud: null, rows: rows, plan: plan };
   }
   function colIdx(ref) { var m = /^([A-Z]+)/.exec(ref || ''); if (!m) return -1; var n = 0; for (var i = 0; i < m[1].length; i++) n = n * 26 + m[1].charCodeAt(i) - 64; return n - 1; }
   function parseXLSX(buf) {
@@ -8371,7 +8287,6 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     function del() {
       p.update(function (d) {
         d.course.sections = d.course.sections.filter(function (x) { return x.id !== s.id; });
-        (d.tracks || []).forEach(function (tr) { tr.sections = (tr.sections || []).filter(function (x) { return x !== s.id; }); });
         (d.requests || []).forEach(function (r) { if (r.state === 'open' && ids.indexOf(r.lessonId) >= 0) { r.state = 'closed'; r.unread = false; r.closedAt = Date.now(); } });
       });
       p.say(t('ch_deleted')); p.onDone(ids);
@@ -10840,14 +10755,13 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
 
     return h('div', { className: 'app-wrap' },
       h('div', { className: 'page-head' }, h('div', null, h('span', { className: 'lor-eyebrow' }, t('srv_cms_hint')), h('h1', { className: 'lor-title' }, t('nav_cms'), h(PageTip, { t: t, id: 'cms' })))),
-      h('div', { className: 'lor-tabs fb-tabs', role: 'tablist' }, [['lessons', t('cms_tab_lessons'), flat(db.course).length], ['welcome', t('in_tab'), (function () { var st = introStat(db); return st.w ? st.seen.length + '/' + st.emps.length : 0; })()], ['qn', t('qn_tab'), (function () { var st = qnStat(db); return st.q ? st.done.length + '/' + st.emps.length : 0; })()], ['cases', t('nav_cases'), (db.cases || []).length], ['journals', t('db_tab_j'), (db.journals || []).length], ['terms', t('db_tab_t'), (db.terms || []).length], ['prices', t('pr_tab'), (db.prices || []).length], ['tracks', t('trk_tab'), (db.tracks || []).length], ['plan', t('pl_tab'), planTplOf(db).length], ['wisdom', t('wz_title'), ((db.settings && db.settings.wisdom && db.settings.wisdom.list) || []).length]].map(function (x) {
+      h('div', { className: 'lor-tabs fb-tabs', role: 'tablist' }, [['lessons', t('cms_tab_lessons'), flat(db.course).length], ['welcome', t('in_tab'), (function () { var st = introStat(db); return st.w ? st.seen.length + '/' + st.emps.length : 0; })()], ['qn', t('qn_tab'), (function () { var st = qnStat(db); return st.q ? st.done.length + '/' + st.emps.length : 0; })()], ['cases', t('nav_cases'), (db.cases || []).length], ['journals', t('db_tab_j'), (db.journals || []).length], ['terms', t('db_tab_t'), (db.terms || []).length], ['prices', t('pr_tab'), (db.prices || []).length], ['plan', t('pl_tab'), planTplOf(db).length], ['wisdom', t('wz_title'), ((db.settings && db.settings.wisdom && db.settings.wisdom.list) || []).length]].map(function (x) {
         return h('button', { key: x[0], type: 'button', role: 'tab', 'aria-selected': tab[0] === x[0], className: cx('lor-tab', tab[0] === x[0] && 'is-on'), onClick: function () { tab[1](x[0]); } }, x[1], h('span', { className: 'lor-count' }, x[2]));
       })),
       tab[0] === 'cases' ? h(CasesAdmin, p) :
       tab[0] === 'journals' ? h(JournalsAdmin, p) :
       tab[0] === 'terms' ? h(TermsAdmin, p) :
       tab[0] === 'prices' ? h(PricesAdmin, p) :
-      tab[0] === 'tracks' ? h(TracksAdmin, p) :
       tab[0] === 'plan' ? h(PlanAdmin, p) :
       tab[0] === 'wisdom' ? h(WisdomAdmin, p) :
       tab[0] === 'welcome' ? h(WelcomeAdmin, p) :
@@ -11122,11 +11036,11 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   /* the staff table: «Xodimlar» (back in through the import — by ID), «Natijalar» (lessons), «Rahbarlar» */
   function staffWorkbook(db) {
     var tu = T('uz'), L = levelsOf(db), emps = db.users.filter(function (u) { return u.role === 'employee'; });
-    var xod = [['ID', 'F.I.Sh.', 'Login', 'Lavozim', 'Bo‘lim', 'Telefon', 'Telegram', 'Status', 'Daraja', 'Dastur', 'XP', 'Topshirilgan darslar', 'Ishga kirgan', 'E-mail', 'Tug‘ilgan sana', 'Pasport', 'Manzil', 'Ma’lumoti', 'Tajriba (yil)', 'Tillar', 'Anketa']];
+    var xod = [['ID', 'F.I.Sh.', 'Login', 'Lavozim', 'Bo‘lim', 'Telefon', 'Telegram', 'Status', 'Daraja', 'XP', 'Topshirilgan darslar', 'Ishga kirgan', 'E-mail', 'Tug‘ilgan sana', 'Pasport', 'Manzil', 'Ma’lumoti', 'Tajriba (yil)', 'Tillar', 'Anketa']];
     var nat = [['ID', 'F.I.Sh.', 'Dars', 'Holat', 'Ball', 'Sana']];
     emps.forEach(function (u) {
       var pf = u.profile || {}, pr = prog(db, u.id), passed = Object.keys(pr).filter(function (k) { return pr[k] && pr[k].status === 'passed'; }).length;
-      xod.push([u.id, u.name, u.login || '', u.position || '', u.department || '', pf.phone || '', pf.telegram || '', tu('s_' + u.status), lvlName(L[Math.min(u.level || 0, L.length - 1)], 'uz'), trackTitle(trackOf(db, u), 'uz'),
+      xod.push([u.id, u.name, u.login || '', u.position || '', u.department || '', pf.phone || '', pf.telegram || '', tu('s_' + u.status), lvlName(L[Math.min(u.level || 0, L.length - 1)], 'uz'),
         rankOf(db, u).xp, passed, u.startedAt ? dayKey(u.startedAt) : '', pf.email || '', pf.birth || '', pf.passport || '', pf.address || '', pf.education || '', pf.years || '', pf.languages || '', u.profileComplete ? '✓' : '']);
       Object.keys(pr).forEach(function (lid) {
         var x = pr[lid] || {}, l = findLesson(db.course, lid);
@@ -11159,7 +11073,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         }); });
         var nid = Math.max.apply(null, d.users.map(function (u) { return u.id; }).concat([10000])) + 1;
         ok.forEach(function (x) {
-          d.users.push({ id: nid++, role: 'employee', login: x.login, password: x.password, name: x.name, position: x.position, department: x.department, trackId: (tracksOf(d).filter(function (tr) { return (tr.positions || []).indexOf(x.position) >= 0; })[0] || {}).id, status: 'probation', profileComplete: false, createdAt: Date.now(), startedAt: Date.now(), cohort: dayKey(Date.now()).slice(0, 7), reminderTime: '19:00' });
+          d.users.push({ id: nid++, role: 'employee', login: x.login, password: x.password, name: x.name, position: x.position, department: x.department, status: 'probation', profileComplete: false, createdAt: Date.now(), startedAt: Date.now(), cohort: dayKey(Date.now()).slice(0, 7), reminderTime: '19:00' });
           if (x.status) d.users[d.users.length - 1].status = x.status;
         });
       });
@@ -11206,7 +11120,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       if (!e.login && db.users.some(function (u) { return u.login === form.login.trim().toLowerCase(); })) e.login = t('login_taken');
       er[1](e); if (Object.keys(e).length) return;
       var nid = Math.max.apply(null, db.users.map(function (u) { return u.id; })) + 1;
-      p.update(function (d) { d.users.push({ id: nid, role: 'employee', login: form.login.trim().toLowerCase(), password: form.password, name: form.name.trim(), position: form.position, department: form.department, trackId: (tracksOf(d).filter(function (x) { return (x.positions || []).indexOf(form.position) >= 0; })[0] || {}).id, status: 'probation', profileComplete: false, createdAt: Date.now(), startedAt: Date.now(), cohort: dayKey(Date.now()).slice(0, 7), reminderTime: '19:00' }); });
+      p.update(function (d) { d.users.push({ id: nid, role: 'employee', login: form.login.trim().toLowerCase(), password: form.password, name: form.name.trim(), position: form.position, department: form.department, status: 'probation', profileComplete: false, createdAt: Date.now(), startedAt: Date.now(), cohort: dayKey(Date.now()).slice(0, 7), reminderTime: '19:00' }); });
       made[1]({ login: form.login.trim().toLowerCase(), password: form.password, name: form.name.trim() }); f[1](blank());
     }
     var emps = db.users.filter(function (u) { return u.role === 'employee'; });
@@ -11227,10 +11141,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
                 h(CondIco, { type: 'xtask', size: 13 }), act ? tpl(t('xt_staff_n'), { n: act }) : t('xt_staff_add'), rev ? h('span', { className: 'app-navcount' }, rev) : null); })()),
           h('td', null, h('code', null, u.login), pw[0][u.id] ? h('div', { className: 'lor-sm made' }, t('new_pw') + ': ', h('code', null, pw[0][u.id])) : null),
           h('td', null,
-            h('select', { className: 'lor-input slim', 'aria-label': t('trk_title'), value: (trackOf(db, u) || {}).id || '', onChange: function (e) { var v = e.target.value; p.update(function (d) { d.users.forEach(function (x) { if (x.id === u.id) { if (v) x.trackId = v; else delete x.trackId; } }); }); } },
-              h('option', { value: '' }, t('trk_none')),
-              tracksOf(db).map(function (x) { return h('option', { key: x.id, value: x.id }, trackTitle(x, p.lang)); })),
-            (function () { var st = planStat(db, u); return h('div', { className: cx('lor-sm', st.late ? 'plan-late' : 'lor-muted'), style: { marginTop: 4 } }, tpl(t('pl_col'), { n: st.done, all: st.total })); })()),
+            (function () { var st = planStat(db, u); return h('div', { className: cx('lor-sm', st.late ? 'plan-late' : 'lor-muted') }, tpl(t('pl_col'), { n: st.done, all: st.total })); })()),
           h('td', null, h('select', { className: 'lor-input slim', 'aria-label': t('level'), value: Math.min(u.level || 0, L.length - 1), onChange: function (e) { var v = +e.target.value, was = rankOf(db, u); p.update(function (d) { var xp = xpOf(d, u); d.users.forEach(function (x) { if (x.id === u.id) { x.level = v; x.levelXpBase = xp; x.levelAt = Date.now(); if (v <= was.li) x.lastRank = String(v); } }); if (v > was.li) markPromotion(d, u.id, v, was.li); }); if (v > was.li) p.say(t('promo_admin_note')); } },
             L.map(function (l, i) { return h('option', { key: l.id, value: i }, lvlName(l, p.lang)); })), h('div', { className: 'lor-sm lor-muted', style: { marginTop: 4 } }, rankOf(db, u).xp + ' XP')),
           h('td', null, h('select', { className: 'lor-input slim', 'aria-label': t('th_status'), value: u.status, onChange: function (e) { var v = e.target.value; p.update(function (d) { d.users.forEach(function (x) { if (x.id === u.id) x.status = v; }); }); } },
@@ -11314,7 +11225,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
             h('span', { className: 'sp-group-n' }, tpl(t('sp_n_emp'), { n: g.list.length })),
             stepXp(L, g.i) != null ? h('span', { className: 'lor-sm lor-muted' }, stepXp(L, g.i) + ' XP') : null),
           h('div', { className: 'lor-table-wrap' }, h('table', { className: 'lor-table staff-table' },
-            h('thead', null, h('tr', null, [t('th_emp'), t('login'), t('trk_col'), t('level'), t('th_status'), t('sp_col'), t('profile'), t('as_col'), t('th_terms'), ''].map(function (x, i) { return h('th', { key: i }, x); }))),
+            h('thead', null, h('tr', null, [t('th_emp'), t('login'), t('pl_tab'), t('level'), t('th_status'), t('sp_col'), t('profile'), t('as_col'), t('th_terms'), ''].map(function (x, i) { return h('th', { key: i }, x); }))),
             h('tbody', null, g.list.map(row)))));
       }),
       groups.length ? null : h('section', { className: 'box' }, h('p', { className: 'lor-muted', style: { margin: 0 } }, t('sp_empty'))),
@@ -11394,10 +11305,9 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   }
 
   /* ---------------- server: templates, course import, sync status, server code ---------------- */
-  /* a new platform on the server starts empty: levels, programmes, the 30/60 plan and the schedule come from the templates */
+  /* a new platform on the server starts empty: levels, the 30/60 plan and the schedule come from the templates */
   function fillTemplates(d) {
     if (!(d.levels || []).length) d.levels = seedLevels();
-    if (!(d.tracks || []).length) d.tracks = seedTracks();
     if (!(d.planTpl || []).length) d.planTpl = seedPlan();
     d.settings = d.settings || {};
     if (!d.settings.schedule) d.settings.schedule = seedSchedule();
@@ -11413,7 +11323,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     return list.some(function (x) { return x.html.indexOf('Namuna (demo)') >= 0; }) ? 'demo' : list;
   }
   /* a section file (.json) — a chapter of the standards made outside the repo (the texts stay on the server only):
-     { app: 'buraq-lms-chapter', v: 1, tracks: 'all' | [track ids],
+     { app: 'buraq-lms-chapter', v: 1, aud: { all, positions, depts } (who studies it; none — the SOP manager picks; old «tracks» is ignored),
        section: { id, title: '2-bob. …', officialOnly, lessons: [{ id, title, html, quiz: [{ q, options, answer }], source }] } } */
   var SEC_ID = /^[\w-]{1,40}$/;
   function parseChapter(text) {
@@ -11435,8 +11345,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var strs = function (l) { return Array.isArray(l) ? l.filter(function (q) { return typeof q === 'string' && q.trim(); }) : []; };
     var fa = x.aud && typeof x.aud === 'object' ? { all: !!x.aud.all, positions: strs(x.aud.positions), depts: strs(x.aud.depts) } : null;
     return { section: { id: s.id, title: s.title.trim(), officialOnly: !!s.officialOnly, lessons: lessons },
-      aud: fa && (fa.all || fa.positions.length || fa.depts.length) ? fa : null,
-      tracks: x.tracks === 'all' ? 'all' : Array.isArray(x.tracks) ? x.tracks.filter(function (t) { return typeof t === 'string'; }) : [] };
+      aud: fa && (fa.all || fa.positions.length || fa.depts.length) ? fa : null };
   }
   /* ---------- the order of lessons in a chapter (Kontent → Darslar): renumber, move, join, split ---------- */
   function ownNos(title) { var s0 = String(title || '').trim(), olds = [], m; for (var j = 0; j < 3 && (m = headNo(s0)); j++) { olds.push(m.no); s0 = m.rest; } return { olds: olds, rest: s0 }; }

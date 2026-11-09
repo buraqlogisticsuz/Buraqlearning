@@ -1,5 +1,5 @@
 /* Шаблоны новой платформы (на сервере их подставляет первый вход SOP-менеджера — fillTemplates в app.js):
-   карьерная лестница, программы обучения, план адаптации 30/60, график работы; разбор 4-bob из файла прототипа.
+   карьерная лестница, план адаптации 30/60, график работы; разбор 4-bob из файла прототипа.
    Демо больше нет: выдуманных сотрудников и данных здесь нет, платформа работает только с сервером. */
 
 var DAY = 864e5;
@@ -45,32 +45,16 @@ function seedLevels() {
       C('cx', 'xp', 700), C('ca', 'avg', 95), C('ci', 'ini', 3), C('ct', 'tenure', 365)])];
 }
 
-function seedTracks() {
-  return [
-    { id: 'tr_wh', title: { uz: 'Ombor xodimi', ru: 'Сотрудник склада', en: 'Warehouse staff', zh: '仓库员工' },
-      desc: { uz: 'Qabul, markirovka, WMS va ombor xavfsizligi.', ru: 'Приёмка, маркировка, WMS и безопасность склада.', en: 'Receiving, labelling, WMS and warehouse safety.', zh: '收货、贴标、WMS 与仓库安全。' },
-      positions: ['Omborchi', 'Ombor mudiri'], sections: ['s1', 's2'] },
-    { id: 'tr_cus', title: { uz: 'Bojxona va hujjatlar', ru: 'Таможня и документы', en: 'Customs and documents', zh: '海关与单据' },
-      desc: { uz: 'Hujjatlar, deklaratsiya, chegara va tranzit.', ru: 'Документы, декларация, граница и транзит.', en: 'Documents, declarations, border and transit.', zh: '单据、报关、边境与过境。' },
-      positions: ['Bojxona deklaranti'], sections: ['s1', 's3'] },
-    { id: 'tr_mgr', title: { uz: 'Menejer (to‘liq dastur)', ru: 'Менеджер (полная программа)', en: 'Manager (full programme)', zh: '经理（完整课程）' },
-      desc: { uz: 'Butun zanjir: ombor, transport, chegara va mijoz bilan ishlash.', ru: 'Вся цепочка: склад, транспорт, граница и работа с клиентом.', en: 'The whole chain: warehouse, transport, border and client work.', zh: '完整链条：仓库、运输、边境与客户工作。' },
-      positions: ['Mijozlar menejeri', 'Logistika menejeri'], sections: ['s1', 's2', 's3'] }];
-}
-
-/* milestones of the adaptation plan; `track` limits an item to one programme */
+/* milestones of the adaptation plan (one list for everyone) */
 function seedPlan() {
-  function M(id, day, track, uz, ru, en, zh) { return { id: id, day: day, track: track, text: { uz: uz, ru: ru, en: en, zh: zh } }; }
+  function M(id, day, uz, ru, en, zh) { return { id: id, day: day, text: { uz: uz, ru: ru, en: en, zh: zh } }; }
   return [
-    M('p1', 30, null, 'Anketa, mol-mulk va foydalanish shartlari to‘ldirilgan', 'Анкета, имущество и условия использования заполнены', 'Profile, property and terms completed', '已完成个人信息表、资产登记与使用条款'),
-    M('p2', 30, null, '“Kompaniya bilan tanishuv” bo‘limi to‘liq o‘tilgan', 'Раздел «Знакомство с компанией» пройден полностью', 'The “Getting to know the company” section fully passed', '已完成「公司介绍」章节'),
-    M('p3', 30, null, 'Mentor bilan tanishuv suhbati o‘tkazilgan', 'Проведена вводная встреча с наставником', 'Intro meeting with the mentor held', '已与导师进行入职面谈'),
-    M('p4', 30, 'tr_wh', 'Qabul zonasida mentor nazoratida kamida 5 ta yuk qabul qilingan', 'Под контролем наставника принято не менее 5 грузов', 'At least 5 shipments received under the mentor’s supervision', '在导师指导下完成至少 5 批货物收货'),
-    M('p5', 30, 'tr_cus', 'Mentor bilan birga kamida 2 ta deklaratsiya to‘ldirilgan', 'Вместе с наставником заполнено не менее 2 деклараций', 'At least 2 declarations filled in with the mentor', '与导师一起填写至少 2 份报关单'),
-    M('p6', 60, null, 'Dastur darslarining kamida yarmi topshirilgan', 'Сдано не менее половины уроков программы', 'At least half of the programme’s lessons passed', '已通过课程中至少一半的课'),
-    M('p7', 60, null, 'Kundalik ish mustaqil, nazoratsiz bajarilyapti', 'Ежедневная работа выполняется самостоятельно, без контроля', 'Daily work is done independently, without supervision', '日常工作可独立完成，无需监督'),
-    M('p8', 60, null, 'Kamida bitta pulse-so‘rovnoma to‘ldirilgan', 'Заполнен хотя бы один пульс-опрос', 'At least one pulse survey completed', '已完成至少一次简短问卷'),
-    M('p9', 60, 'tr_mgr', 'Mijoz bilan mustaqil yozishma va AI-trenajyorda kamida 2 ta ssenariy', 'Самостоятельная переписка с клиентом и 2 сценария в AI-тренажёре', 'Independent client correspondence and 2 AI drill scenarios', '独立与客户沟通，并完成 2 个 AI 情景演练')];
+    M('p1', 30, 'Anketa, mol-mulk va foydalanish shartlari to‘ldirilgan', 'Анкета, имущество и условия использования заполнены', 'Profile, property and terms completed', '已完成个人信息表、资产登记与使用条款'),
+    M('p2', 30, '“Kompaniya bilan tanishuv” bo‘limi to‘liq o‘tilgan', 'Раздел «Знакомство с компанией» пройден полностью', 'The “Getting to know the company” section fully passed', '已完成「公司介绍」章节'),
+    M('p3', 30, 'Mentor bilan tanishuv suhbati o‘tkazilgan', 'Проведена вводная встреча с наставником', 'Intro meeting with the mentor held', '已与导师进行入职面谈'),
+    M('p6', 60, 'Kurs darslarining kamida yarmi topshirilgan', 'Сдано не менее половины уроков курса', 'At least half of the course lessons passed', '已通过课程中至少一半的课'),
+    M('p7', 60, 'Kundalik ish mustaqil, nazoratsiz bajarilyapti', 'Ежедневная работа выполняется самостоятельно, без контроля', 'Daily work is done independently, without supervision', '日常工作可独立完成，无需监督'),
+    M('p8', 60, 'Kamida bitta pulse-so‘rovnoma to‘ldirilgan', 'Заполнен хотя бы один пульс-опрос', 'At least one pulse survey completed', '已完成至少一次简短问卷')];
 }
 
 /* work schedule per department — the turnstile attendance is compared with it */

@@ -143,8 +143,9 @@ try {
   await signIn(A, srv.admin.login, srv.admin.password);
   await skipTour(A);
   await settle(A);
-  step('SOP-менеджер вошёл, шаблоны уровней и программ на сервере');
-  assert.ok(srv.g.state().levels.length > 0 && srv.g.state().tracks.length > 0);
+  step('SOP-менеджер вошёл, шаблоны уровней и плана на сервере; программ («Dasturlar») больше нет');
+  assert.ok(srv.g.state().levels.length > 0 && srv.g.state().planTpl.length > 0 && !(srv.g.state().tracks || []).length);
+  assert.equal(await A.locator('main .lor-tabs [role="tab"]', { hasText: 'Dasturlar' }).count(), 0);
   // отметка прихода в программе по умолчанию включена; в основных сценариях выключаем, чтобы окно не мешало (отдельный шаг ниже)
   const setClock = on => { const tk = srv.g.post({ action: 'login', login: srv.admin.login, password: srv.admin.password }).token; srv.g.post({ token: tk, action: 'patch', ops: [{ op: 'set', path: ['settings', 'selfClock'], value: { on: on } }] }); };
   setClock(false);
@@ -765,9 +766,9 @@ try {
   assert.deepEqual(await rejected(A), [], 'сервер принял «Kun hikmati»');
   step('страница входа: маршрут, приветствие, «Kun hikmati» с переводом; своя цитата SOP-менеджера видна до входа');
 
-  // ---------- раздел курса из файла (.json): встаёт по номеру главы, попадает в программы, лишние теги и ответы — нет ----------
+  // ---------- раздел курса из файла (.json): встаёт по номеру главы, «Kimlar o‘qiydi» — из файла, лишние теги и ответы — нет ----------
   // в репозитории — выдуманный раздел; настоящие главы стандартов загружаются только на сервер
-  const chap = (sec, tracks) => ({ name: 'bob.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({ app: 'buraq-lms-chapter', v: 1, tracks, section: sec })) });
+  const chap = (sec, aud) => ({ name: 'bob.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({ app: 'buraq-lms-chapter', v: 1, aud: aud === 'all' ? { all: true } : aud, section: sec })) });
   const b2 = { id: 'b2', title: '2-bob. Test bo‘limi', lessons: [
     { id: 'b2-1', title: '2.1. Test darsi', html: '<h3>Maqsad</h3><p onclick="x()">Matn</p><script>alert(1)</script><div class="ilova"><b>ILOVA-2.1</b><span>Menyu</span></div>', quiz: [{ q: 'Savol?', options: ['A', 'B', 'C'], answer: 2 }, { q: 'Yomon', options: ['A'], answer: 0 }] },
     { id: 'b2-2', title: '2.2. Ikkinchi dars', html: '<p>Matn 2</p>', quiz: [] }] };
@@ -777,10 +778,10 @@ try {
     if (opts.check) await opts.check();
     await A.locator('.imp-dlg').getByRole('button', { name: 'Yuklash' }).click(); await settle(A);
   };
-  await upload(chap(b2, ['tr_mgr']), { check: async () => {
+  await upload(chap(b2, { positions: ['Mijozlar menejeri', 'Logistika menejeri'] }), { check: async () => {
     assert.match(await txt(A, '.imp-dlg'), /2-bob\. Test bo‘limi\s+2 ta dars · 1 ta test savoli/);
     assert.ok(await A.locator('.imp-dlg input[name="imp-where"]').first().isChecked(), 'новый раздел — по умолчанию');
-    assert.ok(await A.locator('.imp-dlg .ac-chip.is-on', { hasText: 'Logistika menejeri' }).count(), 'должности программы из файла отмечены');
+    assert.ok(await A.locator('.imp-dlg .ac-chip.is-on', { hasText: 'Logistika menejeri' }).count(), 'должности из файла отмечены');
     await shot(A, '23-import-dialog');
   } });
   let secs = srv.g.state().course.sections;
@@ -789,7 +790,7 @@ try {
   assert.equal(secs[bi].lessons[0].html.includes('script') || secs[bi].lessons[0].html.includes('onclick'), false, 'лишнее из HTML убрано');
   assert.ok(secs[bi].lessons[0].html.includes('class="ilova"'));
   assert.deepEqual(secs[bi].lessons[0].quiz, [{ q: 'Savol?', options: ['A', 'B', 'C'], answer: 2 }], 'неверный вопрос отброшен');
-  assert.deepEqual(secs[bi].aud, { positions: ['Mijozlar menejeri', 'Logistika menejeri'], depts: [], users: [] }, 'глава — должностям программы из файла');
+  assert.deepEqual(secs[bi].aud, { positions: ['Mijozlar menejeri', 'Logistika menejeri'], depts: [], users: [] }, 'глава — должностям из файла');
   assert.match(await txt(A, 'body'), /«2-bob\. Test bo‘limi» yuklandi: 2 ta dars, 1 ta test savoli · Mijozlar menejeri, Logistika menejeri/);
   await E.evaluate(() => LmsClient.sync()); await E.waitForTimeout(400);
   const eq = await E.evaluate(() => (LmsClient.initial().course.sections.find(x => x.id === 'b2') || { lessons: [{ quiz: [] }] }).lessons[0].quiz);
