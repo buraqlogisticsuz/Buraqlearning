@@ -132,6 +132,8 @@ function sheetXml(rows) {
 }
 // текст на странице; узкие неразрывные пробелы в суммах (4 000 000) — обычные
 const txt = async (p, sel) => (await p.innerText(sel)).replace(/[\u202f\u00a0]/g, ' ');
+// урок по названию: список уроков слева есть только на странице урока — с главной и других страниц урок открывается ссылкой
+const openLesson = async (p, title) => { const l = srv.g.state().course.sections.flatMap(s => s.lessons).find(x => x.title === title); await p.evaluate(id => { location.hash = '#lesson?id=' + id; }, l.id); await p.waitForTimeout(600); };
 const skipTour = async p => { const s = p.getByRole('button', { name: 'O‘tkazib yuborish' }); if (await s.count()) { await s.first().click(); await p.waitForTimeout(300); } };
 
 try {
@@ -233,7 +235,7 @@ try {
   setClock(false);
   await E.reload({ waitUntil: 'networkidle' }); await watchSync(E); await skipTour(E);
   // урок 4.1 → «Mavzuni yakunlash» → «B: tushundim, testga tayyorman» → тест
-  await E.getByText('4.1. Test standarti').first().click(); await E.waitForTimeout(600);
+  await openLesson(E, '4.1. Test standarti');
   assert.ok((await E.innerText('main')).includes('Test matni 1'), 'текст урока пришёл с сервера');
   // короткий урок виден целиком — окно «всё понятно?» открывается само, иначе — кнопкой внизу
   if (!(await E.locator('.lor-choice-b').count())) await click(E, 'Mavzuni yakunlash');
@@ -401,7 +403,7 @@ try {
   await settle(A);
   assert.equal(srv.g.state().course.sections[0].lessons[0].video.src, 'https://youtu.be/dQw4w9WgXcQ?si=test');
   await E.evaluate(() => LmsClient.sync()); await E.waitForTimeout(400);
-  await E.getByText('4.1. Test standarti').first().click(); await E.waitForTimeout(600);
+  await openLesson(E, '4.1. Test standarti');
   assert.match(await E.locator('.lor-video-frame iframe').getAttribute('src'), /^https:\/\/www\.youtube-nocookie\.com\/embed\/dQw4w9WgXcQ\?/);
   await E.locator('.lor-video-frame iframe').focus(); await E.waitForTimeout(200);
   assert.equal(await E.locator('.lor-shield').count(), 0, 'клик в видео не прячет урок');
@@ -917,7 +919,7 @@ try {
   await A.reload({ waitUntil: 'networkidle' }); await A.waitForSelector('a[href="#staff"].is-on:visible', { timeout: 10000 });
   assert.ok(await A.locator('#f-n-name').count(), 'после обновления — снова «Xodimlar»');
   await nav(E, 'path'); await E.reload({ waitUntil: 'networkidle' }); await E.waitForSelector('a[href="#path"].is-on:visible', { timeout: 10000 });
-  await E.getByText('4.1. Test standarti').first().click(); await E.waitForTimeout(600);
+  await openLesson(E, '4.1. Test standarti');
   assert.match(new URL(E.url()).hash, /^#lesson\?id=b4-1$/);
   await E.reload({ waitUntil: 'networkidle' }); await E.waitForTimeout(800);
   assert.match(new URL(E.url()).hash, /^#lesson\?id=b4-1$/, 'урок — тот же после обновления');

@@ -4561,13 +4561,16 @@ button.jf-name { padding: 0; background: none; border: 0; border-bottom: 1px sol
 .side-tg:hover { border-color: var(--border); }
 .side-tg:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 .side-tg.is-off { left: 0; padding: 0 12px 0 10px; border-left: 0; border-radius: 0 var(--radius-pill) var(--radius-pill) 0; }
+/* не урок (Bosh sahifa, Vazifalar, Baza…): панели уроков нет — страница во всю ширину; на телефоне меню в шапке открывает её везде */
+.app-body.side-none { grid-template-columns: minmax(0, 1fr); }
+.app-body.side-none .app-side { display: none; }
 .app-body.side-off { grid-template-columns: minmax(0, 1fr); }
 .app-body.side-off .app-side { display: none; }
 .app-body.side-off .app-main { padding-left: 88px; }   /* ярлык «› Darslar» у края не наезжает на страницу */
 @media (max-width: 960px) {
   .side-tg { display: none; }
   .app-body.side-off .app-main { padding-left: var(--space-6); }
-  .app-body.side-off .app-side.is-open { display: block; }
+  .app-body.side-off .app-side.is-open, .app-body.side-none .app-side.is-open { display: block; }
 }
 
 /* «Kontent» → уроки: «AI bilan to‘ldirish» главы, сохранение внизу, «Xodim ko‘rinishi», несохранённые правки */
