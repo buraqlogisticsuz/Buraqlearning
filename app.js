@@ -110,35 +110,6 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     close(); return out.join('');
   }
 
-  /* ---------- rich text editor (CMS) ---------- */
-  /* paste from Word or a site: headings, lists, tables, bold and italic stay (the sanitizer's allowlist), the rest — plain text.
-     Word's «Heading 1/2» → H, «Heading 3+» → h; empty paragraphs go */
-  function pasteHtml(html) {
-    var doc = new DOMParser().parseFromString(html, 'text/html');
-    Array.prototype.slice.call(doc.querySelectorAll('style,script,meta,link,title,xml')).forEach(function (e) { e.parentNode.removeChild(e); });
-    Array.prototype.slice.call(doc.querySelectorAll('h1,h2,h3,h4,h5,h6')).forEach(function (e) { var n = doc.createElement(/^H[12]$/.test(e.tagName) ? 'h3' : 'h4'); n.innerHTML = e.innerHTML; e.parentNode.replaceChild(n, e); });
-    return sanitize(doc.body.innerHTML).replace(/<p>(?:\s|&nbsp;|<br>|<span>(?:\s|&nbsp;)*<\/span>)*<\/p>/g, '').replace(/<span>([\s\S]*?)<\/span>/g, '$1');
-  }
-  function RichEditor(p) {
-    var t = p.t, ref = useRef(null);
-    useEffect(function () { if (ref.current) ref.current.innerHTML = sanitize(p.value || ''); }, [p.docKey]);
-    function emit() { p.onChange(ref.current.innerHTML); }
-    function cmd(c, v) { ref.current.focus(); try { document.execCommand(c, false, v); } catch (e) {} emit(); }
-    function table() { var th = function (k) { return '<th>' + t('rte_col') + ' ' + k + '</th>'; }, td = '<td>…</td>'; cmd('insertHTML', '<table><tr>' + th(1) + th(2) + '</tr><tr>' + td + td + '</tr><tr>' + td + td + '</tr></table><p><br></p>'); }
-    var tools = [['H', function () { cmd('formatBlock', 'h3'); }, t('rte_h3')], ['h', function () { cmd('formatBlock', 'h4'); }, t('rte_h4')], ['¶', function () { cmd('formatBlock', 'p'); }, t('rte_p')], ['B', function () { cmd('bold'); }, t('rte_b')], ['I', function () { cmd('italic'); }, t('rte_i')],
-      ['•', function () { cmd('insertUnorderedList'); }, t('rte_ul')], ['1.', function () { cmd('insertOrderedList'); }, t('rte_ol')], [t('note_btn'), function () { cmd('formatBlock', 'blockquote'); }, t('note_btn')], ['▦', table, t('rte_tbl')],
-      ['↶', function () { cmd('undo'); }, t('rte_undo')], ['↷', function () { cmd('redo'); }, t('rte_redo')], ['⌫', function () { cmd('removeFormat'); }, t('rte_clear')]];
-    return h('div', { className: 'rte' },
-      h('div', { className: 'rte-bar', role: 'toolbar', 'aria-label': t('rte_hint'), title: t('rte_hint') }, tools.map(function (x, i) { return h('button', { key: i, type: 'button', title: x[2], 'aria-label': x[2], className: i === 8 || i === 9 ? 'rte-gap' : null, onMouseDown: function (e) { e.preventDefault(); }, onClick: x[1] }, x[0]); })),
-      h('div', { ref: ref, className: 'rte-area sop-body', contentEditable: true, suppressContentEditableWarning: true, role: 'textbox', 'aria-multiline': true, 'aria-label': t('body'), onInput: emit, onBlur: emit,
-        onPaste: function (e) {
-          var cd = e.clipboardData || window.clipboardData, html = cd && cd.getData && cd.getData('text/html');
-          e.preventDefault();
-          if (html && /<(h\d|ul|ol|table|strong|b|em|i|p)\b/i.test(html)) document.execCommand('insertHTML', false, pasteHtml(html));
-          else document.execCommand('insertText', false, cd.getData('text/plain'));
-          emit();
-        } }));
-  }
 
   /* ---------- SOP body with image lightbox ---------- */
   function SopBody(p) {
@@ -10951,7 +10922,6 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           h(CmsAI, { t: t, lang: p.lang, sampler: p.sampler, say: p.say, draft: draft, setD: setD, questions: openQ.map(function (r) { return r.text; }) }),
           h(Field, { name: 'title', label: t('l_title'), required: true, value: draft.title, onChange: function (v) { setD(function (d) { d.title = v; }); } }),
           h(Field, { name: 'intro', label: t('l_intro'), multiline: true, rows: 2, value: draft.intro, onChange: function (v) { setD(function (d) { d.intro = v; }); } }),
-          h(RichEditor, { t: t, value: draft.html, docKey: draft.id + ':' + (draft._v || 0), onChange: function (v) { setD(function (d) { d.html = v; }); } }),
           h('h2', { className: 'cms-h' }, t('steps')),
           draft.steps.map(function (s, i) {
             return h('div', { key: i, className: 'cms-step' },

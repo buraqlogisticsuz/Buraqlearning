@@ -34,7 +34,7 @@ test('автозаполнение Chrome/Safari: поле своего цвет
   // днём поле белое, ночью — плотный тёмный (тот же, что у полей ночью), не полупрозрачный
   assert.match(day, /--field-solid: var\(--white\)/);
   assert.ok(nightMedia.has('--field-solid') && nightAttr.has('--field-solid'));
-  assert.match(day, /\.lor-input, textarea\.lor-input, select\.lor-input, \.rte-area \{ background-color: var\(--field\); \}/);
+  assert.match(day, /\.lor-input, textarea\.lor-input, select\.lor-input \{ background-color: var\(--field\); \}/);
 });
 
 test('дневные значения не доходят до ночи: у каждой переменной дня есть ночное значение в обеих ветках', () => {
