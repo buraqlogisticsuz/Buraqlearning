@@ -5791,7 +5791,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     }, [open]);
   }
 
-  /* ======================= FEATURES 8: training programmes per position + the 30/60/90 adaptation plan ======================= */
+  /* ======================= FEATURES 8: training programmes per position + the 30/60 adaptation plan ======================= */
 
   function tracksOf(db) { return db.tracks || []; }
   function trackById(db, id) { return tracksOf(db).filter(function (x) { return x.id === id; })[0]; }
@@ -5821,10 +5821,11 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   function trackUsers(db, id) { return db.users.filter(function (u) { return u.role === 'employee' && (trackOf(db, u) || {}).id === id; }); }
 
   /* ---------- adaptation plan ---------- */
-  var PLAN_DAYS = [30, 60, 90];
+  var PLAN_DAYS = [30, 60];       // колонки плана; «90 дней» убрана — её прежние пункты не показываются и не считаются
+  function planTplOf(db) { return (db.planTpl || []).filter(function (x) { return PLAN_DAYS.indexOf(x.day) >= 0; }); }
   function planItems(db, u) {
     var tr = trackOf(db, u);
-    return (db.planTpl || []).filter(function (x) { return !x.track || (tr && x.track === tr.id); });
+    return planTplOf(db).filter(function (x) { return !x.track || (tr && x.track === tr.id); });
   }
   /* текст на нескольких языках: свой, иначе узбекский, иначе любой заполненный (пункт добавили, работая на русском) */
   function anyLang(o, lang) { if (!o) return ''; if (typeof o === 'string') return o; if (o[lang]) return o[lang]; if (o.uz) return o.uz; for (var k in o) if (o[k]) return o[k]; return ''; }
@@ -6075,7 +6076,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   }
 
   /* ---------- admin: the plan template ----------
-     три колонки (30 / 60 / 90 дней); пункт — карточка: номер, текст (правится на месте, высота по тексту), программа и
+     две колонки (30 / 60 дней); пункт — карточка: номер, текст (правится на месте, высота по тексту), программа и
      удаление значком; новый пункт — строкой внизу своей колонки (Enter или «+») */
   function planRows(s) { return Math.max(2, Math.min(8, String(s || '').split('\n').reduce(function (a, l) { return a + Math.max(1, Math.ceil(l.length / 34)); }, 0))); }
   function PlanAddRow(p) {
@@ -6086,7 +6087,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       h('button', { type: 'submit', className: 'pa-plus', disabled: !v[0].trim(), title: t('pl_add'), 'aria-label': t('pl_add') }, h(Ico, { name: 'plus', size: 18 })));
   }
   function PlanAdmin(p) {
-    var t = p.t, db = p.db, list = (db.planTpl || []);
+    var t = p.t, db = p.db, list = planTplOf(db);
     var trackOpts = [['', t('pl_all_tracks')]].concat(tracksOf(db).map(function (y) { return [y.id, trackTitle(y, p.lang)]; }));
     function save(id, fn) { p.update(function (d) { d.planTpl = (d.planTpl || []).map(function (x) { if (x.id !== id) return x; var c = clone(x); fn(c); return c; }); }); }
     function remove(id) { p.update(function (d) { d.planTpl = (d.planTpl || []).filter(function (x) { return x.id !== id; }); }); p.say(t('pl_deleted')); }
@@ -10860,7 +10861,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
 
     return h('div', { className: 'app-wrap' },
       h('div', { className: 'page-head' }, h('div', null, h('span', { className: 'lor-eyebrow' }, t('srv_cms_hint')), h('h1', { className: 'lor-title' }, t('nav_cms'), h(PageTip, { t: t, id: 'cms' })))),
-      h('div', { className: 'lor-tabs fb-tabs', role: 'tablist' }, [['lessons', t('cms_tab_lessons'), flat(db.course).length], ['welcome', t('in_tab'), (function () { var st = introStat(db); return st.w ? st.seen.length + '/' + st.emps.length : 0; })()], ['qn', t('qn_tab'), (function () { var st = qnStat(db); return st.q ? st.done.length + '/' + st.emps.length : 0; })()], ['cases', t('nav_cases'), (db.cases || []).length], ['journals', t('db_tab_j'), (db.journals || []).length], ['terms', t('db_tab_t'), (db.terms || []).length], ['prices', t('pr_tab'), (db.prices || []).length], ['tracks', t('trk_tab'), (db.tracks || []).length], ['plan', t('pl_tab'), (db.planTpl || []).length], ['wisdom', t('wz_title'), ((db.settings && db.settings.wisdom && db.settings.wisdom.list) || []).length]].map(function (x) {
+      h('div', { className: 'lor-tabs fb-tabs', role: 'tablist' }, [['lessons', t('cms_tab_lessons'), flat(db.course).length], ['welcome', t('in_tab'), (function () { var st = introStat(db); return st.w ? st.seen.length + '/' + st.emps.length : 0; })()], ['qn', t('qn_tab'), (function () { var st = qnStat(db); return st.q ? st.done.length + '/' + st.emps.length : 0; })()], ['cases', t('nav_cases'), (db.cases || []).length], ['journals', t('db_tab_j'), (db.journals || []).length], ['terms', t('db_tab_t'), (db.terms || []).length], ['prices', t('pr_tab'), (db.prices || []).length], ['tracks', t('trk_tab'), (db.tracks || []).length], ['plan', t('pl_tab'), planTplOf(db).length], ['wisdom', t('wz_title'), ((db.settings && db.settings.wisdom && db.settings.wisdom.list) || []).length]].map(function (x) {
         return h('button', { key: x[0], type: 'button', role: 'tab', 'aria-selected': tab[0] === x[0], className: cx('lor-tab', tab[0] === x[0] && 'is-on'), onClick: function () { tab[1](x[0]); } }, x[1], h('span', { className: 'lor-count' }, x[2]));
       })),
       tab[0] === 'cases' ? h(CasesAdmin, p) :
@@ -11415,7 +11416,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   }
 
   /* ---------------- server: templates, course import, sync status, server code ---------------- */
-  /* a new platform on the server starts empty: levels, programmes, the 30/60/90 plan and the schedule come from the templates */
+  /* a new platform on the server starts empty: levels, programmes, the 30/60 plan and the schedule come from the templates */
   function fillTemplates(d) {
     if (!(d.levels || []).length) d.levels = seedLevels();
     if (!(d.tracks || []).length) d.tracks = seedTracks();

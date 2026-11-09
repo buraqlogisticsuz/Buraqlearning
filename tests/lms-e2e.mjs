@@ -384,6 +384,8 @@ try {
   await E.locator('.notif-pop-h button').first().click(); await E.waitForTimeout(300);
   await E.keyboard.press('Escape');
   await nav(E, 'path');
+  assert.equal(await E.locator('.plan-box .plan-col').count(), 2, 'план адаптации — две колонки, 30 и 60 дней');
+  assert.match(await txt(E, '.plan-box'), /30 \/ 60 kun/); assert.doesNotMatch(await txt(E, '.plan-box'), /90 kun/);
   await E.locator('.plan-item input').first().check(); await E.waitForTimeout(300);
   await settle(E);
   const st2 = srv.g.state();

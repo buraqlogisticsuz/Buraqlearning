@@ -1,5 +1,5 @@
 /* Шаблоны новой платформы (на сервере их подставляет первый вход SOP-менеджера — fillTemplates в app.js):
-   карьерная лестница, программы обучения, план адаптации 30/60/90, график работы; разбор 4-bob из файла прототипа.
+   карьерная лестница, программы обучения, план адаптации 30/60, график работы; разбор 4-bob из файла прототипа.
    Демо больше нет: выдуманных сотрудников и данных здесь нет, платформа работает только с сервером. */
 
 var DAY = 864e5;
@@ -70,11 +70,7 @@ function seedPlan() {
     M('p6', 60, null, 'Dastur darslarining kamida yarmi topshirilgan', 'Сдано не менее половины уроков программы', 'At least half of the programme’s lessons passed', '已通过课程中至少一半的课'),
     M('p7', 60, null, 'Kundalik ish mustaqil, nazoratsiz bajarilyapti', 'Ежедневная работа выполняется самостоятельно, без контроля', 'Daily work is done independently, without supervision', '日常工作可独立完成，无需监督'),
     M('p8', 60, null, 'Kamida bitta pulse-so‘rovnoma to‘ldirilgan', 'Заполнен хотя бы один пульс-опрос', 'At least one pulse survey completed', '已完成至少一次简短问卷'),
-    M('p9', 60, 'tr_mgr', 'Mijoz bilan mustaqil yozishma va AI-trenajyorda kamida 2 ta ssenariy', 'Самостоятельная переписка с клиентом и 2 сценария в AI-тренажёре', 'Independent client correspondence and 2 AI drill scenarios', '独立与客户沟通，并完成 2 个 AI 情景演练'),
-    M('p10', 90, null, 'Dastur bo‘yicha barcha darslar va imtihonlar topshirilgan', 'Все уроки и экзамены программы сданы', 'All programme lessons and exams passed', '已通过课程的全部课程与考试'),
-    M('p11', 90, null, 'Kamida bitta tashabbus yuborilgan', 'Отправлена хотя бы одна инициатива', 'At least one initiative submitted', '已提交至少一条建议'),
-    M('p12', 90, null, 'Mentor va bo‘lim rahbari yakuniy suhbat o‘tkazgan', 'Проведена итоговая встреча с наставником и руководителем', 'Final review with the mentor and the head of department held', '已与导师和部门负责人进行总结面谈'),
-    M('p13', 90, null, 'Sinov muddati yakuni: rasmiy xodim statusiga tavsiya', 'Итог испытательного срока: рекомендация на штатную позицию', 'End of probation: recommendation for a permanent position', '试用期结束：建议转为正式员工')];
+    M('p9', 60, 'tr_mgr', 'Mijoz bilan mustaqil yozishma va AI-trenajyorda kamida 2 ta ssenariy', 'Самостоятельная переписка с клиентом и 2 сценария в AI-тренажёре', 'Independent client correspondence and 2 AI drill scenarios', '独立与客户沟通，并完成 2 个 AI 情景演练')];
 }
 
 /* work schedule per department — the turnstile attendance is compared with it */
