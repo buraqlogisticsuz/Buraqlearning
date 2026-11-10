@@ -420,7 +420,7 @@ const pickN = n => ({ userId: n.userId, kind: n.kind, route: n.route, err: n.err
 test('since: та же версия — без данных; после правки — новое состояние', () => {
   const { D, A } = platform();
   const v = D({ action: 'load' });
-  assert.deepEqual(D({ action: 'since', rev: v.rev }), { ok: true, v: 22, ai: false, rev: v.rev, same: true });
+  assert.deepEqual(D({ action: 'since', rev: v.rev }), { ok: true, v: 23, ai: false, rev: v.rev, same: true });
   A({ action: 'patch', ops: [{ op: 'set', path: ['notifications', { id: 9 }], value: { id: 9, userId: 10427, text: 'yangi' }, after: null }] });
   const n = D({ action: 'since', rev: v.rev });
   assert.equal(n.rev, v.rev + 1); assert.equal(n.state.notifications[0].text, 'yangi');
@@ -1079,4 +1079,13 @@ test('мол-мулк (v22): сотрудник принял выданное �
   const a = g.state().assets.find(x => x.id === 'a1');
   assert.equal(a.status, 'active'); assert.equal(a.confirmedAt, 5);
   assert.ok(g.state().notifications.some(n => n.kind === 'asset_in' && n.userId === 10001), 'SOP-менеджер получил «qabul qildi»');
+});
+
+test('imtiyozlar (v23): варианты уровня — сотруднику только отмеченные, SOP-менеджеру все', () => {
+  const { A, D } = platform();
+  const lv = [{ id: 'trainee', name: { uz: 'Trainee' }, conds: [] }, { id: 'junior', name: { uz: 'Junior' }, conds: [] }];
+  const offer = [{ code: '2-A1', col: 'A', text: { uz: 'Bonus' }, on: true }, { code: '2-A2', col: 'A', text: { uz: 'Qoralama' }, on: false }, { code: '2-E5', col: 'R', text: { uz: 'Natija' }, on: true }];
+  assert.deepEqual(rejected(A({ action: 'patch', ops: [{ op: 'set', path: ['levels'], value: lv.map((x, i) => i === 1 ? Object.assign({}, x, { offer }) : x) }] })), []);
+  assert.deepEqual(A({ action: 'load' }).state.levels[1].offer.map(x => x.code), ['2-A1', '2-A2', '2-E5'], 'SOP-менеджер видит черновик целиком');
+  assert.deepEqual(D({ action: 'load' }).state.levels[1].offer.map(x => x.code), ['2-A1', '2-E5'], 'сотруднику — только отмеченные');
 });

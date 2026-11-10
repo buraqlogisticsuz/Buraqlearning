@@ -1783,7 +1783,9 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
             h('div', { className: 'career-b' },
               h('p', { className: 'career-desc' }, levelDesc(lv, p.lang)),
               g.length ? h('div', { className: 'grow-box' }, h('span', { className: 'lor-eyebrow' }, i ? t('career_grow') : t('lvl_grow')), h('ul', { className: 'grow-list' }, g.map(function (x, k) { return h('li', { key: k }, x); }))) : null,
-              pk.length ? h('div', null, h('span', { className: 'lor-eyebrow' }, t('career_perks')), h(PerkList, { items: pk })) : h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('career_no_perks')))));
+              h(OfferResults, { t: t, lv: lv, lang: p.lang, first: !i }),
+              offerHasPerks(lv) ? h('div', null, h('span', { className: 'lor-eyebrow' }, t('career_perks')), h(OfferPerks, { t: t, lv: lv, lang: p.lang }))
+                : pk.length ? h('div', null, h('span', { className: 'lor-eyebrow' }, t('career_perks')), h(PerkList, { items: pk })) : h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('career_no_perks')))));
       })),
       h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('career_note')));
   }
@@ -1863,16 +1865,118 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           var g = levelGrow(r.next, p.lang);
           return g.length ? h('div', { className: 'grow-box' }, h('span', { className: 'lor-eyebrow' }, t('lvl_grow')), h('ul', { className: 'grow-list' }, g.map(function (x, i) { return h('li', { key: i }, x); }))) : null;
         })(),
+        h(OfferResults, { t: t, lv: r.next, lang: p.lang }),
         (function () {
           var pk = levelPerks(r.next, p.lang);
-          return pk.length ? h('details', { className: 'perk-fold' }, h('summary', null, t('career_next_perks') + ' · ' + pk.length), h(PerkList, { items: pk })) : null;
+          return pk.length ? h('details', { className: 'perk-fold' }, h('summary', null, t('career_next_perks') + ' · ' + pk.length), offerHasPerks(r.next) ? h(OfferPerks, { t: t, lv: r.next, lang: p.lang }) : h(PerkList, { items: pk })) : null;
         })()) : null,
       u.lastPromo && u.role === 'employee' ? h('div', null, h('button', { type: 'button', className: 'app-link', onClick: function () { Sfx.unlock(); p.update(function (d) { d.users.forEach(function (x) { if (x.id === u.id) x.celebrate = Object.assign({}, x.lastPromo, { replay: true }); }); }); } }, h(ReplayIcon), ' ', t('cel_replay_link'))) : null,
       p.rules ? h('div', { className: 'xp-rules' }, h('span', { className: 'lor-eyebrow' }, t('xp_rules')), h('ul', null, [t('xp_r1'), t('xp_r2'), t('xp_r3'), t('xp_r4'), t('xp_r5'), t('xp_r7')].map(function (x) { return h('li', { key: x }, x); }))) : null);
   }
 
+  /* ---------- «Imtiyozlar va talablar» from a file: the company's «variantlar to‘plami» (PDF, Word or text) ----------
+     every option carries a code «3-B4» = level 3, column B, item 4; E — what it takes to reach the level: skills first, then
+     (after «OLDINGI DARAJADA … NATIJALAR» / «QABUL BOSQICHIDA … NATIJALAR») the results shown before. Headings, page headers
+     and footers are cut out; o' g' become o‘ g‘. Nothing is ticked: the SOP manager or CEO picks what employees will see */
+  var OF_CODE = /(?:[☐□■▢]\s*)?\b(\d{1,2})-([A-E])(\d{1,2})\b\.?\s*/g;
+  var OF_SKILLS = /KERAKLI\s+KO.?NIKMALAR(?:\s*\([^)]*\))?/gi;
+  var OF_RESULTS = /(?:QABUL\s+BOSQICHIDA|OLDINGI\s+DARAJADA(?:\s*\([^)]*\))?)\s+KO.?RSAT\S*\s+(?:BO.?LISHI\s+)?KERAK\s+BO.?LGAN\s+NATIJALAR(?:\s*\([^)]*\))?/gi;
+  var OF_NOISE = [/Ichki\s+hujjat\s*\|[^|\n]*\|\s*Qoralama\s*v[\d.]+/gi, /Sahifa\s+\d+/gi,
+    /A\s+Maosh\s+va\s+bonuslar\s+B\s+Moddiy\s+qo.?shimchalar\s+C\s+Nomoddiy\s+imtiyozlar\s+D\s+Ochiladigan\s+eshiklar\s+E\s+Shu\s+darajaga\s+chiqish\s+talablari/gi];
+  function ofApos(x) { return x.replace(/([oOgG])['`ʻ’‘]/g, '$1‘').replace(/([a-zA-Z])['`ʼ](?=[a-zA-Z])/g, '$1’'); }
+  function offerParse(src) {
+    var s = String(src || '').replace(/ /g, ' ');
+    OF_NOISE.forEach(function (re) { s = s.replace(re, ' '); });
+    s = s.replace(OF_RESULTS, ' \u0001R ').replace(OF_SKILLS, ' \u0001S ');
+    var ms = [], m; OF_CODE.lastIndex = 0;
+    while ((m = OF_CODE.exec(s))) ms.push({ at: m.index, end: OF_CODE.lastIndex, n: +m[1], col: m[2], k: +m[3] });
+    var lv = {}, resAt = {}, seen = {}, total = 0;
+    ms.forEach(function (x, i) {
+      var raw = s.slice(x.end, i + 1 < ms.length ? ms[i + 1].at : s.length), cut = raw.search(/[\u0001\u0002]/);
+      if (x.col === 'E' && raw.indexOf('\u0001R') >= 0) resAt[x.n] = { after: x.k };   // the results heading follows this E item
+      var text = ofApos((cut >= 0 ? raw.slice(0, cut) : raw).replace(/\s+/g, ' ').replace(/[☐□■▢]/g, '').trim()), code = x.n + '-' + x.col + x.k;
+      if (!text || /^[=:–—-]/.test(text) || seen[code]) return; seen[code] = 1;   // «3-B4 = 3-daraja, B ustuni…» — the how-to example, not an option
+      (lv[x.n] = lv[x.n] || []).push({ code: code, col: x.col, k: x.k, text: text }); total++;
+    });
+    Object.keys(lv).forEach(function (n) {
+      var after = resAt[n] ? resAt[n].after : 4;   // no heading found — the first four of E are skills, as in the template
+      lv[n] = lv[n].map(function (x) { return { code: x.code, col: x.col === 'E' ? (x.k > after ? 'R' : 'S') : x.col, text: { uz: x.text }, on: false }; })
+        .sort(function (a, b) { var o = 'ABCDSR'; return o.indexOf(a.col) - o.indexOf(b.col) || ofK(a.code) - ofK(b.code); });
+    });
+    return { lv: lv, total: total };
+  }
+  function ofK(code) { return +(/\d+$/.exec(code) || [0])[0]; }
+  function offerRead(file) {
+    var n = file.name.toLowerCase();
+    if (/\.pdf$/.test(n)) return Promise.all([pdfjsLoad(), file.arrayBuffer()]).then(function (r) {
+      return r[0].getDocument({ data: new Uint8Array(r[1]), isEvalSupported: false }).promise.then(function (doc) {
+        var ps = []; for (var i = 1; i <= doc.numPages; i++) ps.push(doc.getPage(i).then(function (pg) { return pg.getTextContent(); }).then(function (tc) { return tc.items.map(function (it) { return it.str + (it.hasEOL ? '\n' : ' '); }).join(''); }));
+        return Promise.all(ps).then(function (pages) { return pages.join(' \u0002 '); });   // a page break ends the item before it
+      });
+    });
+    return siRead(file).then(function (x) { return [].concat((x.rows || []).map(function (r) { return r.join('\n'); }), (x.blocks || []).map(function (b) { return b.text; })).join('\n'); });
+  }
+  function OfferImport(p) {
+    var t = p.t, L = p.levels, res = useState(null), err = useState(''), busy = useState(false);
+    function pick(e) {
+      var f = e.target.files && e.target.files[0]; e.target.value = ''; if (!f) return;
+      busy[1](true); err[1](''); res[1](null);
+      offerRead(f).then(function (txt) { var r = offerParse(txt); if (!r.total) err[1](t('of_none')); else res[1](Object.assign(r, { name: f.name })); })
+        .catch(function () { err[1](t('of_bad')); }).then(function () { busy[1](false); });
+    }
+    var r = res[0], nums = r ? Object.keys(r.lv).map(Number).sort(function (a, b) { return a - b; }) : [];
+    return h(Modal, { t: t, hid: 'of-h', className: 'of-modal', onClose: p.onClose },
+      h('h2', { className: 'lor-h', id: 'of-h' }, t('of_title')),
+      h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('of_hint')),
+      h('label', { className: 'si-drop' }, h('input', { type: 'file', id: 'of-file', accept: '.pdf,.docx,.txt', onChange: pick }), busy[0] ? t('si_reading') : t('of_pick')),
+      err[0] ? h('p', { className: 'lor-field-error', role: 'alert' }, err[0]) : null,
+      r ? h('div', { className: 'of-res' },
+        h('p', { className: 'lor-sm', style: { margin: 0 } }, h('b', null, r.name), ' · ' + tpl(t('of_found'), { n: r.total })),
+        h('ul', { className: 'of-sum' }, nums.map(function (n) {
+          var lv = L[n - 1], xs = r.lv[n], cnt = function (c) { return xs.filter(function (x) { return x.col === c; }).length; };
+          return h('li', { key: n, className: cx(!lv && 'is-miss') },
+            h('b', null, n + '. ' + (lv ? lvlName(lv, p.lang) : '—')),
+            h('span', null, lv ? 'ABCD'.split('').map(function (c) { return c + ' ' + cnt(c); }).join(' · ') + ' · E ' + cnt('S') + ' + ' + cnt('R') : tpl(t('of_lvl_miss'), { n: n })));
+        })),
+        h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('of_note'))) : null,
+      h('div', { className: 'lor-modal-actions' },
+        h(Btn, { variant: 'ghost', onClick: p.onClose }, t('cancel')),
+        h(Btn, { variant: 'primary', arrow: true, disabled: !r, onClick: function () { p.onApply(r); } }, t('of_apply'))));
+  }
+  /* one level's options in «Darajalar»: tick what employees get, fix the wording, add your own */
+  function OfferEditor(p) {
+    var t = p.t, xs = p.items || [], i = p.i, on = xs.filter(function (x) { return x.on; }).length;
+    function upd(fn) { var c = clone(xs); fn(c); p.onChange(c); }
+    function idx(x) { return xs.indexOf(x); }
+    return h('details', { className: 'lvl-texts of-edit', open: p.open },
+      h('summary', null, t('of_sec') + ' · ' + tpl(t('of_sel'), { k: on, n: xs.length })),
+      xs.length ? null : h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('of_empty')),
+      OFFER_PERK.concat(OFFER_REQ).map(function (c) {
+        var g = xs.filter(function (x) { return x.col === c; }), all = g.length && g.every(function (x) { return x.on; });
+        return h('div', { key: c, className: 'of-col' },
+          h('div', { className: 'of-col-h' },
+            h('span', { className: 'of-letter', 'aria-hidden': true }, c === 'S' || c === 'R' ? 'E' : c),
+            h('b', null, t(c === 'R' && !i ? 'of_R0' : 'of_' + c)),
+            g.length ? h('button', { type: 'button', className: 'app-link', onClick: function () { upd(function (cc) { cc.forEach(function (x) { if (x.col === c) x.on = !all; }); }); } }, all ? t('of_off') : t('of_all')) : null),
+          g.map(function (x) {
+            var k = idx(x), tx = anyLang(x.text, p.lang);
+            return h('div', { key: x.code + k, className: cx('of-item', x.on && 'is-on') },
+              h('input', { type: 'checkbox', id: 'of-' + i + '-' + k, checked: !!x.on, 'aria-label': x.code, onChange: function () { upd(function (cc) { cc[k].on = !cc[k].on; }); } }),
+              h('label', { className: 'of-code', htmlFor: 'of-' + i + '-' + k }, x.code),
+              h('textarea', { className: 'of-text', rows: 1, value: tx, maxLength: 400, placeholder: t('of_ph'), 'aria-label': x.code, onChange: function (e) { var v = e.target.value; upd(function (cc) { var o = cc[k].text; if (typeof o !== 'object' || !o) o = cc[k].text = {}; o[p.lang] = v; }); } }),
+              h('button', { type: 'button', className: 'pa-del', title: t('of_del'), 'aria-label': t('of_del') + ' ' + x.code, onClick: function () { upd(function (cc) { cc.splice(k, 1); }); } }, h(Ico, { name: 'trash', size: 15 })));
+          }),
+          h('button', { type: 'button', className: 'app-link of-add', onClick: function () { upd(function (cc) {
+            var n = cc.filter(function (x) { return x.col === c || (c === 'S' || c === 'R') && (x.col === 'S' || x.col === 'R'); }).reduce(function (a, x) { return Math.max(a, ofK(x.code)); }, 0) + 1;
+            var o = { code: (i + 1) + '-' + (c === 'S' || c === 'R' ? 'E' : c) + n, col: c, text: {}, on: true }; o.text[p.lang] = ''; cc.push(o);
+          }); } }, '+ ' + t('of_add')));
+      }));
+  }
+
   function LevelsAdmin(p) {
-    var t = p.t, db = p.db, s = useState(function () { return clone(levelsOf(db)); }), L = s[0], pv = useState(null);
+    var t = p.t, db = p.db, s = useState(function () { return clone(levelsOf(db)); }), L = s[0], pv = useState(null), ofm = useState(false), ofo = useState(false);
+    /* the file's options go to the levels by number (1 — the first level); what was there is replaced, nothing ticked */
+    function applyOffer(r) { s[1](L.map(function (lv, i) { return r.lv[i + 1] ? Object.assign({}, lv, { offer: r.lv[i + 1] }) : lv; })); ofm[1](false); ofo[1](true); p.say(t('of_applied')); }
     function preview(li) { var me = p.user; pv[1]({ id: -1, role: 'employee', name: me.name, position: me.position, level: li, levelXpBase: 0, celebrate: { kind: 'level', li: li, fromLi: Math.max(0, li - 1), at: Date.now() } }); }
     function set(i, fn) { var c = clone(L); fn(c[i]); s[1](c); }
     function save() { p.update(function (d) { var c = clone(L).map(function (x, i) { delete x.silver; delete x.req; delete x.minAvg; delete x.minIni; x.conds = i ? normConds(x.conds) : []; return x; }); c.forEach(function (x, i) { var g = stepXp(c, i); if (g != null) x.gold = g; else if (i < c.length - 1) x.gold = 0; });
@@ -1886,6 +1990,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     return h('div', { className: 'app-wrap' },
       h('div', { className: 'page-head' }, h('div', null, h('span', { className: 'lor-eyebrow' }, t('ladder')), h('h1', { className: 'lor-title' }, t('nav_levels'), h(PageTip, { t: t, id: 'levels' })))),
       h('p', { className: 'lor-muted', style: { margin: 0, maxWidth: 820 } }, t('lvl_hint')),
+      h('div', { className: 'of-bar' }, h(Btn, { variant: 'outline', size: 'sm', onClick: function () { ofm[1](true); } }, t('of_btn')), h('span', { className: 'lor-sm lor-muted' }, t('of_btn_h'))),
+      ofm[0] ? h(OfferImport, { t: t, lang: p.lang, levels: L, onClose: function () { ofm[1](false); }, onApply: applyOffer }) : null,
       h('ol', { className: 'ladder ladder-top', 'aria-label': t('ladder') }, L.map(function (x, i) { return h('li', { key: x.id, className: 'on' }, h('span', { className: 'ladder-n' }, i + 1), h('span', null, lvlShort(x, p.lang), lvlRole(x, p.lang) ? h('small', null, lvlRole(x, p.lang)) : null)); })),
       pv[0] ? h(Celebration, Object.assign({}, p, { key: 'pv' + pv[0].celebrate.at, user: pv[0], preview: true, go: function () {}, onDone: function () { pv[1](null); } })) : null,
       h('div', { className: 'lvl-grid' }, L.map(function (lv, i) {
@@ -1897,6 +2003,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
             i > 0 && !people.length ? h('button', { type: 'button', className: 'app-link danger', onClick: function () { s[1](L.filter(function (_, k) { return k !== i; })); } }, t('remove')) : null),
           h('p', { className: 'lor-sm', style: { margin: 0 } }, levelDesc(lv, p.lang)),
           i > 0 ? h(CondEditor, { t: t, db: db, lang: p.lang, conds: condsOf(lv), onChange: function (cs) { set(i, function (x) { x.conds = cs; }); } }) : h('p', { className: 'lor-sm lor-muted lvl-first' }, t('lc_first')),
+          h(OfferEditor, { t: t, lang: p.lang, i: i, items: lv.offer, open: ofo[0], onChange: function (xs) { set(i, function (x) { x.offer = xs; }); } }),
           h('details', { className: 'lvl-texts' },
             h('summary', null, t('lvl_texts')),
             h('div', { className: 'lvl-names' },
@@ -2119,8 +2226,33 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   }
 
   function lvlLib(lv, k) { return (lv && LEVEL_LIB[lv.id] ? LEVEL_LIB[lv.id][k] : null) || {}; }
-  function levelGrow(lv, lang) { var o = (lv && lv.grow) || lvlLib(lv, 'grow'); return (o[lang] || o.uz || []).slice(); }
-  function levelPerks(lv, lang) { var o = (lv && lv.perks) || lvlLib(lv, 'perks'); return (o[lang] || o.uz || []).slice(); }
+  /* «Imtiyozlar va talablar» of a level (lv.offer, from the company's «variantlar to‘plami» file or typed in «Darajalar»):
+     A pay and bonuses, B material extras, C non-material perks, D doors that open, S skills to reach the level, R results
+     shown at the level before. Only ticked items (on) reach employees; the file's texts live on the server, not in the repo */
+  var OFFER_PERK = ['A', 'B', 'C', 'D'], OFFER_REQ = ['S', 'R'];
+  function offerOn(lv, col, lang) { return ((lv && lv.offer) || []).filter(function (x) { return x.on && x.col === col && anyLang(x.text, lang).trim(); }).map(function (x) { return anyLang(x.text, lang).trim(); }); }
+  function offerHasPerks(lv) { return OFFER_PERK.some(function (c) { return offerOn(lv, c, 'uz').length || offerOn(lv, c, 'ru').length; }); }
+  function levelResults(lv, lang) { return offerOn(lv, 'R', lang); }
+  function levelGrow(lv, lang) { var sk = offerOn(lv, 'S', lang); if (sk.length) return sk; var o = (lv && lv.grow) || lvlLib(lv, 'grow'); return (o[lang] || o.uz || []).slice(); }
+  function levelPerks(lv, lang) {
+    if (offerHasPerks(lv)) return [].concat.apply([], OFFER_PERK.map(function (c) { return offerOn(lv, c, lang).map(function (x) { return [x, '']; }); }));
+    var o = (lv && lv.perks) || lvlLib(lv, 'perks'); return (o[lang] || o.uz || []).slice();
+  }
+  /* the ticked perks by group — for the ladder and the level card */
+  function OfferPerks(p) {
+    var t = p.t, lv = p.lv, lang = p.lang;
+    return h('div', { className: 'of-groups' }, OFFER_PERK.map(function (c) {
+      var xs = offerOn(lv, c, lang);
+      return xs.length ? h('div', { key: c, className: 'of-group' },
+        h('span', { className: 'lor-eyebrow' }, h('span', { className: 'of-letter', 'aria-hidden': true }, c), t('of_' + c)),
+        h(PerkList, { items: xs.map(function (x) { return [x, '']; }), max: 30 })) : null;
+    }));
+  }
+  /* «what was shown at the level before» — results the SOP manager weighs when approving the level */
+  function OfferResults(p) {
+    var xs = levelResults(p.lv, p.lang);
+    return xs.length ? h('div', { className: 'grow-box of-res' }, h('span', { className: 'lor-eyebrow' }, p.t(p.first ? 'of_R0' : 'of_R')), h('ul', { className: 'grow-list' }, xs.map(function (x, k) { return h('li', { key: k }, x); }))) : null;
+  }
   function levelDesc(lv, lang) { if (!lv) return ''; var d = lv.desc || lvlLib(lv, 'desc'); return d[lang] || d.uz || ''; }
   /* keepAt: the employee’s own device congratulates but does not move the level date — with the server that is the SOP manager’s */
   function markPromotion(d, uid, li, fromLi, keepAt) {

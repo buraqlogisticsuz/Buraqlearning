@@ -21,7 +21,7 @@
  *
  * Запрос — POST с JSON { action, token, … }, ответ — JSON { ok, … } или { ok: false, code, error }.
  */
-var LMS_VERSION = 22;          // 22: «Qabul qildim» — уведомление SOP-менеджеру и CEO (asset_in); 21: цены — «Kontent → Narxlar», сотрудникам в «Baza» (prices); 20: защита правок (id карточек, тест — одна попытка, балл и статусы, минуты учёбы, уведомления другим);  2: файлы — отдельно на Диске, действие file; 3: ИИ через Claude API (действие ai);
+var LMS_VERSION = 23;          // 23: «Imtiyozlar va talablar» уровня — сотрудникам только отмеченные варианты (levels[].offer); 22: «Qabul qildim» — уведомление SOP-менеджеру и CEO (asset_in); 21: цены — «Kontent → Narxlar», сотрудникам в «Baza» (prices); 20: защита правок (id карточек, тест — одна попытка, балл и статусы, минуты учёбы, уведомления другим);  2: файлы — отдельно на Диске, действие file; 3: ИИ через Claude API (действие ai);
                                // 4: адресаты идей — CEO, Project Manager, руководитель компании (свой вход, role 'leader');
                                // 5: у идеи несколько адресатов (to — список), repliedBy — кто ответил;
                                // 6: свой профиль — имя и фото, смена логина и пароля (действие account);
@@ -512,6 +512,11 @@ function secSeen_(s, me) {
   if (me.role === 'admin' || !a || !(a.all || (a.positions || []).length || (a.depts || []).length || (a.users || []).length)) return true;
   return !!(a.all || (a.positions || []).indexOf(me.position) >= 0 || (a.depts || []).indexOf(me.department) >= 0 || (a.users || []).some(function (x) { return String(x) === uid; }));
 }
+/* «Imtiyozlar va talablar» уровня (v23): варианты из «variantlar to‘plami» компании — черновик руководства; сотруднику и
+   руководителю уходят только отмеченные (on) */
+function offerSeen_(levels) {
+  return clone_(levels || []).map(function (lv) { if (lv && Array.isArray(lv.offer)) lv.offer = lv.offer.filter(function (x) { return x && x.on; }); return lv; });
+}
 /* своя карточка — целиком, кроме вывода руководства по анкете (qaReport): его видят только CEO, SOP-менеджер и руководитель */
 function ownCard_(u) { var c = clone_(u); delete c.qaReport; return c; }
 function viewFor_(st, me) {
@@ -525,6 +530,7 @@ function viewFor_(st, me) {
     return v;
   }
   var uid = String(me.id), official = me.status === 'official';
+  v.levels = offerSeen_(st.levels);
   // глава для выбранных (section.aud: все, должности, отделы, имена; section.users — имена, v11) — только тем, кто подходит;
   // в списке имён каждый видит только себя
   if (v.course) v.course.sections = (v.course.sections || []).filter(function (s) {
@@ -601,7 +607,7 @@ function leaderView_(st, me) {
   var uid = String(me.id), v = emptyState_();
   delete v.rev;
   v.v = st.v; v.seq = st.seq;
-  v.levels = clone_(st.levels || []); v.settings = clone_(st.settings || {});
+  v.levels = offerSeen_(st.levels); v.settings = clone_(st.settings || {});
   v.users = (st.users || []).map(function (u) { return String(u.id) === uid ? ownCard_(u) : pick_(u, PUBLIC_USER); });
   v.initiatives = (st.initiatives || []).filter(function (x) { return iniTo_(x).indexOf(me.post) >= 0; }).map(clone_);
   v.notifications = own_(st.notifications, 'userId', uid).map(clone_);

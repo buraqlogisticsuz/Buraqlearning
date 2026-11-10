@@ -417,6 +417,34 @@ try {
   assert.ok(st2.notifications.filter(n => n.userId === emp.id).every(n => n.read), 'все уведомления прочитаны');
   assert.equal(Object.keys(st2.users.find(u => u.id === emp.id).plan || {}).length, 1, 'пункт плана отмечен');
   step('идея, уведомления, план адаптации — на сервере');
+  // льготы и требования уровня из файла («variantlar to‘plami»): коды «2-A1»; заголовки E делят навыки и результаты; пример
+  // «3-B4 = …» — не вариант; уровня 9 нет; всё ставится без отметок — сотрудник видит только отмеченное, по группам
+  { await nav(A, 'levels'); await A.getByRole('button', { name: 'Imtiyozlarni fayldan yuklash' }).click(); await A.waitForSelector('.of-modal');
+    const of = ["Ichki hujjat | Variantlar to'plami | Qoralama v1.0 Sahifa 1", 'Masalan: 3-B4 = 3-daraja, B ustuni, 4-band.', '2', 'Junior',
+      "A Maosh va bonuslar B Moddiy qo'shimchalar C Nomoddiy imtiyozlar D Ochiladigan eshiklar E Shu darajaga chiqish talablari",
+      '☐ 2-A1 Sinov bonusi (namuna)', "☐ 2-B1 Kitob uchun to'lov", "☐ 2-C1 Oy xodimi e'loni", '☐ 2-D1 Mustaqil mijoz', "KERAKLI KO'NIKMALAR (shu darajaga chiqish uchun)",
+      "☐ 2-E1 Hujjatni xatosiz to'ldirish", "OLDINGI DARAJADA (TRAINEE) KO'RSATGAN BO'LISHI KERAK BO'LGAN NATIJALAR (misol)", '☐ 2-E2 Imtihondan 80% olgan',
+      '☐ 2-A2 Qoralama bonus', "☐ 9-A1 Yo'q daraja"].join('\n');
+    await A.setInputFiles('#of-file', { name: 'imtiyozlar.txt', mimeType: 'text/plain', buffer: Buffer.from(of) });
+    await A.waitForSelector('.of-modal .of-res');
+    assert.match(await txt(A, '.of-modal'), /8 ta variant topildi[\s\S]*2\. Junior\s+A 2 · B 1 · C 1 · D 1 · E 1 \+ 1[\s\S]*platformada 9-daraja yo‘q/);
+    await A.locator('.of-modal').getByRole('button', { name: 'Darajalarga qo‘yish' }).click(); await A.waitForTimeout(300);
+    const card = A.locator('.lvl-edit').nth(1);
+    assert.match(await txt(card, '.of-edit summary'), /tanlangan 0 \/ 7/);
+    for (const c of ['2-A1', '2-C1', '2-E1', '2-E2']) await card.getByRole('checkbox', { name: c, exact: true }).check();
+    await A.getByRole('button', { name: 'Saqlash', exact: true }).last().click(); await settle(A);
+    const off = srv.g.state().levels[1].offer;
+    assert.deepEqual(off.filter(x => x.on).map(x => x.code + ':' + x.col), ['2-A1:A', '2-C1:C', '2-E1:S', '2-E2:R'], 'отмеченные: E1 — навык, E2 — результат');
+    assert.equal(off.find(x => x.code === '2-B1').text.uz, 'Kitob uchun to‘lov', 'o\' → o‘');
+    assert.deepEqual(await rejected(A), [], 'сервер принял льготы уровня');
+    await E.evaluate(() => LmsClient.sync()); await E.waitForTimeout(500);
+    assert.deepEqual(await E.evaluate(() => LmsClient.initial().levels[1].offer.map(x => x.code)), ['2-A1', '2-C1', '2-E1', '2-E2'], 'сотруднику — только отмеченные');
+    const jr = E.locator('.career-list > li').nth(1); await jr.locator('summary').click(); await E.waitForTimeout(200);
+    const tx = await jr.innerText();
+    assert.match(tx, /Maosh va bonuslar[\s\S]*Sinov bonusi \(namuna\)[\s\S]*Nomoddiy imtiyozlar[\s\S]*Oy xodimi e’loni/i);
+    assert.match(tx, /Hujjatni xatosiz to‘ldirish/); assert.match(tx, /Oldingi darajada ko‘rsatishi kerak bo‘lgan natijalar[\s\S]*Imtihondan 80% olgan/i);
+    assert.ok(!/Qoralama bonus|Kitob uchun/.test(tx), 'неотмеченного у сотрудника нет'); }
+  step('льготы уровня из файла: разбор по кодам, без отметок; сотруднику — только отмеченное, по группам A–D и требования E');
   await checkHeader(E, 'сотрудник'); await checkHeader(C, 'CEO'); await checkHeader(A, 'SOP-менеджер');
   await shot(E, 'shapka-xodim');
   step('шапка: подпись под логотипом, меню 16 px без обрезанных слов — у сотрудника, CEO и SOP-менеджера, 1600–390 px');
