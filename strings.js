@@ -3509,4 +3509,12 @@ Object.assign(APP_T.uz, { lvl_del_q: '«{x}» darajasi butunlay o‘chirilsinmi?
 Object.assign(APP_T.ru, { lvl_del_q: 'Удалить уровень «{x}» совсем? Вернуть его будет нельзя.' });
 Object.assign(APP_T.en, { lvl_del_q: 'Delete the level «{x}» for good? It cannot be brought back.' });
 Object.assign(APP_T.zh, { lvl_del_q: '要彻底删除级别「{x}」吗？删除后无法恢复。' });
+Object.assign(APP_T.uz, { nav_pay_kpi: 'Maosh va KPI' });
+Object.assign(APP_T.ru, { nav_pay_kpi: 'Зарплата и KPI' });
+Object.assign(APP_T.en, { nav_pay_kpi: 'Pay and KPI' });
+Object.assign(APP_T.zh, { nav_pay_kpi: '工资与 KPI' });
+Object.assign(APP_T.uz, { pay_none: 'Sizga hali maosh va KPI shartlari biriktirilmagan — ularni CEO belgilaydi. Biriktirilgach, shu yerda oylik maoshingiz va KPI hisobi chiqadi.' });
+Object.assign(APP_T.ru, { pay_none: 'Условия зарплаты и KPI вам ещё не заданы — их назначает CEO. После этого здесь появятся ваша зарплата за месяц и расчёт KPI.' });
+Object.assign(APP_T.en, { pay_none: 'Your pay and KPI terms have not been set yet — the CEO sets them. Once they are, your monthly pay and KPI calculation will appear here.' });
+Object.assign(APP_T.zh, { pay_none: '您的工资和 KPI 条件尚未设定——由 CEO 设定。设定后，这里会显示您的月工资和 KPI 计算。' });
 

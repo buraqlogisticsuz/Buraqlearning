@@ -456,6 +456,11 @@ try {
     assert.match(lc, /1 ta shartdan 0 tasi[\s\S]*Ombor uchun qo‘llanma/, 'на шкале — только сверхзадача');
     assert.match(lc, /Hujjatni xatosiz to‘ldirish[\s\S]*Imtihondan 80% olgan/); }
   step('льготы уровня из файла: разбор по кодам, без отметок; сотруднику — только отмеченное, по группам A–D и требования E');
+  // «Maosh va KPI» — вкладка у сотрудника всегда; без схемы — пояснение, что условия назначает CEO
+  assert.match(await E.locator('a[href="#pay"]:visible').first().innerText(), /Maosh va KPI/);
+  await nav(E, 'pay'); assert.match(await txt(E, 'main'), /maosh va KPI shartlari biriktirilmagan — ularni CEO belgilaydi/);
+  await nav(E, 'path');
+  step('вкладка «Maosh va KPI» у сотрудника есть всегда; без схемы — «CEO belgilaydi»');
   await checkHeader(E, 'сотрудник'); await checkHeader(C, 'CEO'); await checkHeader(A, 'SOP-менеджер');
   await shot(E, 'shapka-xodim');
   step('шапка: подпись под логотипом, меню 16 px без обрезанных слов — у сотрудника, CEO и SOP-менеджера, 1600–390 px');

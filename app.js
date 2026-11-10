@@ -10735,9 +10735,9 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       : h(Home, q);
     var tkN = taskCount(db, u), onLesson = route.name === 'lesson' || route.name === 'quiz';
     var asN = assetsOf(db, u.id).filter(function (a) { return a.status === 'issued'; }).length;   // выдано — ждёт «Qabul qildim»
-    var navItems = [['home', t('nav_home')], ['tasks', t('nav_tasks'), tkN], ['cases', t('nav_cases')], ['base', t('nav_base')], ['drill', t('nav_drill')], ['assets', t('nav_assets'), asN], ['path', t('nav_path')]];
+    /* «Maosh va KPI» — always on top (owner): without a pay scheme the page says it has not been set yet */
+    var navItems = [['home', t('nav_home')], ['tasks', t('nav_tasks'), tkN], ['cases', t('nav_cases')], ['base', t('nav_base')], ['drill', t('nav_drill')], ['assets', t('nav_assets'), asN], ['path', t('nav_path')], ['pay', t('nav_pay_kpi')]];
     if (isMentor(u)) navItems.push(['mentor', t('nav_mentor')]);
-    if (LmsPay.schemeFor(db.pay, u) || (db.payCalcs || []).some(function (c) { return c.uid === u.id; })) navItems.push(['pay', t('nav_pay')]);
     var nav = filled ? navItems.map(function (n) { return { key: n[0], label: n[1], count: n[2], active: route.name === n[0], onClick: function () { go({ name: n[0] }); } }; }) : null;
     var issuedN = assetsOf(db, u.id).filter(function (a) { return a.status === 'issued'; }).length;
     var links = filled ? (introOf(db) ? [{ key: 'intro', label: t('in_title'), onClick: function () { intro[1]('view'); } }] : []).concat(qnOf(db) ? [{ key: 'qn', label: t('qn_title'), onClick: function () { qn[1]('view'); } }] : []).concat([{ key: 'drill', label: t('dr_title'), onClick: function () { go({ name: 'drill' }); } }, { key: 'assets', label: t('as_my_title'), count: issuedN, onClick: function () { go({ name: 'assets' }); } }, { key: 'ideas', label: t('ini_my'), onClick: function () { go({ name: 'ideas' }); } }, { key: 'report', label: t('mr_nav'), onClick: function () { go({ name: 'report' }); } }, { key: 'help', label: t('nav_help'), onClick: function () { go({ name: 'help' }); } }]) : null;

@@ -628,7 +628,8 @@ SOP-менеджера: задайте любое новое значение (`
 
 ### Главная и вкладки сотрудника
 
-- Вкладки сверху: **Bosh sahifa · Vazifalar · Keyslar · Baza · AI-trenajyor · Mol-mulk · Mening yo‘lim** (у «Mol-mulk» —
+- Вкладки сверху: **Bosh sahifa · Vazifalar · Keyslar · Baza · AI-trenajyor · Mol-mulk · Mening yo‘lim · Maosh va KPI**
+  («Maosh va KPI» — всегда; пока CEO не назначил схему — «…ularni CEO belgilaydi») (у «Mol-mulk» —
   счётчик выданного и ещё не принятого). С главной убраны карточки «Tashabbus» (идея — кнопкой «Tashabbus» в шапке),
   «AI-trenajyor», «Mening mol-mulkim» и «Sizning darajangiz» (уровень и шкала — в «Mening yo‘lim»).
 
