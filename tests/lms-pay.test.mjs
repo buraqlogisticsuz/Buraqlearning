@@ -20,6 +20,16 @@ test('условия человека: своя схема и фикса, ина
   assert.equal(P.schemeFor(null, { id: 1 }), null);
 });
 
+test('свои условия человека (v24): свой оклад, KPI-бонус и KPI — важнее шаблона должности', () => {
+  const own = { fixed: 5200000, base: 1500000, title: 'Aziza — shaxsiy', note: 'izoh', from: 'sk', kpis: [{ id: 'q1', name: 'Mijozlar', unit: 'ta', src: 'manual', type: 'plan', plan: 10, w: 100, min: 0, cap: 150 }] };
+  const pay = { schemes: [scheme], people: { 5: own, 6: { fixed: 4100000 } } };
+  const m = P.schemeFor(pay, { id: 5, position: 'Omborchi' });
+  assert.equal(m.own, true); assert.equal(m.fixed, 5200000); assert.equal(m.scheme.base, 1500000); assert.equal(m.scheme.kpis[0].id, 'q1'); assert.equal(m.scheme.title, 'Aziza — shaxsiy');
+  assert.equal(P.calc(P.snapshot(m.scheme), m.fixed, { q1: 12 }).total, 5200000 + 1800000, '120 % от 1 500 000');
+  assert.equal(P.schemeFor(pay, { id: 6, position: 'Omborchi' }).scheme.id, 'sk', 'только своя фикса — шаблон должности');
+  assert.equal(P.schemeFor({ schemes: [], people: { 9: { fixed: 1, base: 0, kpis: [] } } }, { id: 9, position: 'X' }).own, true, 'свои условия без KPI — только оклад');
+});
+
 test('план/факт: доля бонуса по весу, порог, потолок, «меньше — лучше»; за единицу; премия за условие', () => {
   const s = P.snapshot(scheme);
   // 108 из 120 = 90 % × 60 % × 2 000 000 = 1 080 000; 1 опоздание при плане 2 → 200 %, потолок 100 % → 800 000

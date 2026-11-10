@@ -3466,11 +3466,12 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
 
   /* the SOP manager: history of everyone's calculations, the terms, per-person terms */
   function PayAdmin(p) {
-    var t = p.t, db = p.db, tab = useState(p.tab || 'hist'), calcs = db.payCalcs || [], schemes = (db.pay && db.pay.schemes) || [];
-    var wait = calcs.filter(function (c) { return c.status === 'saved'; }).length;
+    var t = p.t, db = p.db, calcs = db.payCalcs || [], schemes = (db.pay && db.pay.schemes) || [];
+    var wait = calcs.filter(function (c) { return c.status === 'saved'; }).length, tab = useState(p.tab || (wait ? 'hist' : 'people'));
+    var ownN = db.users.filter(function (u) { var o = ((db.pay || {}).people || {})[u.id]; return u.role === 'employee' && o && Array.isArray(o.kpis); }).length;
     return h('div', { className: 'app-wrap' },
       h('div', { className: 'page-head' }, h('div', null, h('span', { className: 'lor-eyebrow' }, t('pay_eyebrow')), h('h1', { className: 'lor-title' }, t('pay_admin_title'), h(PageTip, { t: t, id: 'apay' })))),
-      h('div', { className: 'lor-tabs fb-tabs', role: 'tablist' }, [['hist', t('pay_tab_hist'), wait], ['schemes', t('pay_tab_schemes'), schemes.length], ['people', t('pay_tab_people'), null]].map(function (x) {
+      h('div', { className: 'lor-tabs fb-tabs', role: 'tablist' }, [['people', t('pay_tab_people'), ownN], ['hist', t('pay_tab_hist'), wait], ['schemes', t('pay_tab_schemes'), schemes.length]].map(function (x) {
         return h('button', { key: x[0], type: 'button', role: 'tab', 'aria-selected': tab[0] === x[0], className: cx('lor-tab', tab[0] === x[0] && 'is-on'), onClick: function () { tab[1](x[0]); } }, x[1], x[2] != null ? h('span', { className: 'lor-count' }, x[2]) : null);
       })),
       tab[0] === 'schemes' ? h(PaySchemes, p) : tab[0] === 'people' ? h(PayPeople, p) : h(PayHistAdmin, p));
@@ -3561,86 +3562,106 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           })));
       }) : h('section', { className: 'box pay-empty' }, h('p', { style: { margin: 0 } }, all.length ? t('pay_f_none') : t('pay_hist_none_all'))));
   }
-  /* the terms: per positions — fixed, KPI bonus at 100 %, the indicators */
+  /* the terms: a person's own (pay.people[id]: monthly pay, KPI bonus at 100 %, own KPI) or a template for positions */
   function payKpi() { return { id: 'k' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), name: '', unit: '', src: 'manual', type: 'plan', plan: 100, w: 100, min: 0, cap: 100 }; }
+  function payCleanKpis(ks) {
+    return (ks || []).filter(function (k) { return String(k.name || '').trim(); }).map(function (k) {
+      var o = { id: k.id, name: k.name.trim(), unit: (k.unit || '').trim(), src: k.src, type: k.type };
+      if (k.type === 'plan') { o.plan = payNum(k.plan); o.w = payNum(k.w); o.min = payNum(k.min); o.cap = payNum(k.cap) || 100; }
+      else if (k.type === 'unit') o.rate = payNum(k.rate);
+      else { o.plan = payNum(k.plan); o.amount = payNum(k.amount); }
+      if (k.type !== 'unit' && k.less) o.less = true;
+      return o;
+    });
+  }
+  /* one editor for a template and for a person: monthly pay, KPI bonus, note and the KPI list with a worked example.
+     A template also has a title and positions; a person can start from a template (its numbers are copied) */
+  function PayTermsForm(p) {
+    var t = p.t, st = useState(function () { return JSON.parse(JSON.stringify(p.value)); }), s = st[0], er = useState('');
+    function set(k, v) { var o = Object.assign({}, s); o[k] = v; st[1](o); }
+    function setK(i, k, v) { var ks = s.kpis.slice(); ks[i] = Object.assign({}, ks[i]); ks[i][k] = v; if (k === 'src' && v !== 'manual' && !ks[i].unit) ks[i].unit = t('pay_u_' + v); set('kpis', ks); }
+    function from(id) { var x = (p.templates || []).filter(function (y) { return y.id === id; })[0]; if (!x) return; st[1](Object.assign({}, s, JSON.parse(JSON.stringify({ fixed: x.fixed, base: x.base, note: x.note || '', kpis: (x.kpis || []).length ? x.kpis : [payKpi()] })), { from: x.id })); }
+    function save() {
+      if (!p.personal && !String(s.title || '').trim()) { er[1](t('fill_required')); return; }
+      var c = { fixed: payNum(s.fixed), base: payNum(s.base), note: String(s.note || '').trim(), kpis: payCleanKpis(s.kpis) };
+      if (p.personal) { if (s.from) c.from = s.from; } else Object.assign(c, { id: s.id, title: s.title.trim(), positions: s.positions || [] });
+      p.onSave(c);
+    }
+    var snap = LmsPay.snapshot(Object.assign({}, s, { kpis: s.kpis.filter(function (k) { return String(k.name || '').trim(); }) })), ex = {};
+    snap.kpis.forEach(function (k) { ex[k.id] = k.type === 'unit' ? 0 : k.plan; });
+    var wsum = snap.kpis.filter(function (k) { return k.type === 'plan'; }).reduce(function (a, k) { return a + k.w; }, 0), hasPlan = snap.kpis.some(function (k) { return k.type === 'plan'; });
+    var num = function (name, label, v, on, hint) { return h(Field, { name: name, label: label, type: 'number', value: v, hint: hint, onChange: on }); };
+    return h('section', { className: 'box pay-editor' },
+      h('h2', { className: 'lor-h' }, p.head),
+      p.personal ? h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('pay_own_hint')) : null,
+      p.personal && (p.templates || []).length ? h('div', { className: 'pay-from' },
+        h('label', { className: 'lor-sm', htmlFor: 'pay-from' }, t('pay_from')),
+        h('select', { id: 'pay-from', className: 'lor-input slim', value: '', onChange: function (e) { from(e.target.value); } },
+          h('option', { value: '' }, s.from ? tpl(t('pay_from_was'), { x: ((p.templates || []).filter(function (y) { return y.id === s.from; })[0] || {}).title || '—' }) : t('pay_from_pick')),
+          (p.templates || []).map(function (x) { return h('option', { key: x.id, value: x.id }, x.title); }))) : null,
+      h('div', { className: 'pay-ed-grid' },
+        p.personal ? null : h(Field, { name: 'pay-title', label: t('pay_s_title'), required: true, value: s.title, error: er[0], placeholder: t('pay_s_title_ph'), onChange: function (v) { set('title', v); } }),
+        num('pay-fixed', t('pay_fixed_m') + ', ' + t('pay_cur'), s.fixed, function (v) { set('fixed', v); }),
+        num('pay-base', t('pay_base') + ', ' + t('pay_cur'), s.base, function (v) { set('base', v); }, t('pay_base_h'))),
+      p.personal ? null : h('div', { className: 'lor-field' }, h('span', { className: 'lor-field-label' }, t('pay_s_pos')),
+        h('div', { className: 'ac-chips' }, (p.allPos || []).map(function (x) { var on = (s.positions || []).indexOf(x) >= 0; return h('button', { key: x, type: 'button', className: cx('ac-chip', on && 'is-on'), 'aria-pressed': on, onClick: function () { set('positions', on ? s.positions.filter(function (y) { return y !== x; }) : (s.positions || []).concat([x])); } }, x); }))),
+      h(Field, { name: 'pay-snote', label: t('pay_s_note'), value: s.note || '', placeholder: t('pay_s_note_ph'), onChange: function (v) { set('note', v); } }),
+      h('h3', { className: 'wz-sub' }, t('pay_kpis')),
+      h('ol', { className: 'pay-ed-kpis' }, s.kpis.map(function (k, i) {
+        var f = function (key, label, v, extra) { return h(Field, Object.assign({ key: key, name: 'pk-' + i + '-' + key, label: label, value: v, onChange: function (x) { setK(i, key, x); } }, extra || {})); };
+        return h('li', { key: k.id, className: 'pay-ed-kpi' },
+          h('div', { className: 'pay-ed-row' },
+            f('name', t('pay_k_name'), k.name, { placeholder: t('pay_k_name_ph') }),
+            f('src', t('pay_k_src'), k.src, { options: PAY_SRC.map(function (x) { return [x, t('pay_src_' + x)]; }) }),
+            f('type', t('pay_k_type'), k.type, { options: LmsPay.TYPES.map(function (x) { return [x, t('pay_t_' + x)]; }) }),
+            f('unit', t('pay_k_unit'), k.unit, { placeholder: t('pay_k_unit_ph') })),
+          h('div', { className: 'pay-ed-row is-params' },
+            k.type === 'unit' ? f('rate', t('pay_k_rate'), k.rate, { type: 'number', hint: t('pay_k_rate_h') })
+              : f('plan', t(k.type === 'bonus' ? 'pay_k_cond' : 'pay_k_plan'), k.plan, { type: 'number' }),
+            k.type === 'plan' ? f('w', t('pay_k_w'), k.w, { type: 'number' }) : null,
+            k.type === 'plan' ? f('min', t('pay_k_min'), k.min, { type: 'number', hint: t('pay_k_min_h') }) : null,
+            k.type === 'plan' ? f('cap', t('pay_k_cap'), k.cap, { type: 'number' }) : null,
+            k.type === 'bonus' ? f('amount', t('pay_k_amount') + ', ' + t('pay_cur'), k.amount, { type: 'number' }) : null,
+            k.type !== 'unit' ? h('label', { className: 'check pay-less' }, h('input', { type: 'checkbox', checked: !!k.less, onChange: function (e) { setK(i, 'less', e.target.checked); } }), t('pay_k_less')) : null,
+            h('button', { type: 'button', className: 'app-link pay-ed-del', onClick: function () { set('kpis', s.kpis.filter(function (_, j) { return j !== i; })); } }, t('remove'))),
+          snap.kpis.filter(function (x) { return x.id === k.id; }).map(function (x) { return h('p', { key: 'r', className: 'lor-sm lor-muted', style: { margin: 0 } }, '→ ' + payRule(x, t)); }));
+      })),
+      h('div', { className: 'box-row' },
+        h(Btn, { variant: 'secondary', size: 'sm', onClick: function () { set('kpis', s.kpis.concat([payKpi()])); } }, '+ ' + t('pay_kpi_add')),
+        hasPlan ? h('span', { className: cx('lor-sm', wsum !== 100 ? 'pay-warn' : 'lor-muted') }, tpl(t('pay_wsum'), { n: numTxt(wsum) }) + (wsum !== 100 ? ' ' + t('pay_wsum_bad') : ' ✓')) : null),
+      h('p', { className: 'pay-example' }, tpl(t('pay_example'), { x: sumTxt(LmsPay.calc(snap, payNum(s.fixed), ex).total, t) })),
+      h('div', { className: 'box-row' },
+        p.onClear ? h('button', { type: 'button', className: 'app-link danger', onClick: p.onClear }, t('pay_own_clear')) : h('span'),
+        h('div', { className: 'box-row', style: { marginTop: 0 } },
+          h(Btn, { variant: 'ghost', size: 'sm', onClick: p.onCancel }, t('cancel')),
+          h(Btn, { variant: 'primary', arrow: true, onClick: save }, t('save')))));
+  }
+  /* templates for positions («Shablonlar»): whoever has no own terms is paid by the template of the position */
   function PaySchemes(p) {
-    var t = p.t, db = p.db, list = (db.pay && db.pay.schemes) || [], ed = useState(null), er = useState('');
+    var t = p.t, db = p.db, list = (db.pay && db.pay.schemes) || [], ed = useState(null);
     var allPos = posOf(db).concat(db.users.filter(function (u) { return u.role === 'employee' && u.position; }).map(function (u) { return u.position; })).filter(function (x, i, a) { return a.indexOf(x) === i; });
     function users(s) { return db.users.filter(function (u) { var m = u.role === 'employee' && LmsPay.schemeFor(db.pay, u); return m && m.scheme.id === s.id; }); }
-    function save() {
-      var s = ed[0];
-      if (!s.title.trim()) { er[1](t('fill_required')); return; }
-      var clean = Object.assign({}, s, { title: s.title.trim(), fixed: payNum(s.fixed), base: payNum(s.base), kpis: s.kpis.filter(function (k) { return k.name.trim(); }).map(function (k) {
-        var o = { id: k.id, name: k.name.trim(), unit: (k.unit || '').trim(), src: k.src, type: k.type };
-        if (k.type === 'plan') { o.plan = payNum(k.plan); o.w = payNum(k.w); o.min = payNum(k.min); o.cap = payNum(k.cap) || 100; }
-        else if (k.type === 'unit') o.rate = payNum(k.rate);
-        else { o.plan = payNum(k.plan); o.amount = payNum(k.amount); }
-        if (k.type !== 'unit' && k.less) o.less = true;
-        return o;
-      }) });
+    function save(clean) {
       p.update(function (d) {
         d.pay = d.pay || { schemes: [], people: {} }; d.pay.schemes = d.pay.schemes || [];
         var i = d.pay.schemes.map(function (x) { return x.id; }).indexOf(clean.id);
         if (i >= 0) d.pay.schemes[i] = clean; else d.pay.schemes.push(clean);
       });
-      ed[1](null); er[1](''); p.say(t('pay_s_saved'));
+      ed[1](null); p.say(t('pay_s_saved'));
     }
     function del(s) { if (!window.confirm(t('pay_s_del_q'))) return; p.update(function (d) { d.pay.schemes = d.pay.schemes.filter(function (x) { return x.id !== s.id; }); }); }
-    if (ed[0]) {
-      var s = ed[0], set = function (k, v) { var o = Object.assign({}, s); o[k] = v; ed[1](o); };
-      var setK = function (i, k, v) { var ks = s.kpis.slice(); ks[i] = Object.assign({}, ks[i]); ks[i][k] = v; if (k === 'src' && v !== 'manual' && !ks[i].unit) ks[i].unit = t('pay_u_' + v); set('kpis', ks); };
-      var snap = LmsPay.snapshot(Object.assign({}, s, { kpis: s.kpis.filter(function (k) { return k.name.trim(); }) })), ex = {};
-      snap.kpis.forEach(function (k) { ex[k.id] = k.type === 'unit' ? 0 : k.plan; });
-      var wsum = snap.kpis.filter(function (k) { return k.type === 'plan'; }).reduce(function (a, k) { return a + k.w; }, 0), hasPlan = snap.kpis.some(function (k) { return k.type === 'plan'; });
-      var num = function (name, label, v, on) { return h(Field, { name: name, label: label, type: 'number', value: v, onChange: on }); };
-      return h('section', { className: 'box pay-editor' },
-        h('h2', { className: 'lor-h' }, list.some(function (x) { return x.id === s.id; }) ? t('pay_s_edit') : t('pay_new')),
-        h('div', { className: 'pay-ed-grid' },
-          h(Field, { name: 'pay-title', label: t('pay_s_title'), required: true, value: s.title, error: er[0], placeholder: t('pay_s_title_ph'), onChange: function (v) { set('title', v); } }),
-          num('pay-fixed', t('pay_fixed') + ', ' + t('pay_cur'), s.fixed, function (v) { set('fixed', v); }),
-          num('pay-base', t('pay_base') + ', ' + t('pay_cur'), s.base, function (v) { set('base', v); })),
-        h('div', { className: 'lor-field' }, h('span', { className: 'lor-field-label' }, t('pay_s_pos')),
-          h('div', { className: 'ac-chips' }, allPos.map(function (x) { var on = (s.positions || []).indexOf(x) >= 0; return h('button', { key: x, type: 'button', className: cx('ac-chip', on && 'is-on'), 'aria-pressed': on, onClick: function () { set('positions', on ? s.positions.filter(function (y) { return y !== x; }) : (s.positions || []).concat([x])); } }, x); }))),
-        h(Field, { name: 'pay-snote', label: t('pay_s_note'), value: s.note || '', placeholder: t('pay_s_note_ph'), onChange: function (v) { set('note', v); } }),
-        h('h3', { className: 'wz-sub' }, t('pay_kpis')),
-        h('ol', { className: 'pay-ed-kpis' }, s.kpis.map(function (k, i) {
-          var f = function (key, label, v, extra) { return h(Field, Object.assign({ key: key, name: 'pk-' + i + '-' + key, label: label, value: v, onChange: function (x) { setK(i, key, x); } }, extra || {})); };
-          return h('li', { key: k.id, className: 'pay-ed-kpi' },
-            h('div', { className: 'pay-ed-row' },
-              f('name', t('pay_k_name'), k.name, { placeholder: t('pay_k_name_ph') }),
-              f('src', t('pay_k_src'), k.src, { options: PAY_SRC.map(function (x) { return [x, t('pay_src_' + x)]; }) }),
-              f('type', t('pay_k_type'), k.type, { options: LmsPay.TYPES.map(function (x) { return [x, t('pay_t_' + x)]; }) }),
-              f('unit', t('pay_k_unit'), k.unit, { placeholder: t('pay_k_unit_ph') })),
-            h('div', { className: 'pay-ed-row is-params' },
-              k.type === 'unit' ? f('rate', t('pay_k_rate'), k.rate, { type: 'number', hint: t('pay_k_rate_h') })
-                : f('plan', t(k.type === 'bonus' ? 'pay_k_cond' : 'pay_k_plan'), k.plan, { type: 'number' }),
-              k.type === 'plan' ? f('w', t('pay_k_w'), k.w, { type: 'number' }) : null,
-              k.type === 'plan' ? f('min', t('pay_k_min'), k.min, { type: 'number', hint: t('pay_k_min_h') }) : null,
-              k.type === 'plan' ? f('cap', t('pay_k_cap'), k.cap, { type: 'number' }) : null,
-              k.type === 'bonus' ? f('amount', t('pay_k_amount') + ', ' + t('pay_cur'), k.amount, { type: 'number' }) : null,
-              k.type !== 'unit' ? h('label', { className: 'check pay-less' }, h('input', { type: 'checkbox', checked: !!k.less, onChange: function (e) { setK(i, 'less', e.target.checked); } }), t('pay_k_less')) : null,
-              h('button', { type: 'button', className: 'app-link pay-ed-del', onClick: function () { set('kpis', s.kpis.filter(function (_, j) { return j !== i; })); } }, t('remove'))),
-            snap.kpis.filter(function (x) { return x.id === k.id; }).map(function (x) { return h('p', { key: 'r', className: 'lor-sm lor-muted', style: { margin: 0 } }, '→ ' + payRule(x, t)); }));
-        })),
-        h('div', { className: 'box-row' },
-          h(Btn, { variant: 'secondary', size: 'sm', onClick: function () { set('kpis', s.kpis.concat([payKpi()])); } }, '+ ' + t('pay_kpi_add')),
-          hasPlan ? h('span', { className: cx('lor-sm', wsum !== 100 ? 'pay-warn' : 'lor-muted') }, tpl(t('pay_wsum'), { n: numTxt(wsum) }) + (wsum !== 100 ? ' ' + t('pay_wsum_bad') : ' ✓')) : null),
-        h('p', { className: 'pay-example' }, tpl(t('pay_example'), { x: sumTxt(LmsPay.calc(snap, payNum(s.fixed), ex).total, t) })),
-        h('div', { className: 'box-row' },
-          h(Btn, { variant: 'ghost', size: 'sm', onClick: function () { ed[1](null); er[1](''); } }, t('cancel')),
-          h(Btn, { variant: 'primary', arrow: true, onClick: save }, t('save'))));
-    }
+    if (ed[0]) return h(PayTermsForm, { t: t, key: ed[0].id, value: ed[0], allPos: allPos, head: list.some(function (x) { return x.id === ed[0].id; }) ? t('pay_s_edit') : t('pay_new'), onSave: save, onCancel: function () { ed[1](null); } });
     return h(F, null,
       h('div', { className: 'box-row', style: { marginTop: 0 } },
         h('p', { className: 'lor-sm lor-muted', style: { margin: 0, maxWidth: 720 } }, t('pay_schemes_hint')),
-        lvlOf(p.user) !== 'ceo' ? null : h(Btn, { variant: 'primary', size: 'sm', arrow: true, onClick: function () { ed[1]({ id: 'ps' + Date.now().toString(36), title: '', positions: [], fixed: '', base: '', note: '', kpis: [payKpi()] }); } }, t('pay_new'))),
+        lvlOf(p.user) !== 'ceo' ? null : h(Btn, { variant: 'secondary', size: 'sm', arrow: true, onClick: function () { ed[1]({ id: 'ps' + Date.now().toString(36), title: '', positions: [], fixed: '', base: '', note: '', kpis: [payKpi()] }); } }, t('pay_new'))),
       list.length ? h('div', { className: 'pay-cards' }, list.map(function (s) {
         var us = users(s), snap = LmsPay.snapshot(s);
         return h('section', { key: s.id, className: 'box pay-card' },
           h('div', { className: 'box-row', style: { marginTop: 0 } }, h('h2', { className: 'lor-h' }, s.title), h('span', { className: 'lor-count' }, tpl(t('pay_s_users'), { n: us.length }))),
           (s.positions || []).length ? h('div', { className: 'ac-chips' }, s.positions.map(function (x) { return h('span', { key: x, className: 'ac-chip is-static' }, x); })) : h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('pay_s_nopos')),
           h('div', { className: 'pay-tiles' },
-            h('div', { className: 'tile' }, h('span', { className: 'lor-eyebrow' }, t('pay_fixed')), h('b', { className: 'tile-sm' }, sumTxt(s.fixed, t))),
+            h('div', { className: 'tile' }, h('span', { className: 'lor-eyebrow' }, t('pay_fixed_m')), h('b', { className: 'tile-sm' }, sumTxt(s.fixed, t))),
             h('div', { className: 'tile' }, h('span', { className: 'lor-eyebrow' }, t('pay_base')), h('b', { className: 'tile-sm' }, sumTxt(s.base, t)))),
           h('ul', { className: 'pay-rules' }, snap.kpis.map(function (k) { return h('li', { key: k.id }, h('b', null, k.name), h('span', { className: 'lor-sm lor-muted' }, (k.src !== 'manual' ? t('pay_src_' + k.src) + ' · ' : '') + payRule(k, t))); })),
           lvlOf(p.user) !== 'ceo' ? null : h('div', { className: 'box-row' },
@@ -3648,33 +3669,41 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
             h(Btn, { variant: 'secondary', size: 'sm', onClick: function () { ed[1](JSON.parse(JSON.stringify(Object.assign({ note: '' }, s)))); } }, t('pay_s_edit'))));
       })) : h('section', { className: 'box pay-empty' }, h('p', { style: { margin: 0 } }, t('pay_s_none'))));
   }
-  /* per person: another scheme than the position's, own fixed salary */
+  /* each employee — own monthly pay and own KPI («Sozlash»); without them — the template of the position */
   function PayPeople(p) {
-    var t = p.t, db = p.db, pay = db.pay || {}, schemes = pay.schemes || [], ym = ymOf(Date.now()), ro = lvlOf(p.user) !== 'ceo';
+    var t = p.t, db = p.db, pay = db.pay || {}, schemes = pay.schemes || [], ym = ymOf(Date.now()), ro = lvlOf(p.user) !== 'ceo', ed = useState(null);
     var emps = db.users.filter(function (u) { return u.role === 'employee'; });
-    function setP(uid, k, v) {
-      p.update(function (d) {
-        d.pay = d.pay || { schemes: [], people: {} }; d.pay.people = d.pay.people || {};
-        var o = Object.assign({}, d.pay.people[uid] || {});
-        if (v === '' || v == null) delete o[k]; else o[k] = k === 'fixed' ? payNum(v) : v;
-        if (Object.keys(o).length) d.pay.people[uid] = o; else delete d.pay.people[uid];
-      });
+    function own(uid) { var o = (pay.people || {})[uid]; return o && Array.isArray(o.kpis) ? o : null; }
+    function save(uid, c) {
+      p.update(function (d) { d.pay = d.pay || { schemes: [], people: {} }; d.pay.people = d.pay.people || {}; d.pay.people[uid] = c; });
+      ed[1](null); p.say(t('pay_own_saved'));
+    }
+    function clear(uid) {
+      if (!window.confirm(t('pay_own_clear_q'))) return;
+      p.update(function (d) { if (d.pay && d.pay.people) delete d.pay.people[uid]; });
+      ed[1](null); p.say(t('pay_own_cleared'));
+    }
+    if (ed[0] != null) {
+      var u = userOf(db, ed[0]), o = own(u.id), m = LmsPay.schemeFor(pay, u);
+      var start = o ? o : m ? { fixed: m.fixed, base: m.scheme.base, note: m.scheme.note || '', kpis: (m.scheme.kpis || []).length ? m.scheme.kpis : [payKpi()], from: m.scheme.id } : { fixed: '', base: '', note: '', kpis: [payKpi()] };
+      return h(PayTermsForm, { t: t, key: 'u' + u.id, personal: true, value: start, templates: schemes, head: tpl(t('pay_own_t'), { x: u.name }),
+        onSave: function (c) { save(u.id, c); }, onCancel: function () { ed[1](null); }, onClear: o ? function () { clear(u.id); } : null });
     }
     return h(F, null,
-      h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('pay_people_hint')),
+      h('p', { className: 'lor-sm lor-muted', style: { margin: 0, maxWidth: 820 } }, t('pay_people_hint')),
       h('section', { className: 'box', style: { padding: 0 } }, h('div', { className: 'lor-table-wrap' }, h('table', { className: 'lor-table pay-people' },
-        h('thead', null, h('tr', null, [t('fio'), t('pay_k_scheme'), t('pay_fixed'), ymLabel(ym, p.lang)].map(function (x, i) { return h('th', { key: i }, x); }))),
+        h('thead', null, h('tr', null, [t('fio'), t('pay_terms'), t('pay_fixed_m'), t('pay_base'), 'KPI', ymLabel(ym, p.lang), ''].map(function (x, i) { return h('th', { key: i }, x); }))),
         h('tbody', null, emps.map(function (u) {
-          var own = (pay.people || {})[u.id] || {}, m = LmsPay.schemeFor(pay, u), byPos = LmsPay.schemeFor({ schemes: schemes, people: {} }, u);
+          var o = own(u.id), m = LmsPay.schemeFor(pay, u);
           var last = (db.payCalcs || []).filter(function (c) { return c.uid === u.id && c.ym === ym; }).sort(function (a, b) { return b.at - a.at; })[0];
-          return h('tr', { key: u.id },
+          return h('tr', { key: u.id, className: cx(!m && 'is-none') },
             h('td', null, h('div', { className: 'lor-emp' }, h(Av, { name: u.name, src: u.avatar, size: 32 }), h('span', null, u.name, h('small', null, u.position)))),
-            h('td', null, h('select', { className: 'lor-input slim', 'aria-label': t('pay_k_scheme'), value: own.schemeId || '', disabled: ro, onChange: function (e) { setP(u.id, 'schemeId', e.target.value); } },
-              h('option', { value: '' }, byPos ? tpl(t('pay_by_pos'), { x: byPos.scheme.title }) : t('pay_no_scheme')),
-              schemes.map(function (s) { return h('option', { key: s.id, value: s.id }, s.title); }))),
-            h('td', null, h('input', { className: 'lor-input slim pay-fix-in', type: 'number', 'aria-label': t('pay_fixed'), placeholder: m ? money(m.scheme.fixed) : '—', disabled: !m || ro, defaultValue: own.fixed != null ? own.fixed : '', key: 'f' + (own.fixed != null ? own.fixed : ''), onBlur: function (e) { var v = e.target.value.trim(); if (String(own.fixed != null ? own.fixed : '') !== v) setP(u.id, 'fixed', v); } }),
-              m && own.fixed != null ? h('small', { className: 'lor-muted', style: { display: 'block' } }, t('pay_fixed_own')) : null),
-            h('td', null, last ? h('span', null, h('b', null, sumTxt(last.total, t)), ' ', h(PayStatus, { s: last.status, t: t })) : h('span', { className: 'lor-muted' }, '—')));
+            h('td', null, o ? h('span', { className: 'pay-src is-own' }, t('pay_src_own')) : m ? h('span', { className: 'pay-src' }, tpl(t('pay_src_tpl'), { x: m.scheme.title })) : h('span', { className: 'lor-muted' }, t('pay_src_none'))),
+            h('td', { className: 'num' }, m ? sumTxt(m.fixed, t) : '—'),
+            h('td', { className: 'num' }, m ? sumTxt(m.scheme.base, t) : '—'),
+            h('td', null, m ? tpl(t('pay_kpi_n'), { n: (m.scheme.kpis || []).length }) : '—'),
+            h('td', null, last ? h('span', null, h('b', null, sumTxt(last.total, t)), ' ', h(PayStatus, { s: last.status, t: t })) : h('span', { className: 'lor-muted' }, '—')),
+            h('td', null, ro ? null : h(Btn, { variant: o ? 'secondary' : 'outline', size: 'sm', onClick: function () { ed[1](u.id); } }, t(o ? 'pay_own_edit' : 'pay_own_set'))));
         }))))));
   }
 

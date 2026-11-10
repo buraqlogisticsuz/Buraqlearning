@@ -420,7 +420,7 @@ const pickN = n => ({ userId: n.userId, kind: n.kind, route: n.route, err: n.err
 test('since: та же версия — без данных; после правки — новое состояние', () => {
   const { D, A } = platform();
   const v = D({ action: 'load' });
-  assert.deepEqual(D({ action: 'since', rev: v.rev }), { ok: true, v: 23, ai: false, rev: v.rev, same: true });
+  assert.deepEqual(D({ action: 'since', rev: v.rev }), { ok: true, v: 24, ai: false, rev: v.rev, same: true });
   A({ action: 'patch', ops: [{ op: 'set', path: ['notifications', { id: 9 }], value: { id: 9, userId: 10427, text: 'yangi' }, after: null }] });
   const n = D({ action: 'since', rev: v.rev });
   assert.equal(n.rev, v.rev + 1); assert.equal(n.state.notifications[0].text, 'yangi');
@@ -1088,4 +1088,17 @@ test('imtiyozlar (v23): варианты уровня — сотруднику �
   assert.deepEqual(rejected(A({ action: 'patch', ops: [{ op: 'set', path: ['levels'], value: lv.map((x, i) => i === 1 ? Object.assign({}, x, { offer }) : x) }] })), []);
   assert.deepEqual(A({ action: 'load' }).state.levels[1].offer.map(x => x.code), ['2-A1', '2-A2', '2-E5'], 'SOP-менеджер видит черновик целиком');
   assert.deepEqual(D({ action: 'load' }).state.levels[1].offer.map(x => x.code), ['2-A1', '2-E5'], 'сотруднику — только отмеченные');
+});
+
+test('зарплата (v24): свои условия сотрудника — свой оклад и свои KPI; расчёт по ним сервер принимает, чужое не уходит', () => {
+  const pf = platform(), { D } = pf, { C } = chiefs(pf), Pay = g_pay;
+  const own = { fixed: 6100000, base: 1200000, note: 'shaxsiy', kpis: [{ id: 'q1', name: 'Yangi mijoz', unit: 'ta', src: 'manual', type: 'plan', plan: 4, w: 100, min: 0, cap: 150 }] };
+  assert.equal(C({ action: 'patch', ops: [{ op: 'set', path: ['pay'], value: { schemes: [], people: { 10427: own, 10288: { fixed: 7000000, base: 1, kpis: [] } } } }] }).rejected.length, 0);
+  const vd = D({ action: 'load' }).state;
+  assert.deepEqual(Object.keys(vd.pay.people), ['10427'], 'только свои условия'); assert.ok(!JSON.stringify(vd).includes('7000000'));
+  const m = Pay.schemeFor(vd.pay, { id: 10427, position: 'Mijozlar menejeri' }), snap = Pay.snapshot(m.scheme);
+  const c = { id: 'cq', uid: 10427, at: 1, ym: '2026-11', scheme: snap, fixed: 6100000, inputs: { q1: 5 }, ...Pay.calc(snap, 6100000, { q1: 5 }), note: '', status: 'saved' };
+  assert.equal(c.total, 6100000 + 1500000, '125 % от 1 200 000');
+  assert.deepEqual(D({ action: 'patch', ops: [{ op: 'set', path: ['payCalcs', { id: 'cq' }], value: c }] }).rejected, []);
+  assert.match(D({ action: 'patch', ops: [{ op: 'set', path: ['payCalcs', { id: 'cr' }], value: { ...c, id: 'cr', total: 1 } }] }).rejected[0]?.reason || '', /не сходится/);
 });

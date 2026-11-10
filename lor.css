@@ -4685,3 +4685,11 @@ button.jf-name { padding: 0; background: none; border: 0; border-bottom: 1px sol
 .page-err.is-root { margin: 48px auto; }
 .page-err-msg { margin: 0; padding: 8px 10px; border-radius: var(--radius-sm); background: var(--surface-sunken); color: var(--ink); font-size: 12px; line-height: 18px; white-space: pre-wrap; word-break: break-word; }
 
+/* «Maosh» → «Xodimlar»: each employee's own terms */
+.pay-from { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; padding: 10px 12px; border-radius: var(--radius-md); background: var(--blue-soft); }
+.pay-from select { width: auto; min-width: 260px; }
+.pay-src { display: inline-block; padding: 2px 10px; border-radius: var(--radius-pill); font-size: 12px; line-height: 20px; border: var(--hairline) solid var(--line); color: var(--ink-muted); white-space: nowrap; }
+.pay-src.is-own { background: var(--navy); border-color: var(--navy); color: var(--on-navy); }
+.pay-people tr.is-none td { color: var(--ink-muted); }
+.pay-people td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+

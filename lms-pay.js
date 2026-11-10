@@ -2,9 +2,12 @@
    (window.LmsPay), в тестах Node (module.exports) и на сервере (сборка tools/build-lms-gs.mjs кладёт его к скрипту):
    расчёт, который сотрудник сохраняет в историю, сервер пересчитывает этой же функцией — сумму не подогнать.
 
-   Условия (state.pay, правит SOP-менеджер):
+   Условия (state.pay, правит CEO):
+     people:  { <id сотрудника>: { fixed, base, kpis: [KPI], note, title?, from? } } — СВОИ условия человека (v24): оклад,
+              KPI-бонус при 100 %, свои KPI с планами и весами; from — шаблон, с которого начали. Старое { schemeId?, fixed? } —
+              шаблон и своя фикса, как раньше
      schemes: [{ id, title, positions: [должности], fixed: фикса, base: KPI-бонус при выполнении 100%, kpis: [KPI], note }]
-     people:  { <id сотрудника>: { schemeId?, fixed? } } — своя схема или своя фикса (иначе — схема по должности)
+              — шаблоны («Shablonlar»): у кого своих условий нет, считается по шаблону своей должности
    KPI: { id, name, unit, src: 'manual' (вводит сотрудник) или показатель платформы (считает страница), type, … }
      type 'plan'  — доля KPI-бонуса: вес w %, план plan. Выполнение = факт / план (less — «меньше — лучше»: план / факт),
                     ниже порога min % — 0, выше потолка cap % — cap. Сумма = base × w % × выполнение
@@ -21,10 +24,13 @@
   var TYPES = ['plan', 'unit', 'bonus'];
   function num(x) { x = +x; return isFinite(x) ? x : 0; }
 
-  /* условия человека: своя схема (people) или первая по должности; фикса — своя или схемы. null — условий нет */
+  /* условия человека: свои (people[id].kpis), иначе выбранный шаблон или первый по должности; фикса — своя или шаблона.
+     null — условий нет */
   function schemeFor(pay, u) {
     if (!pay || !u) return null;
     var me = (pay.people || {})[u.id] || {}, list = pay.schemes || [], s = null;
+    if (Array.isArray(me.kpis)) return { own: true, fixed: num(me.fixed),
+      scheme: { id: 'u' + u.id, title: String(me.title || ''), positions: [], fixed: num(me.fixed), base: num(me.base), kpis: me.kpis, note: String(me.note || ''), from: me.from || null } };
     if (me.schemeId) s = list.filter(function (x) { return x && x.id === me.schemeId; })[0] || null;
     if (!s) s = list.filter(function (x) { return x && (x.positions || []).indexOf(u.position) >= 0; })[0] || null;
     if (!s) return null;

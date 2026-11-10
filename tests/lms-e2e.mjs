@@ -700,8 +700,9 @@ try {
 
   // ---------- зарплата: CEO задаёт условия, сотрудник считает и сохраняет, CEO видит историю и подтверждает ----------
   await nav(C, 'pay');
-  await C.getByRole('tab', { name: /Shartlar/ }).click(); await C.waitForTimeout(200);
-  await click(C, 'Yangi shart');
+  assert.ok(await C.getByRole('tab', { name: /Xodimlar/, selected: true }).count(), '«Maosh» открывается на «Xodimlar»');
+  await C.getByRole('tab', { name: /Shablonlar/ }).click(); await C.waitForTimeout(200);
+  await click(C, 'Yangi shablon');
   await C.fill('#f-pay-title', 'Ombor mudiri'); await C.fill('#f-pay-fixed', '4000000'); await C.fill('#f-pay-base', '2000000');
   await C.locator('.pay-editor .ac-chip', { hasText: /^Ombor mudiri$/ }).click();
   await C.fill('#f-pk-0-name', 'Shartnomalar'); await C.fill('#f-pk-0-unit', 'ta'); await C.fill('#f-pk-0-plan', '10'); await C.fill('#f-pk-0-w', '60');
@@ -766,6 +767,25 @@ try {
   assert.deepEqual(await rejected(C), [], 'сервер принял условия и решение');
   assert.deepEqual(await A.evaluate(() => [LmsClient.initial().payCalcs, LmsClient.initial().pay.schemes]), [[], []], 'SOP-менеджер зарплату не видит');
   step('зарплата: условия CEO, расчёт сотрудника с историей, проверка и подтверждение CEO; SOP-менеджер её не видит');
+  // свои условия сотрудника: «Xodimlar» → «Sozlash» → с шаблона, свой оклад и свой план; сотрудник считает уже по ним
+  { await nav(C, 'pay'); await C.getByRole('tab', { name: /Xodimlar/ }).click(); await C.waitForTimeout(200);
+    const row = C.locator('.pay-people tr', { hasText: 'Dilnoza Karimova' });
+    assert.match(await row.innerText(), /Shablon: Ombor mudiri/);
+    await row.getByRole('button', { name: 'Sozlash' }).click(); await C.waitForSelector('.pay-editor');
+    assert.match(await txt(C, '.pay-editor'), /Dilnoza Karimova-Aliyeva — oylik maosh va KPI/);
+    assert.equal(await C.inputValue('#f-pay-fixed'), '4000000', 'начато с шаблона должности');
+    await shot(C, '18b-pay-own');
+    await C.fill('#f-pay-fixed', '4300000'); await C.fill('#f-pk-0-plan', '12');
+    await C.locator('.pay-editor').getByRole('button', { name: 'Saqlash' }).click(); await settle(C);
+    const own = srv.g.state().pay.people[emp.id];
+    assert.ok(own && own.fixed === 4300000 && own.kpis.length === 3 && own.kpis[0].plan === 12 && own.from === sch.id, JSON.stringify(own));
+    assert.match((await C.locator('.pay-people tr', { hasText: 'Dilnoza Karimova' }).innerText()).replace(/[\u202f\u00a0]/g, ' '), /Shaxsiy[\s\S]*4 300 000/);
+    assert.equal(srv.g.state().pay.schemes[0].kpis[0].plan, 10, 'шаблон не изменился');
+    await shot(C, '18c-pay-people');
+    await E.evaluate(() => LmsClient.sync()); await E.waitForTimeout(400); await nav(E, 'home'); await nav(E, 'pay');
+    assert.match(await txt(E, 'main'), /4 300 000/, 'сотрудник видит свой оклад');
+    assert.deepEqual(await rejected(C), [], 'сервер принял свои условия'); }
+  step('зарплата: у каждого сотрудника свои оклад и KPI («Sozlash», с шаблона), шаблон не меняется');
 
   // ---------- руководитель (владелец): вход создаёт CEO; видит всё и зарплату, ничего не меняет ----------
   await nav(C, 'staff');
@@ -777,11 +797,13 @@ try {
   await signIn(B, 'egasi', 'egasi-parol-1'); await skipTour(B);
   assert.match(await txt(B, '.ro-bar'), /Ko‘rish rejimi/);
   await nav(B, 'pay');
+  assert.equal(await B.locator('.pay-people button', { hasText: /Sozlash|O‘zgartirish/ }).count(), 0, 'условия не меняет');
+  await B.getByRole('tab', { name: /Tarix/ }).click(); await B.waitForTimeout(200);
   assert.ok(await B.locator('.pay-tlrow').count(), 'видит историю зарплат');
   await B.locator('.pay-tlrow').first().click(); await B.waitForTimeout(300);
   assert.equal(await B.locator('.pay-decide').count(), 0, 'подтверждать не может');
-  await B.getByRole('tab', { name: /Shartlar/ }).click(); await B.waitForTimeout(200);
-  assert.equal(await B.getByRole('button', { name: 'Yangi shart' }).count(), 0, 'условий не задаёт');
+  await B.getByRole('tab', { name: /Shablonlar/ }).click(); await B.waitForTimeout(200);
+  assert.equal(await B.getByRole('button', { name: 'Yangi shablon' }).count(), 0, 'условий не задаёт');
   await nav(B, 'staff');
   assert.equal(await B.locator('#f-n-name').count(), 0, 'сотрудников не создаёт');
   const st0 = srv.g.state().users.find(u => u.id === emp.id).status, rev0 = srv.g.state().rev;
@@ -799,7 +821,7 @@ try {
   await A.click('.help-btn'); await A.waitForTimeout(500); await A.locator('.hint-sw').first().click(); await settle(A);
   // прокрутка закрывает подсказку — сначала прокрутить к кнопке, потом навести
   const hintOf = async (p, sel) => { await p.mouse.move(0, 0); await p.locator(sel).first().scrollIntoViewIfNeeded(); await p.waitForTimeout(300); await p.locator(sel).first().hover(); await p.waitForSelector('.hint-pop', { timeout: 3000 }); return txt(p, '.hint-pop'); };
-  await nav(C, 'pay');
+  await nav(C, 'pay'); await C.getByRole('tab', { name: /Tarix/ }).click(); await C.waitForTimeout(200);
   assert.match(await hintOf(C, '.pay-who'), /Kim qancha hisobladi/);
   assert.match(await hintOf(C, '.pay-filters .lor-btn-secondary'), /Qo‘shimcha amal/, 'синяя кнопка — общая подсказка');
   assert.match(await hintOf(C, 'a[href="#pay"]:visible'), /Belgilangan maosh \+ KPI/);
