@@ -431,6 +431,10 @@ try {
     assert.match(await txt(A, '.of-modal'), /8 ta variant topildi[\s\S]*2\. Junior\s+A 2 · B 1 · C 1 · D 1 · E 1 \+ 1[\s\S]*platformada 9-daraja yo‘q/);
     await A.locator('.of-modal').getByRole('button', { name: 'Darajalarga qo‘yish' }).click(); await A.waitForTimeout(300);
     const card = A.locator('.lvl-edit').nth(1);
+    { const n0 = srv.g.state().levels.length, last = A.locator('.lvl-edit').last();
+      await last.locator('.app-link.danger').click(); assert.match(await txt(last, '.pa-confirm'), /butunlay o‘chirilsinmi/);
+      await last.locator('.pa-confirm').getByRole('button', { name: 'Bekor qilish' }).click(); await settle(A);
+      assert.equal(srv.g.state().levels.length, n0, '«Olib tashlash» спрашивает; отмена — уровень на месте'); }
     assert.doesNotMatch(await txt(A, 'main'), /Bu darajaga o‘tish shartlari|Nomlar va tavsif|Shart qo‘shish|Mas’uliyat yo‘nalishi/, 'условий, описаний и «Nomlar va tavsif» в уровнях нет');
     assert.match(await txt(card, '.of-edit summary'), /tanlangan 0 \/ 7/);
     for (const c of ['2-A1', '2-C1', '2-E1', '2-E2']) await card.getByRole('checkbox', { name: c, exact: true }).check();

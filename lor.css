@@ -4680,3 +4680,8 @@ button.jf-name { padding: 0; background: none; border: 0; border-bottom: 1px sol
 .of-item .pa-del { width: 28px; height: 28px; }
 .of-add { align-self: flex-start; font-size: 12px; margin-left: 28px; }
 
+/* a page that broke: what happened and a way back, instead of an empty background */
+.page-err { gap: var(--space-3); border-left: 2px solid var(--red); max-width: 760px; }
+.page-err.is-root { margin: 48px auto; }
+.page-err-msg { margin: 0; padding: 8px 10px; border-radius: var(--radius-sm); background: var(--surface-sunken); color: var(--ink); font-size: 12px; line-height: 18px; white-space: pre-wrap; word-break: break-word; }
+

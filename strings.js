@@ -3501,4 +3501,12 @@ Object.assign(APP_T.uz, { lvl_saving: 'Serverga saqlanmoqda…', lvl_saved_srv: 
 Object.assign(APP_T.ru, { lvl_saving: 'Сохраняется на сервере…', lvl_saved_srv: 'Сохранено на сервере', lvl_save_err: 'Сервер не сохранил', lvl_autosave: 'Изменения сохраняются сразу — кнопка «Сохранить» не нужна.', of_note: 'Варианты ставятся без отметок и сразу сохраняются: сотрудники видят только то, что вы отметите.', of_applied: 'Варианты поставлены и сохранены — отметьте нужные, чтобы их увидели сотрудники' });
 Object.assign(APP_T.en, { lvl_saving: 'Saving to the server…', lvl_saved_srv: 'Saved on the server', lvl_save_err: 'The server did not save it', lvl_autosave: 'Changes are saved at once — no Save button needed.', of_note: 'Options are added unticked and saved at once: employees see only what you tick.', of_applied: 'Options added and saved — tick the ones employees should see' });
 Object.assign(APP_T.zh, { lvl_saving: '正在保存到服务器…', lvl_saved_srv: '已保存到服务器', lvl_save_err: '服务器未保存', lvl_autosave: '更改会立即保存——无需点击“保存”按钮。', of_note: '选项导入时均未勾选并会立即保存：员工只能看到您勾选的内容。', of_applied: '选项已添加并保存——请勾选需要让员工看到的选项' });
+Object.assign(APP_T.uz, { pg_err_t: 'Sahifani ochib bo‘lmadi', pg_err_s: 'Sahifada xato yuz berdi. Qayta yuklab ko‘ring; takrorlansa, quyidagi matnni skrinshot qilib SOP menejeriga yuboring.', pg_err_reload: 'Qayta yuklash', pg_err_home: 'Bosh sahifaga' });
+Object.assign(APP_T.ru, { pg_err_t: 'Страницу не удалось открыть', pg_err_s: 'На странице произошла ошибка. Обновите страницу; если повторится — сделайте скриншот текста ниже и отправьте SOP-менеджеру.', pg_err_reload: 'Обновить', pg_err_home: 'На главную' });
+Object.assign(APP_T.en, { pg_err_t: 'The page could not be opened', pg_err_s: 'Something went wrong on this page. Reload it; if it happens again, send a screenshot of the text below to the SOP manager.', pg_err_reload: 'Reload', pg_err_home: 'Go to the home page' });
+Object.assign(APP_T.zh, { pg_err_t: '无法打开此页面', pg_err_s: '页面出错。请刷新；如果再次出现，请将下面的文字截图发给 SOP 经理。', pg_err_reload: '刷新', pg_err_home: '返回首页' });
+Object.assign(APP_T.uz, { lvl_del_q: '«{x}» darajasi butunlay o‘chirilsinmi? Uni qaytarib bo‘lmaydi.' });
+Object.assign(APP_T.ru, { lvl_del_q: 'Удалить уровень «{x}» совсем? Вернуть его будет нельзя.' });
+Object.assign(APP_T.en, { lvl_del_q: 'Delete the level «{x}» for good? It cannot be brought back.' });
+Object.assign(APP_T.zh, { lvl_del_q: '要彻底删除级别「{x}」吗？删除后无法恢复。' });
 

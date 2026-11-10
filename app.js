@@ -1486,7 +1486,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       sopUpdatesPendingAck: (db.sopUpdates || []).filter(function (x) { return (x.required || []).some(function (uid) { return !(x.acks || {})[uid]; }); }).map(function (x) { return { sop: lessonTitle(db, x.lessonId), pending: (x.required || []).filter(function (uid) { return !(x.acks || {})[uid]; }).map(function (uid) { return userOf(db, uid).name; }) }; }),
       initiatives: (db.initiatives || []).filter(function (x) { return !iniTo(x).length; }).map(function (x) { return { type: x.type, area: x.area, title: x.title, status: x.status, author: userOf(db, x.uid).name }; }),
       propertyNeedsHRAction: (db.assets || []).filter(assetAttn).map(function (a) { return { employee: userOf(db, a.uid).name, item: a.name, status: a.status, note: a.mismatch || (a.issue && a.issue.text) || null }; }),
-      alumniAverages: (function () { var a = db.alumni || []; if (!a.length) return null; var s = function (f) { return Math.round(a.reduce(function (x, y) { return x + f(y); }, 0) / a.length); }; return { count: a.length, avgScore: s(function (x) { return x.stats.avgScore; }), avgMinutesPerDay: s(function (x) { return x.stats.avgMinutes; }), avgDaysToFinish: s(function (x) { return x.stats.days; }) }; })(),
+      alumniAverages: (function () { var a = db.alumni || []; if (!a.length) return null; var s = function (f) { return Math.round(a.reduce(function (x, y) { return x + f(y); }, 0) / a.length); }; return { count: a.length, avgScore: s(function (x) { return alStats(x).avgScore; }), avgMinutesPerDay: s(function (x) { return alStats(x).avgMinutes; }), avgDaysToFinish: s(function (x) { return alStats(x).days; }) }; })(),
       dailyGoalMinutes: GOAL
     };
   }
@@ -1561,6 +1561,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var mastery = Math.round(passed * 100 / total), disc = Math.min(1, am / GOAL) * 100;
     return { id: id, name: name, position: position, cohort: cohort, current: current, passed: passed, total: total, mastery: mastery, avgScore: avg, avgMinutes: am, days: days, discipline: Math.round(disc), score: Math.round(0.5 * mastery + 0.3 * avg + 0.2 * disc) };
   }
+  /* a former employee's numbers; an old or hand-made record without them must not break the rating */
+  function alStats(a) { var x = (a && a.stats) || {}; return { passed: +x.passed || 0, avgScore: +x.avgScore || 0, avgMinutes: +x.avgMinutes || 0, days: Math.max(1, +x.days || 1) }; }
   function ratingRows(db) {
     var total = flat(db.course).length || 1, rows = [];
     /* у сотрудника — как на главной (mastery): уроки его программы, доступные ему; удалённые уроки не считаются */
@@ -1569,7 +1571,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       mine.forEach(function (l) { var x = pr[l.id]; if (x && x.status === 'passed') { passed++; if (x.score != null) sc.push(x.score); } });
       var rw = mkRow(u.id, u.name, u.position, u.cohort, true, passed, mine.length || 1, sc.length ? sc.reduce(function (a, b) { return a + b; }, 0) / sc.length : 0, avgMinutes(db, u), daysSince(u)); var rk = rankOf(db, u); rw.lvl = rk.li; rw.xp = rk.xp; rows.push(rw);
     });
-    (db.alumni || []).forEach(function (a) { var rw = mkRow(a.id, a.name, a.position, a.cohort, false, Math.min(a.stats.passed, total), total, a.stats.avgScore, a.stats.avgMinutes, a.stats.days); rw.lvl = a.level || 0; rows.push(rw); });
+    (db.alumni || []).forEach(function (a) { var as = alStats(a), rw = mkRow(a.id, a.name || '—', a.position, a.cohort, false, Math.min(as.passed, total), total, as.avgScore, as.avgMinutes, as.days); rw.lvl = a.level || 0; rows.push(rw); });
     rows.sort(function (a, b) { return b.score - a.score || b.mastery - a.mastery; });
     rows.forEach(function (r, i) { r.rank = i + 1; });
     return rows;
@@ -1645,9 +1647,9 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var t = p.t, db = p.db, u = p.user, sampler = p.sampler;
     var all = ratingRows(db), me = all.filter(function (r) { return r.id === u.id; })[0], ls = trackFlat(db, u), pr = prog(db, u.id);
     var days = daysSince(u), total = available(db, u).length, passed = me ? me.passed : 0;
-    var alumni = db.alumni || [], pace = alumni.length ? alumni.reduce(function (s, a) { return s + a.stats.passed / a.stats.days; }, 0) / alumni.length : 0;
-    var expected = Math.min(total, Math.round(pace * days * 10) / 10), grads = alumni.filter(function (a) { return a.stats.passed >= total; });
-    var gradDays = grads.length ? Math.round(grads.reduce(function (s, a) { return s + a.stats.days; }, 0) / grads.length) : null;
+    var alumni = db.alumni || [], pace = alumni.length ? alumni.reduce(function (s, a) { var as = alStats(a); return s + as.passed / as.days; }, 0) / alumni.length : 0;
+    var expected = Math.min(total, Math.round(pace * days * 10) / 10), grads = alumni.filter(function (a) { return alStats(a).passed >= total; });
+    var gradDays = grads.length ? Math.round(grads.reduce(function (s, a) { return s + alStats(a).days; }, 0) / grads.length) : null;
     var myPace = passed / days, daysLeft = myPace > 0 ? Math.ceil((total - passed) / myPace) : null;
     var endDate = daysLeft != null ? new Date(Date.now() + daysLeft * DAY) : null;
     var study = []; for (var i = 13; i >= 0; i--) { var ts = Date.now() - i * DAY, d = new Date(ts); study.push({ k: dayKey(ts), m: studyMin(db, u.id, dayKey(ts)), label: String(d.getDate()), full: pad(d.getDate()) + '.' + pad(d.getMonth() + 1), today: i === 0 }); }
@@ -1660,7 +1662,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       var data = { name: u.name, position: u.position, status: u.status, daysInProgram: days, passedLessons: passed, totalLessons: total, avgTestScore: me ? Math.round(me.avgScore) : 0, levelAndRank: rankLabel(rankOf(db, u), 'uz', T('uz')), xpInLevel: rankOf(db, u).inLevel, xpToNextLevel: rankOf(db, u).next ? Math.max(0, rankOf(db, u).need - rankOf(db, u).inLevel) : null, nextLevelProgressPct: rankOf(db, u).pct, nextLevelRequirements: rankOf(db, u).reqs.map(function (q) { return reqText(q, T('uz')) + ' (' + condValue(q, T('uz')) + ')' + (q.ok ? ' — bajarilgan' : ' — bajarilmagan'); }),
         todayMinutes: studyMin(db, u.id), avgMinutesPerDay: Math.round(avgMinutes(db, u)), goalMinutesPerDay: GOAL, streakDays: streakOf(db, u.id), last14DaysMinutes: study.map(function (s) { return s.m; }),
         testScores: scores.map(function (s) { return { lesson: s.title, score: s.s }; }), currentLesson: cur ? cur.title : null,
-        previousCandidates: { count: alumni.length, avgLessonsPerDay: Math.round(pace * 100) / 100, expectedLessonsByNow: expected, avgDaysToFinish: gradDays, avgScore: alumni.length ? Math.round(alumni.reduce(function (s, a) { return s + a.stats.avgScore; }, 0) / alumni.length) : null } };
+        previousCandidates: { count: alumni.length, avgLessonsPerDay: Math.round(pace * 100) / 100, expectedLessonsByNow: expected, avgDaysToFinish: gradDays, avgScore: alumni.length ? Math.round(alumni.reduce(function (s, a) { return s + alStats(a).avgScore; }, 0) / alumni.length) : null } };
       var prompt = 'Siz BURAQ Logistics kompaniyasining o‘quv platformasidagi murabbiysiz. Quyidagi nomzod ma’lumotlarini tahlil qiling va unga shaxsan murojaat qilib yozing (siz deb). Javob tili: ' + (LANG_NAME[p.lang] || LANG_NAME.uz) + '.\n' +
         'Tuzilma (markdown sarlavhalar bilan, jami 180 so‘zdan oshmasin):\n## Umumiy holat\n## Kuchli tomonlar\n## E’tibor berish kerak\n## Keyingi 7 kun rejasi (3–5 aniq qadam, kunlik 2 soat maqsadini hisobga oling)\n' +
         'Faqat berilgan raqamlarga tayaning, o‘ylab topmang. Oldingi nomzodlar bilan solishtiring.\n\nMA’LUMOTLAR (JSON):\n' + JSON.stringify(data);
@@ -1981,7 +1983,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     return h('span', { className: cx('cms-state', (st.rejected || st.net === 'off') && 'is-dirty'), role: 'status' }, txt);
   }
   function LevelsAdmin(p) {
-    var t = p.t, db = p.db, L = levelsOf(db), pv = useState(null), ofm = useState(false), ofo = useState(false), tch = useState(false);
+    var t = p.t, db = p.db, L = levelsOf(db), pv = useState(null), ofm = useState(false), ofo = useState(false), tch = useState(false), dl = useState(null);
     /* every change goes straight to the server; removing a level in the middle moves the people above it down by the level id */
     function commit(fn) {
       tch[1](true);
@@ -2014,7 +2016,11 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           h('div', { className: 'lvl-edit-h' }, h(LevelEmblem, { n: i + 1, size: 40, uid: 'adm' + i, className: 'lvl-mini' }),
             h('div', { className: 'lvl-edit-t' }, h('b', null, lvlName(lv, p.lang)), lvlSub(lv, p.lang, t) ? h('span', { className: 'lor-sm lor-muted' }, lvlSub(lv, p.lang, t)) : null),
             i > 0 ? h('button', { type: 'button', className: 'app-link', onClick: function () { preview(i); } }, '✦ ' + t('cel_preview_btn')) : null,
-            i > 0 && !people.length ? h('button', { type: 'button', className: 'app-link danger', onClick: function () { commit(function (c) { c.splice(i, 1); }); } }, t('remove')) : null),
+            i > 0 && !people.length && dl[0] !== lv.id ? h('button', { type: 'button', className: 'app-link danger', onClick: function () { dl[1](lv.id); } }, t('remove')) : null),
+          dl[0] === lv.id ? h('div', { className: 'pa-foot pa-confirm', role: 'alert' },
+            h('span', { className: 'lor-sm' }, tpl(t('lvl_del_q'), { x: lvlName(lv, p.lang) })),
+            h(Btn, { variant: 'ghost', size: 'sm', onClick: function () { dl[1](null); } }, t('cancel')),
+            h(Btn, { variant: 'outline', size: 'sm', onClick: function () { dl[1](null); commit(function (c) { c.splice(i, 1); }); } }, t('yes_del'))) : null,
           h(OfferEditor, { t: t, lang: p.lang, i: i, items: lv.offer, open: ofo[0], onChange: function (xs) { set(i, function (x) { x.offer = xs; }); } }),
           h('div', { className: 'lvl-people' }, h('span', { className: 'lor-eyebrow' }, t('lvl_people') + ' · ' + people.length),
             people.map(function (x) { return h('span', { key: x.u.id, className: 'lvl-person' }, x.u.name, h('small', null, x.r.next && !x.r.free ? x.r.pct + '%' : x.r.inLevel + ' XP')); })));
@@ -10743,7 +10749,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         filled ? h('div', { className: cx('app-side', dr[0] && 'is-open') }, h(LOR.CourseTree, { sections: sections, progress: mastery(db, u).pct, lang: p.lang, onSelect: function (l) { go({ name: 'lesson', id: l.id }); } })) : null,
         filled && onLesson ? h('button', { type: 'button', className: cx('side-tg', sideOff[0] && 'is-off'), onClick: togSide, 'aria-expanded': !sideOff[0], 'aria-label': t(sideOff[0] ? 'side_show_l' : 'side_hide'), title: t(sideOff[0] ? 'side_show_l' : 'side_hide') },
           h('span', { className: 'side-tg-i', 'aria-hidden': true }, sideOff[0] ? '›' : '‹'), sideOff[0] ? h('span', null, t('side_show')) : null) : null,
-        h('main', { className: 'app-main', id: 'main' }, h('div', { className: 'page-anim', key: route.name + (route.id || route.uid || route.lessonId || '') + (route.ym || '') }, main), h(Foot, { t: t, onTerms: p.showTerms }))),
+        h('main', { className: 'app-main', id: 'main' }, h('div', { className: 'page-anim', key: route.name + (route.id || route.uid || route.lessonId || '') + (route.ym || '') }, h(PageGuard, { t: t }, main)), h(Foot, { t: t, onTerms: p.showTerms }))),
       u.celebrate && filled ? h(Celebration, Object.assign({}, p, { go: go, key: 'cel' + (u.celebrate.at || 0) + (u.celebrate.replay ? 'r' : '') })) : null,
       due && !pHide[0] && !sv[0] && !ai[0] && !ini[0] && !u.celebrate && route.name !== 'lesson' && route.name !== 'quiz' && route.name !== 'drill' ? h(PulseBubble, { t: t, db: db, user: u, onStart: function () { sv[1](true); }, onLater: snoozePulse, onClose: function () { pHide[1](true); } }) : null,
       sv[0] ? h(SurveyModal, Object.assign({}, p, { key: 'sv', onClose: function () { sv[1](false); pHide[1](true); }, openIni: function () { ini[1](true); } })) : null,
@@ -11470,7 +11476,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         onNotif: admNotif }),   // идеи у CEO / руководителя — «Fikrlar»
       h('div', { className: 'app-body no-side' }, h('main', { className: 'app-main', id: 'main' },
         lv === 'boss' ? h('div', { className: 'ro-bar', role: 'note' }, h(Ico, { name: 'lock', size: 16 }), h('span', null, t('ro_bar'))) : null,
-        h('div', { className: 'page-anim', key: route.name + (route.id || route.uid || route.lessonId || '') + (route.tab || '') + (route.ym || '') }, main), h(Foot, { t: t, onTerms: p.showTerms, admin: true, say: p.say }))),
+        h('div', { className: 'page-anim', key: route.name + (route.id || route.uid || route.lessonId || '') + (route.tab || '') + (route.ym || '') }, h(PageGuard, { t: t }, main)), h(Foot, { t: t, onTerms: p.showTerms, admin: true, say: p.say }))),
       h(AIMentor, Object.assign({}, p, { open: ai[0], setOpen: ai[1], lessonId: route.name === 'cms' ? route.lessonId : null, openLesson: function (id) { go({ name: 'cms', lessonId: id }); } })),
       hintOn && !tour[0] && p.user.tourDone ? h(HintLayer, { t: t }) : null,
       pal[0] ? h(Palette, Object.assign({}, q, { user: p.user, onClose: function () { pal[1](false); }, go: function (x) { go(x); } })) : null,
@@ -11765,5 +11771,21 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     if (typeof TOUCH_ICON === 'string') { head('link', { rel: 'apple-touch-icon', href: TOUCH_ICON }); head('link', { rel: 'icon', href: TOUCH_ICON }); }
   })();
 
-  ReactDOM.createRoot(document.getElementById('app')).render(h(SV ? App : NoServer));
+  /* a page that breaks shows what broke and a way back — not an empty background (the rest of the site keeps working) */
+  function PageGuard(props) { R.Component.call(this, props); this.state = { err: null }; }
+  PageGuard.prototype = Object.create(R.Component.prototype); PageGuard.prototype.constructor = PageGuard;
+  PageGuard.getDerivedStateFromError = function (e) { return { err: e || new Error('?') }; };
+  PageGuard.prototype.componentDidCatch = function (e, info) { try { console.error('[BURAQ] page error:', e, info && info.componentStack); } catch (x) {} };
+  PageGuard.prototype.render = function () {
+    var e = this.state.err, me = this; if (!e) return this.props.children;
+    var t = this.props.t || T((function () { try { return localStorage.getItem('lor-lms-lang') || 'uz'; } catch (x) { return 'uz'; } })());
+    return h('section', { className: cx('box page-err', this.props.root && 'is-root'), role: 'alert' },
+      h('h2', { className: 'lor-h' }, t('pg_err_t')),
+      h('p', { className: 'lor-sm', style: { margin: 0 } }, t('pg_err_s')),
+      h('pre', { className: 'page-err-msg' }, String((e && (e.message || e)) || '').slice(0, 300)),
+      h('div', { className: 'box-row', style: { marginTop: 0 } },
+        h(Btn, { variant: 'primary', onClick: function () { location.reload(); } }, t('pg_err_reload')),
+        this.props.root ? null : h(Btn, { variant: 'outline', onClick: function () { me.setState({ err: null }); location.hash = ''; } }, t('pg_err_home'))));
+  };
+  ReactDOM.createRoot(document.getElementById('app')).render(h(PageGuard, { root: true }, h(SV ? App : NoServer)));
 })();
