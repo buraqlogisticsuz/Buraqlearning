@@ -427,12 +427,15 @@ try {
       '☐ 2-A2 Qoralama bonus', "☐ 9-A1 Yo'q daraja"].join('\n');
     await A.setInputFiles('#of-file', { name: 'imtiyozlar.txt', mimeType: 'text/plain', buffer: Buffer.from(of) });
     await A.waitForSelector('.of-modal .of-res');
+    assert.equal(await A.getByRole('button', { name: 'Saqlash', exact: true }).count(), 0, 'кнопки «Saqlash» нет — сохраняется сразу');
     assert.match(await txt(A, '.of-modal'), /8 ta variant topildi[\s\S]*2\. Junior\s+A 2 · B 1 · C 1 · D 1 · E 1 \+ 1[\s\S]*platformada 9-daraja yo‘q/);
     await A.locator('.of-modal').getByRole('button', { name: 'Darajalarga qo‘yish' }).click(); await A.waitForTimeout(300);
     const card = A.locator('.lvl-edit').nth(1);
+    assert.doesNotMatch(await txt(A, 'main'), /Bu darajaga o‘tish shartlari|Nomlar va tavsif|Shart qo‘shish|Mas’uliyat yo‘nalishi/, 'условий, описаний и «Nomlar va tavsif» в уровнях нет');
     assert.match(await txt(card, '.of-edit summary'), /tanlangan 0 \/ 7/);
     for (const c of ['2-A1', '2-C1', '2-E1', '2-E2']) await card.getByRole('checkbox', { name: c, exact: true }).check();
-    await A.getByRole('button', { name: 'Saqlash', exact: true }).last().click(); await settle(A);
+    await settle(A);   // без «Saqlash»: каждая отметка сразу на сервере
+    assert.match(await txt(A, '.of-bar'), /Serverga saqlandi/);
     const off = srv.g.state().levels[1].offer;
     assert.deepEqual(off.filter(x => x.on).map(x => x.code + ':' + x.col), ['2-A1:A', '2-C1:C', '2-E1:S', '2-E2:R'], 'отмеченные: E1 — навык, E2 — результат');
     assert.equal(off.find(x => x.code === '2-B1').text.uz, 'Kitob uchun to‘lov', 'o\' → o‘');
@@ -443,7 +446,11 @@ try {
     const tx = await jr.innerText();
     assert.match(tx, /Maosh va bonuslar[\s\S]*Sinov bonusi \(namuna\)[\s\S]*Nomoddiy imtiyozlar[\s\S]*Oy xodimi e’loni/i);
     assert.match(tx, /Hujjatni xatosiz to‘ldirish/); assert.match(tx, /Oldingi darajada ko‘rsatishi kerak bo‘lgan natijalar[\s\S]*Imtihondan 80% olgan/i);
-    assert.ok(!/Qoralama bonus|Kitob uchun/.test(tx), 'неотмеченного у сотрудника нет'); }
+    assert.ok(!/Qoralama bonus|Kitob uchun/.test(tx), 'неотмеченного у сотрудника нет');
+    // условий уровня больше нет: на шкале — только личная сверхзадача сотрудника; требования следующего уровня (E) — ниже
+    const lc = await txt(E, '.level-card');
+    assert.match(lc, /1 ta shartdan 0 tasi[\s\S]*Ombor uchun qo‘llanma/, 'на шкале — только сверхзадача');
+    assert.match(lc, /Hujjatni xatosiz to‘ldirish[\s\S]*Imtihondan 80% olgan/); }
   step('льготы уровня из файла: разбор по кодам, без отметок; сотруднику — только отмеченное, по группам A–D и требования E');
   await checkHeader(E, 'сотрудник'); await checkHeader(C, 'CEO'); await checkHeader(A, 'SOP-менеджер');
   await shot(E, 'shapka-xodim');

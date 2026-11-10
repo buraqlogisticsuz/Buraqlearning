@@ -1750,7 +1750,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var xq = reqs.filter(function (q) { return q.key === 'xp'; })[0], done = reqs.filter(function (q) { return q.ok; }).length;
     var pct = !nx ? 100 : reqs.length ? Math.floor(reqs.reduce(function (sm, q) { return sm + q.frac; }, 0) * 100 / reqs.length + 1e-9) : 100;
     var pending = db.requests.some(function (r) { return r.type === 'level' && r.userId === u.id && r.state === 'open'; });
-    return { li: li, level: lv, xp: total, inLevel: inL, need: xq ? xq.n : 0, next: nx, reqs: reqs, done: done, pct: pct, eligible: !!nx && done === reqs.length, pending: pending };
+    return { li: li, level: lv, xp: total, inLevel: inL, need: xq ? xq.n : 0, next: nx, reqs: reqs, done: done, pct: pct, eligible: !!nx && done === reqs.length, pending: pending, free: !!nx && !reqs.length };
   }
   function rankLabel(r, lang, t) { return lvlShort(r.level, lang); }
   function LevelBadge(p) {
@@ -1779,9 +1779,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
               h('span', { className: 'career-n' }, i + 1),
               h('span', { className: 'career-t' }, h('b', null, lvlName(lv, p.lang)), lvlRole(lv, p.lang) ? h('small', null, lvlRole(lv, p.lang)) : null),
               now ? h('span', { className: 'career-tag' }, t('career_now')) : past ? h('span', { className: 'career-tag done' }, '✓') : null,
-              stepXp(L, i) != null ? h('span', { className: 'career-xp' }, stepXp(L, i) + ' XP') : i < L.length - 1 ? h('span', { className: 'career-xp' }, tpl(t('lr_n_conds'), { n: condsOf(L[i + 1]).length })) : null),
+              stepXp(L, i) != null ? h('span', { className: 'career-xp' }, stepXp(L, i) + ' XP') : null),
             h('div', { className: 'career-b' },
-              h('p', { className: 'career-desc' }, levelDesc(lv, p.lang)),
               g.length ? h('div', { className: 'grow-box' }, h('span', { className: 'lor-eyebrow' }, i ? t('career_grow') : t('lvl_grow')), h('ul', { className: 'grow-list' }, g.map(function (x, k) { return h('li', { key: k }, x); }))) : null,
               h(OfferResults, { t: t, lv: lv, lang: p.lang, first: !i }),
               offerHasPerks(lv) ? h('div', null, h('span', { className: 'lor-eyebrow' }, t('career_perks')), h(OfferPerks, { t: t, lv: lv, lang: p.lang }))
@@ -1833,7 +1832,6 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           h('div', null, h('b', null, lvlName(lv, p.lang)), lvlRole(lv, p.lang) ? h('small', null, lvlRole(lv, p.lang)) : null),
           stepXp(L, cur.i) != null ? h('span', { className: 'lvl-pop-xp' }, stepXp(L, cur.i) + ' XP') : null),
         cur.i === r.li ? h('span', { className: 'lvl-pop-tag' }, t('career_now')) : cur.i < r.li ? h('span', { className: 'lvl-pop-tag done' }, '\u2713') : null,
-        h('p', { className: 'lvl-pop-desc' }, levelDesc(lv, p.lang)),
         g.length ? h('div', { className: 'grow-box' }, h('span', { className: 'lor-eyebrow' }, cur.i ? t('career_grow') : t('lvl_grow')), h('ul', { className: 'grow-list' }, g.map(function (x, k) { return h('li', { key: k }, x); }))) : null,
         pk.length ? h('div', null, h('span', { className: 'lor-eyebrow' }, t('career_perks')), h(PerkList, { items: pk, max: 3 }),
           pk.length > 3 ? h('span', { className: 'lor-sm lor-muted' }, tpl(t('lvl_pop_more'), { n: pk.length - 3 })) : null)
@@ -1852,20 +1850,20 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           lvlSub(lv, p.lang, t) ? h('span', { className: 'level-sub' }, lvlSub(lv, p.lang, t)) : null),
         h('div', { className: 'level-xp' }, h('b', null, r.inLevel), h('span', null, 'XP ' + t('in_level') + ' · ' + t('xp_total') + ' ' + r.xp))),
       r.next ? h('div', { className: 'level-scale' },
-        h('div', { className: 'level-scale-h' }, h('span', { className: 'lor-eyebrow' }, tpl(t('lr_title'), { x: lvlName(r.next, p.lang) }) + (lvlRole(r.next, p.lang) ? ' (' + lvlRole(r.next, p.lang) + ')' : '')),
+        h('div', { className: 'level-scale-h' }, h('span', { className: 'lor-eyebrow' }, tpl(t(r.free ? 'lr_title_req' : 'lr_title'), { x: lvlName(r.next, p.lang) }) + (lvlRole(r.next, p.lang) ? ' (' + lvlRole(r.next, p.lang) + ')' : '')),
           !full ? h('button', { type: 'button', className: 'app-link', onClick: function () { p.go({ name: 'path' }); } }, t('lr_more')) : null),
         h(LevelRuler, Object.assign({}, p, { u: u, rank: r, list: full, tag: full ? 'f' : 'h' })),
-        !full ? h('p', { className: 'lor-sm', style: { margin: 0 } }, r.eligible ? t('lr_ready') : tpl(t('lr_left'), { n: left })) : null,
+        !full && !r.free ? h('p', { className: 'lor-sm', style: { margin: 0 } }, r.eligible ? t('lr_ready') : tpl(t('lr_left'), { n: left })) : null,
         u.role === 'employee' ? (r.pending ? h('span', { className: 'lor-notice-state light' }, '\u25D4 ' + t('level_pending')) : h('div', { className: 'level-ask' }, h(Btn, { variant: r.eligible ? 'primary' : 'outline', arrow: r.eligible, disabled: !r.eligible, onClick: ask }, t('ask_level')), !r.eligible ? h('span', { className: 'lor-sm lor-muted' }, t('lr_ask_hint')) : null)) : null)
         : h('p', { className: 'lor-sm', style: { margin: 0 } }, t('top_level')),
       h(LadderSteps, { t: t, db: db, lang: p.lang, rank: r }),
       r.next && full ? h('div', { className: 'level-next' },
         h('span', { className: 'lor-eyebrow' }, t('next_level') + ': ' + lvlName(r.next, p.lang) + (lvlRole(r.next, p.lang) ? ' (' + lvlRole(r.next, p.lang) + ')' : '')),
-        (function () {
+        r.free ? null : (function () {
           var g = levelGrow(r.next, p.lang);
           return g.length ? h('div', { className: 'grow-box' }, h('span', { className: 'lor-eyebrow' }, t('lvl_grow')), h('ul', { className: 'grow-list' }, g.map(function (x, i) { return h('li', { key: i }, x); }))) : null;
         })(),
-        h(OfferResults, { t: t, lv: r.next, lang: p.lang }),
+        r.free ? null : h(OfferResults, { t: t, lv: r.next, lang: p.lang }),
         (function () {
           var pk = levelPerks(r.next, p.lang);
           return pk.length ? h('details', { className: 'perk-fold' }, h('summary', null, t('career_next_perks') + ' · ' + pk.length), offerHasPerks(r.next) ? h(OfferPerks, { t: t, lv: r.next, lang: p.lang }) : h(PerkList, { items: pk })) : null;
@@ -1973,24 +1971,40 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       }));
   }
 
+  /* «Bir bosish — saqlandi»: a tick, an edit, a file or a removed level go to the server at once (no «Saqlash» to forget);
+     the line under the import button says when the server has it */
+  function SaveState(p) {
+    var t = p.t, s = useState(null), st = s[0];
+    useEffect(function () { return SV ? SV.onStatus(function (x) { s[1](x); }) : undefined; }, []);
+    if (!st || !p.touched) return null;
+    var txt = st.rejected ? '⚠ ' + t('lvl_save_err') + ': ' + st.rejected.slice(0, 1).join('') : st.net === 'off' ? '● ' + t('srv_offline') : st.pending || st.net === 'saving' ? '● ' + t('lvl_saving') : '✓ ' + t('lvl_saved_srv');
+    return h('span', { className: cx('cms-state', (st.rejected || st.net === 'off') && 'is-dirty'), role: 'status' }, txt);
+  }
   function LevelsAdmin(p) {
-    var t = p.t, db = p.db, s = useState(function () { return clone(levelsOf(db)); }), L = s[0], pv = useState(null), ofm = useState(false), ofo = useState(false);
+    var t = p.t, db = p.db, L = levelsOf(db), pv = useState(null), ofm = useState(false), ofo = useState(false), tch = useState(false);
+    /* every change goes straight to the server; removing a level in the middle moves the people above it down by the level id */
+    function commit(fn) {
+      tch[1](true);
+      p.update(function (d) {
+        var old = levelsOf(d), c = clone(old); fn(c);
+        c.forEach(function (x) { delete x.silver; delete x.req; delete x.minAvg; delete x.minIni; delete x.desc; x.conds = []; });
+        var at = function (li) { var o = old[li], k = o ? c.findIndex(function (x) { return x.id === o.id; }) : -1; return k >= 0 ? k : Math.min(li, c.length - 1); };
+        if (c.length !== old.length) {
+          d.users.forEach(function (u) { if (u.level != null && u.level !== at(u.level)) u.level = at(u.level); });
+          (d.requests || []).forEach(function (r) { if (r.type === 'level' && r.state === 'open') { if (r.toLevel != null) r.toLevel = at(r.toLevel); if (r.fromLevel != null) r.fromLevel = at(r.fromLevel); } });
+        }
+        d.levels = c;
+      });
+    }
     /* the file's options go to the levels by number (1 — the first level); what was there is replaced, nothing ticked */
-    function applyOffer(r) { s[1](L.map(function (lv, i) { return r.lv[i + 1] ? Object.assign({}, lv, { offer: r.lv[i + 1] }) : lv; })); ofm[1](false); ofo[1](true); p.say(t('of_applied')); }
+    function applyOffer(r) { commit(function (c) { c.forEach(function (lv, i) { if (r.lv[i + 1]) lv.offer = r.lv[i + 1]; }); }); ofm[1](false); ofo[1](true); p.say(t('of_applied')); }
     function preview(li) { var me = p.user; pv[1]({ id: -1, role: 'employee', name: me.name, position: me.position, level: li, levelXpBase: 0, celebrate: { kind: 'level', li: li, fromLi: Math.max(0, li - 1), at: Date.now() } }); }
-    function set(i, fn) { var c = clone(L); fn(c[i]); s[1](c); }
-    function save() { p.update(function (d) { var c = clone(L).map(function (x, i) { delete x.silver; delete x.req; delete x.minAvg; delete x.minIni; x.conds = i ? normConds(x.conds) : []; return x; }); c.forEach(function (x, i) { var g = stepXp(c, i); if (g != null) x.gold = g; else if (i < c.length - 1) x.gold = 0; });
-      /* уровень человека — номер в списке: убрали уровень в середине — номера тех, кто выше, сдвигаются по id уровня */
-      var old = levelsOf(d), at = function (li) { var o = old[li], k = o ? c.findIndex(function (x) { return x.id === o.id; }) : -1; return k >= 0 ? k : Math.min(li, c.length - 1); };
-      d.users.forEach(function (u) { if (u.level != null && u.level !== at(u.level)) u.level = at(u.level); });
-      (d.requests || []).forEach(function (r) { if (r.type === 'level' && r.state === 'open') { if (r.toLevel != null) r.toLevel = at(r.toLevel); if (r.fromLevel != null) r.fromLevel = at(r.fromLevel); } });
-      d.levels = c; }); p.say(t('lvl_saved')); }
-    function objOf(v) { return typeof v === 'string' ? { uz: v, ru: v, en: v, zh: v } : Object.assign({}, v || {}); }
-    var emps = db.users.filter(function (u) { return u.role === 'employee'; }), LG = ['uz', 'ru', 'en', 'zh'];
+    function set(i, fn) { commit(function (c) { fn(c[i]); }); }
+    var emps = db.users.filter(function (u) { return u.role === 'employee'; });
     return h('div', { className: 'app-wrap' },
       h('div', { className: 'page-head' }, h('div', null, h('span', { className: 'lor-eyebrow' }, t('ladder')), h('h1', { className: 'lor-title' }, t('nav_levels'), h(PageTip, { t: t, id: 'levels' })))),
       h('p', { className: 'lor-muted', style: { margin: 0, maxWidth: 820 } }, t('lvl_hint')),
-      h('div', { className: 'of-bar' }, h(Btn, { variant: 'outline', size: 'sm', onClick: function () { ofm[1](true); } }, t('of_btn')), h('span', { className: 'lor-sm lor-muted' }, t('of_btn_h'))),
+      h('div', { className: 'of-bar' }, h(Btn, { variant: 'outline', size: 'sm', onClick: function () { ofm[1](true); } }, t('of_btn')), h('span', { className: 'lor-sm lor-muted' }, t('of_btn_h')), h(SaveState, { t: t, touched: tch[0] })),
       ofm[0] ? h(OfferImport, { t: t, lang: p.lang, levels: L, onClose: function () { ofm[1](false); }, onApply: applyOffer }) : null,
       h('ol', { className: 'ladder ladder-top', 'aria-label': t('ladder') }, L.map(function (x, i) { return h('li', { key: x.id, className: 'on' }, h('span', { className: 'ladder-n' }, i + 1), h('span', null, lvlShort(x, p.lang), lvlRole(x, p.lang) ? h('small', null, lvlRole(x, p.lang)) : null)); })),
       pv[0] ? h(Celebration, Object.assign({}, p, { key: 'pv' + pv[0].celebrate.at, user: pv[0], preview: true, go: function () {}, onDone: function () { pv[1](null); } })) : null,
@@ -2000,24 +2014,12 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           h('div', { className: 'lvl-edit-h' }, h(LevelEmblem, { n: i + 1, size: 40, uid: 'adm' + i, className: 'lvl-mini' }),
             h('div', { className: 'lvl-edit-t' }, h('b', null, lvlName(lv, p.lang)), lvlSub(lv, p.lang, t) ? h('span', { className: 'lor-sm lor-muted' }, lvlSub(lv, p.lang, t)) : null),
             i > 0 ? h('button', { type: 'button', className: 'app-link', onClick: function () { preview(i); } }, '✦ ' + t('cel_preview_btn')) : null,
-            i > 0 && !people.length ? h('button', { type: 'button', className: 'app-link danger', onClick: function () { s[1](L.filter(function (_, k) { return k !== i; })); } }, t('remove')) : null),
-          h('p', { className: 'lor-sm', style: { margin: 0 } }, levelDesc(lv, p.lang)),
-          i > 0 ? h(CondEditor, { t: t, db: db, lang: p.lang, conds: condsOf(lv), onChange: function (cs) { set(i, function (x) { x.conds = cs; }); } }) : h('p', { className: 'lor-sm lor-muted lvl-first' }, t('lc_first')),
+            i > 0 && !people.length ? h('button', { type: 'button', className: 'app-link danger', onClick: function () { commit(function (c) { c.splice(i, 1); }); } }, t('remove')) : null),
           h(OfferEditor, { t: t, lang: p.lang, i: i, items: lv.offer, open: ofo[0], onChange: function (xs) { set(i, function (x) { x.offer = xs; }); } }),
-          h('details', { className: 'lvl-texts' },
-            h('summary', null, t('lvl_texts')),
-            h('div', { className: 'lvl-names' },
-              LG.map(function (lg) { return h(Field, { key: 'n' + lg, name: 'ln' + i + lg, label: t('lvl_name') + ' · ' + lg.toUpperCase(), value: lv.name[lg], onChange: function (v) { set(i, function (x) { x.name[lg] = v; }); } }); }),
-              LG.map(function (lg) { return h(Field, { key: 'r' + lg, name: 'lr' + i + lg, label: t('lvl_role') + ' · ' + lg.toUpperCase(), value: (lv.role || {})[lg] || '', onChange: function (v) { set(i, function (x) { x.role = objOf(x.role); x.role[lg] = v; }); } }); })),
-            h('div', { className: 'lvl-desc' }, LG.map(function (lg) { return h(Field, { key: lg, name: 'ld' + i + lg, multiline: true, rows: 3, label: t('lvl_desc') + ' · ' + lg.toUpperCase(), value: (lv.desc || lvlLib(lv, 'desc'))[lg] || '', onChange: function (v) { set(i, function (x) { x.desc = Object.assign({}, x.desc || lvlLib(x, 'desc')); x.desc[lg] = v; }); } }); })),
-            h('div', { className: 'lvl-desc' }, LG.map(function (lg) { return h(Field, { key: 'g' + lg, name: 'lgw' + i + lg, multiline: true, rows: 3, label: t('lvl_grow') + ' · ' + lg.toUpperCase(), hint: t('lvl_line_hint'), value: levelGrow(lv, lg).join('\n'), onChange: function (v) { set(i, function (x) { x.grow = Object.assign({}, x.grow || lvlLib(x, 'grow')); x.grow[lg] = v.split('\n').map(function (y) { return y.trim(); }).filter(Boolean); }); } }); })),
-            h('div', { className: 'lvl-desc' }, LG.map(function (lg) { return h(Field, { key: 'p' + lg, name: 'lpk' + i + lg, multiline: true, rows: 4, label: t('lvl_perks') + ' · ' + lg.toUpperCase(), hint: t('lvl_perk_hint'), value: levelPerks(lv, lg).map(function (y) { return y[0] + ' — ' + y[1]; }).join('\n'), onChange: function (v) { set(i, function (x) { x.perks = Object.assign({}, x.perks || lvlLib(x, 'perks')); x.perks[lg] = v.split('\n').map(function (y) { return y.trim(); }).filter(Boolean).map(function (y) { var m = y.split(' — '); return [m[0], m.slice(1).join(' — ')]; }); }); } }); }))),
           h('div', { className: 'lvl-people' }, h('span', { className: 'lor-eyebrow' }, t('lvl_people') + ' · ' + people.length),
-            people.map(function (x) { return h('span', { key: x.u.id, className: 'lvl-person' }, x.u.name, h('small', null, x.r.next ? x.r.pct + '%' : x.r.inLevel + ' XP')); })));
+            people.map(function (x) { return h('span', { key: x.u.id, className: 'lvl-person' }, x.u.name, h('small', null, x.r.next && !x.r.free ? x.r.pct + '%' : x.r.inLevel + ' XP')); })));
       })),
-      h('div', { className: 'box-row' },
-        h(Btn, { variant: 'outline', onClick: function () { var n = L.length + 1; s[1](L.concat([{ id: 'lvl' + Date.now().toString(36), name: { uz: n + '-daraja', ru: 'Уровень ' + n, en: 'Level ' + n, zh: n + ' 级' }, role: { uz: '', ru: '', en: '', zh: '' }, alt: { uz: '', ru: '', en: '', zh: '' }, gold: 0, conds: [{ id: condId(), type: 'xp', n: 600 }, { id: condId(), type: 'tenure', n: 180 }] }])); } }, '+ ' + t('add_level')),
-        h(Btn, { variant: 'primary', arrow: true, onClick: save }, t('save'))));
+      h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('lvl_autosave')));
   }
 
   /* ---------- AI helper inside the Content (CMS) editor ---------- */
@@ -2253,7 +2255,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var xs = levelResults(p.lv, p.lang);
     return xs.length ? h('div', { className: 'grow-box of-res' }, h('span', { className: 'lor-eyebrow' }, p.t(p.first ? 'of_R0' : 'of_R')), h('ul', { className: 'grow-list' }, xs.map(function (x, k) { return h('li', { key: k }, x); }))) : null;
   }
-  function levelDesc(lv, lang) { if (!lv) return ''; var d = lv.desc || lvlLib(lv, 'desc'); return d[lang] || d.uz || ''; }
+  function levelDesc() { return ''; }   // level descriptions are gone (owner): the level is its name, perks and requirements
   /* keepAt: the employee’s own device congratulates but does not move the level date — with the server that is the SOP manager’s */
   function markPromotion(d, uid, li, fromLi, keepAt) {
     d.users.forEach(function (x) { if (x.id === uid) { x.celebrate = { kind: 'level', li: li, fromLi: fromLi, at: Date.now() }; x.lastRank = String(li); if (!keepAt && (!x.levelAt || Date.now() - x.levelAt > 6e4)) x.levelAt = Date.now(); } });
@@ -2285,7 +2287,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     if (n.kind === 'pay' && n.pay) return tpl(t('n_pay_' + n.pay.s), { m: ymLabel(n.pay.ym, lang, true), x: sumTxt(n.pay.total, t) }) + (n.pay.reply ? ' — ' + n.pay.reply : '');
     if (!n.promo) return n.text;
     var lv = levelsOf(db)[n.promo.li];
-    return tpl(t('n_promo_level'), { x: lvlName(lv, lang) }) + ' ' + levelDesc(lv, lang);
+    return tpl(t('n_promo_level'), { x: lvlName(lv, lang) });
   }
   /* level emblem: shield with the level number, rank chevrons and a laurel (original drawing) */
   function LevelEmblem(p) {
@@ -6618,7 +6620,9 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   };
   function CondIco(p) { return h('svg', { width: p.size || 16, height: p.size || 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true, focusable: 'false' }, h('path', { d: COND_ICO[p.type] || COND_ICO.task })); }
   function condId() { return 'c' + Math.random().toString(36).slice(2, 8); }
-  function condsOf(lv) { return (lv && lv.conds) || []; }
+  /* «Bu darajaga o‘tish shartlari» are gone (owner, v23): no automatic gates — the employee reads the level's requirements (E)
+     and asks; the SOP manager or CEO approves. Old lv.conds stay in the data and are not read; personal tasks on the scale stay */
+  function condsOf() { return []; }
   /* XP asked to move on from level i (the xp condition of the next level), or null */
   function stepXp(L, i) { var c = condsOf(L[i + 1]).filter(function (x) { return x.type === 'xp'; })[0]; return c ? +c.n || 0 : null; }
   function levelSince(u) { return u.levelAt || u.startedAt || Date.now(); }
@@ -6670,9 +6674,19 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   function condUnit(type, t) { return type === 'xp' ? 'XP' : COND_PCT[type] ? '%' : type === 'days' || type === 'tenure' ? t('lc_u_days') : t('lc_u_pcs'); }
 
   /* the ruler: one cell per condition, each fills on its own; the pin under it is the overall share */
+  /* what the next level asks for (its E: skills and results) — the employee checks himself and asks, the SOP manager weighs it */
+  function NextReqs(p) {
+    var t = p.t, sk = levelGrow(p.lv, p.lang), rs = levelResults(p.lv, p.lang);
+    return h('div', { className: 'nreq' },
+      sk.length ? h('div', { className: 'grow-box' }, h('span', { className: 'lor-eyebrow' }, t('of_S')), h('ul', { className: 'grow-list' }, sk.map(function (x, k) { return h('li', { key: k }, x); }))) : null,
+      rs.length ? h('div', { className: 'grow-box of-res' }, h('span', { className: 'lor-eyebrow' }, t('of_R')), h('ul', { className: 'grow-list' }, rs.map(function (x, k) { return h('li', { key: k }, x); }))) : null,
+      !sk.length && !rs.length ? h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('lr_no_reqs')) : null,
+      h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t(p.admin ? 'lr_free_admin' : 'lr_free')));
+  }
   function LevelRuler(p) {
     var t = p.t, db = p.db, u = p.u || p.user, r = p.rank || rankOf(db, u), hv = useState(-1), hot = hv[0];
     if (!r.next) return null;
+    if (r.free) return p.compact ? null : h(NextReqs, { t: t, lv: r.next, lang: p.lang, admin: p.admin });
     var reqs = r.reqs, n = reqs.length, uid = 'lr' + u.id + (p.tag || '');
     function mark(q) {
       var on = !q.ok, title = q.c.title;
@@ -6713,35 +6727,6 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   }
 
   /* SOP manager: the list of conditions for one level */
-  function CondEditor(p) {
-    var t = p.t, cs = p.conds || [], secs = p.db.course.sections;
-    function blank(type, id) { var c = { id: id || condId(), type: type }; if (type === 'sec') c.sid = (secs[0] || {}).id; else if (type === 'task') c.title = ''; else c.n = COND_DEF[type]; return c; }
-    function put(i, c) { p.onChange(cs.map(function (x, k) { return k === i ? c : x; })); }
-    return h('div', { className: 'lce' },
-      h('div', { className: 'lce-h' }, h('span', { className: 'lor-field-label' }, t('lc_title')), h('span', { className: 'lor-sm lor-muted' }, tpl(t('lc_count'), { n: cs.length }))),
-      cs.length ? h('ol', { className: 'lce-list' }, cs.map(function (c, i) {
-        var val;
-        if (c.type === 'sec') val = h('select', { className: 'lor-input slim lce-val', 'aria-label': t('lct_sec'), value: c.sid || '', onChange: function (e) { put(i, Object.assign({}, c, { sid: e.target.value })); } }, secs.map(function (s) { return h('option', { key: s.id, value: s.id }, s.title); }));
-        else if (c.type === 'task') val = h('input', { className: 'lor-input slim lce-val', placeholder: t('lc_task_ph'), 'aria-label': t('lct_task'), value: txtOf(c.title, p.lang), onChange: function (e) { var v = e.target.value, ti = c.title && typeof c.title === 'object' ? Object.assign({}, c.title) : v; if (typeof ti === 'object') ti[p.lang] = v; put(i, Object.assign({}, c, { title: ti })); } });
-        else val = h('span', { className: 'lce-num' }, h('input', { type: 'number', min: 0, className: 'lor-input slim', 'aria-label': t('lct_' + c.type), value: c.n == null ? '' : c.n, onChange: function (e) { put(i, Object.assign({}, c, { n: e.target.value })); } }), h('span', { className: 'lor-sm lor-muted' }, condUnit(c.type, t)));
-        return h('li', { key: c.id, className: 'lce-row' },
-          h('span', { className: 'lce-ico' }, h(CondIco, { type: c.type }), h('sup', null, i + 1)),
-          h('select', { className: 'lor-input slim lce-type', 'aria-label': t('lc_type'), value: c.type, onChange: function (e) { put(i, blank(e.target.value, c.id)); } }, COND_TYPES.map(function (ty) { return h('option', { key: ty, value: ty }, t('lct_' + ty)); })),
-          val,
-          h('button', { type: 'button', className: 'lce-x', 'aria-label': t('remove'), title: t('remove'), onClick: function () { p.onChange(cs.filter(function (_, k) { return k !== i; })); } }, '×'));
-      })) : h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('lc_empty')),
-      h('div', { className: 'lce-add' },
-        h('select', { className: 'lor-input slim', 'aria-label': t('lc_add'), value: '', onChange: function (e) { if (e.target.value) p.onChange(cs.concat([blank(e.target.value)])); } },
-          h('option', { value: '' }, '+ ' + t('lc_add')), COND_TYPES.map(function (ty) { return h('option', { key: ty, value: ty }, t('lct_' + ty)); })),
-        h('span', { className: 'lor-sm lor-muted' }, t('lc_add_hint'))));
-  }
-  function normConds(cs) {
-    return (cs || []).map(function (c) { var x = Object.assign({}, c); if (x.type !== 'sec' && x.type !== 'task') x.n = Math.max(0, Math.round(+x.n || 0)); return x; })
-      .filter(function (c) { return c.type === 'task' ? !!txtOf(c.title, 'uz').trim() || (typeof c.title === 'object' && Object.keys(c.title).some(function (k) { return String(c.title[k] || '').trim(); })) : c.type === 'sec' ? !!c.sid : true; });
-  }
-
-  /* ---------- monthly report: attendance, results and “what if you keep this pace” ---------- */
-  var ADAPT_DAYS = 90;
   function workWeek(db) { var w = ((db.settings || {}).report || {}).week; return +w === 5 ? 5 : 6; }
   function isWorkDay(dt, week) { var g = dt.getDay(); return week === 5 ? g >= 1 && g <= 5 : g !== 0; }
   function ymOf(ts) { return dayKey(ts).slice(0, 7); }
@@ -6828,7 +6813,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   }
   /* when the next level could come at this pace: only the measurable conditions get a date */
   function levelEta(db, u, fc) {
-    var r = rankOf(db, u); if (!r.next) return null;
+    var r = rankOf(db, u); if (!r.next || r.free) return null;   // no conditions — no forecast, the SOP manager decides
     var days = 0, blocked = [];
     r.reqs.forEach(function (q) {
       if (q.ok) return;
@@ -7119,7 +7104,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
                   h('td', { className: 'num' }, r.ms.lessons, h('div', { className: 'lor-sm lor-muted' }, r.ms.avg == null ? '—' : t('r_avg') + ' ' + r.ms.avg + '%')),
                   h('td', { className: 'num' }, '+' + r.ms.xp),
                   h('td', null, h(VerdictChip, { t: t, v: r.v }), h('div', { className: 'lor-sm lor-muted', style: { marginTop: 4 } }, r.fc.left ? (r.fc.etaAt ? '→ ' + fmtDate(r.fc.etaAt) : r.v === 'early' ? '' : t('mr_never')) : '✓')),
-                  h('td', { style: { minWidth: 120 } }, r.rk.next ? h('div', { className: 'mr-lvl-mini' }, h('span', null, lvlShort(r.rk.level, lang) + ' → ' + lvlShort(r.rk.next, lang)), h('i', null, h('b', { style: { width: r.rk.pct + '%' } })), h('small', null, r.rk.pct + '%')) : h('span', { className: 'lor-sm lor-muted' }, t('top_level')))),
+                  h('td', { style: { minWidth: 120 } }, r.rk.next ? h('div', { className: 'mr-lvl-mini' }, h('span', null, lvlShort(r.rk.level, lang) + ' → ' + lvlShort(r.rk.next, lang)), r.rk.free ? null : h('i', null, h('b', { style: { width: r.rk.pct + '%' } })), r.rk.free ? null : h('small', null, r.rk.pct + '%')) : h('span', { className: 'lor-sm lor-muted' }, t('top_level')))),
                 null);
             }))))),
         pick ? h('section', { className: 'mr-person', id: 'mr-person' },
@@ -11388,7 +11373,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           h('div', { className: 'sp-detail' },
             h(XtPanel, Object.assign({}, p, { u: u, key: 'xtp' + u.id })),
             h(PlanBox, Object.assign({}, p, { u: u, admin: true })),
-            rankOf(db, u).next ? h('section', { className: 'box sp-level' }, h('span', { className: 'lor-eyebrow' }, tpl(t('lr_title'), { x: lvlName(rankOf(db, u).next, p.lang) }) + ' · ' + u.name), h(LevelRuler, Object.assign({}, p, { u: u, admin: true, tag: 'sp' }))) : null,
+            rankOf(db, u).next ? h('section', { className: 'box sp-level' }, h('span', { className: 'lor-eyebrow' }, tpl(t(rankOf(db, u).free ? 'lr_title_req' : 'lr_title'), { x: lvlName(rankOf(db, u).next, p.lang) }) + ' · ' + u.name), h(LevelRuler, Object.assign({}, p, { u: u, admin: true, tag: 'sp' }))) : null,
             h('span', { className: 'lor-eyebrow' }, t('sp_detail') + ' · ' + u.name),
             h(PulseDetail, { t: t, db: db, uid: u.id })))) : null);
     }
