@@ -52,3 +52,19 @@ test('снимок условий: только то, из чего считае
   const s = P.snapshot({ ...scheme, positions: ['x'], note: 'izoh', kpis: [{ id: 'a', name: 'A', type: 'zzz', plan: '10', w: '50', hint: 'h' }] });
   assert.deepEqual(s, { id: 'sk', title: 'Omborchi', base: 2000000, kpis: [{ id: 'a', name: 'A', unit: '', src: 'manual', type: 'plan', plan: 10, w: 50, min: 0, cap: 100 }] });
 });
+
+test('гибкие условия (v25): бонус — % от оклада, доплаты и удержания, % от факта, ступени', () => {
+  const me = { fixed: 5000000, baseMode: 'pct', basePct: 30, extras: [{ id: 'e1', name: 'Transport', amount: 300000 }, { id: 'e2', name: 'Avans', amount: -1000000 }, { id: 'e3', name: '', amount: 5 }],
+    kpis: [
+      { id: 's', name: 'Sotuv', unit: 'so‘m', src: 'manual', type: 'pct', rate: 2 },
+      { id: 'p', name: 'Shartnoma', unit: 'ta', src: 'manual', type: 'plan', plan: 10, w: 100, steps: [{ from: 120, pay: 130 }, { from: 80, pay: 50 }, { from: 100, pay: 100 }] }] };
+  const m = P.schemeFor({ schemes: [], people: { 3: me } }, { id: 3 }), snap = P.snapshot(m.scheme);
+  assert.equal(snap.baseMode, 'pct'); assert.deepEqual(snap.extras.map(x => x.amount), [300000, -1000000], 'пустая доплата отброшена');
+  assert.deepEqual(snap.kpis[1].steps.map(x => x.from), [80, 100, 120], 'ступени по порядку');
+  const r = P.calc(snap, m.fixed, { s: 40000000, p: 9 });   // 90 % → ступень 80 % → 50 % от 1 500 000
+  assert.deepEqual(r.lines.map(x => x.a), [800000, 750000, 300000, -1000000]);
+  assert.equal(r.base, 1500000); assert.equal(r.extra, -700000); assert.equal(r.kpi, 1550000); assert.equal(r.total, 5000000 + 1550000 - 700000);
+  assert.equal(P.calc(snap, m.fixed, { s: 0, p: 7 }).lines[1].a, 0, 'ниже первой ступени — 0');
+  assert.equal(P.calc(snap, m.fixed, { s: 0, p: 13 }).lines[1].a, 1950000, '130 % — ступень 120 %: 130 %');
+  assert.equal(P.calc(snap, m.fixed, { s: 0, p: 13 }).lines[1].p, 130);
+});

@@ -4693,3 +4693,19 @@ button.jf-name { padding: 0; background: none; border: 0; border-bottom: 1px sol
 .pay-people tr.is-none td { color: var(--ink-muted); }
 .pay-people td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
 
+/* pay terms: KPI bonus as a sum or % of pay, allowances and deductions, step scales, ready-made KPI */
+.pay-base-f { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.pay-mode { align-self: flex-start; order: 2; }
+.pay-extras-ed { display: flex; flex-direction: column; gap: var(--space-2); }
+.pay-x-row { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto; gap: var(--space-3); align-items: end; }
+.pay-extras { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.pay-extras li { display: flex; justify-content: space-between; gap: var(--space-3); padding: 4px 0; border-bottom: var(--hairline) dashed var(--line); }
+.pay-extras b { font-weight: 500; font-variant-numeric: tabular-nums; }
+.pay-extras b.is-minus, .pay-line.is-extra b.is-minus { color: var(--red-text); }
+.pay-steps { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: var(--radius-md); background: var(--blue-soft); }
+.pay-step { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pay-step .lor-input { width: 84px; }
+.pay-ed-move { display: inline-flex; gap: 4px; }
+.pay-preset { width: auto; min-width: 200px; }
+@media (max-width: 720px) { .pay-x-row { grid-template-columns: minmax(0, 1fr); } }
+

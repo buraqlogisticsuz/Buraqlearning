@@ -709,7 +709,7 @@ try {
   await C.fill('#f-pk-0-min', '50'); await C.fill('#f-pk-0-cap', '120');
   await click(C, '+ KPI qo‘shish');
   await C.fill('#f-pk-1-name', 'Kechikishlar'); await C.selectOption('#f-pk-1-src', 'att_late'); await C.fill('#f-pk-1-plan', '2'); await C.fill('#f-pk-1-w', '40');
-  await C.locator('.pay-ed-kpi').nth(1).locator('label.check input').check();
+  await C.locator('.pay-ed-kpi').nth(1).getByRole('checkbox', { name: /Qancha kam/ }).check();
   await click(C, '+ KPI qo‘shish');
   await C.fill('#f-pk-2-name', 'O‘qish soatlari'); await C.selectOption('#f-pk-2-src', 'study_h'); await C.selectOption('#f-pk-2-type', 'unit'); await C.fill('#f-pk-2-rate', '10000');
   assert.match(await C.innerText('.pay-editor'), /Vaznlar yig‘indisi: 100% ✓/);
@@ -776,14 +776,25 @@ try {
     assert.equal(await C.inputValue('#f-pay-fixed'), '4000000', 'начато с шаблона должности');
     await shot(C, '18b-pay-own');
     await C.fill('#f-pay-fixed', '4300000'); await C.fill('#f-pk-0-plan', '12');
+    // гибкость: бонус — % от оклада, постоянная доплата, готовый KPI «Sotuvdan foiz», ступени у первого KPI
+    await C.locator('.pay-mode button', { hasText: 'Maoshning %' }).click(); await C.fill('#f-pay-basepct', '40');
+    assert.match(await txt(C, '.pay-base-f'), /Hozir = 1 720 000 so‘m/);
+    await C.getByRole('button', { name: /Qo‘shimcha to‘lov yoki ushlab qolish/ }).click();
+    await C.fill('#f-px-0-name', 'Yo‘l puli'); await C.fill('#f-px-0-amount', '300000');
+    await C.selectOption('.pay-preset', 'sales');
+    await C.locator('.pay-ed-kpi').nth(0).getByText('Pog‘onali shkala').click();
+    assert.equal(await C.locator('.pay-ed-kpi').nth(0).locator('.pay-step').count(), 3, 'ступени по умолчанию: 80 / 100 / 120');
     await C.locator('.pay-editor').getByRole('button', { name: 'Saqlash' }).click(); await settle(C);
     const own = srv.g.state().pay.people[emp.id];
-    assert.ok(own && own.fixed === 4300000 && own.kpis.length === 3 && own.kpis[0].plan === 12 && own.from === sch.id, JSON.stringify(own));
+    assert.ok(own && own.fixed === 4300000 && own.kpis.length === 4 && own.kpis[0].plan === 12 && own.from === sch.id, JSON.stringify(own));
+    assert.ok(own.baseMode === 'pct' && own.basePct === 40 && own.extras[0].amount === 300000 && own.kpis[3].type === 'pct' && own.kpis[3].rate === 2 && own.kpis[0].steps.length === 3, JSON.stringify(own));
     assert.match((await C.locator('.pay-people tr', { hasText: 'Dilnoza Karimova' }).innerText()).replace(/[\u202f\u00a0]/g, ' '), /Shaxsiy[\s\S]*4 300 000/);
     assert.equal(srv.g.state().pay.schemes[0].kpis[0].plan, 10, 'шаблон не изменился');
     await shot(C, '18c-pay-people');
     await E.evaluate(() => LmsClient.sync()); await E.waitForTimeout(400); await nav(E, 'home'); await nav(E, 'pay');
     assert.match(await txt(E, 'main'), /4 300 000/, 'сотрудник видит свой оклад');
+    assert.match(await txt(E, '.pay-terms'), /maoshning 40%[\s\S]*1 720 000[\s\S]*Yo‘l puli\s+\+300 000/i, 'бонус от оклада и доплата');
+    assert.match(await txt(E, '.pay-kpis'), /Sotuvdan foiz[\s\S]*faktning 2% i to‘lanadi/);
     assert.deepEqual(await rejected(C), [], 'сервер принял свои условия'); }
   step('зарплата: у каждого сотрудника свои оклад и KPI («Sozlash», с шаблона), шаблон не меняется');
 
