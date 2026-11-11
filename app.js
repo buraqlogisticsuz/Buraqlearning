@@ -6762,6 +6762,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   }
 
   /* SOP manager: the list of conditions for one level */
+  /* ---------- monthly report: attendance, results and “what if you keep this pace” ---------- */
+  var ADAPT_DAYS = 90;
   function workWeek(db) { var w = ((db.settings || {}).report || {}).week; return +w === 5 ? 5 : 6; }
   function isWorkDay(dt, week) { var g = dt.getDay(); return week === 5 ? g >= 1 && g <= 5 : g !== 0; }
   function ymOf(ts) { return dayKey(ts).slice(0, 7); }
