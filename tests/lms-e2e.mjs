@@ -796,7 +796,20 @@ try {
     assert.match(await txt(E, '.pay-terms'), /maoshning 40%[\s\S]*1 720 000[\s\S]*Yo‘l puli\s+\+300 000/i, 'бонус от оклада и доплата');
     assert.match(await txt(E, '.pay-kpis'), /Sotuvdan foiz[\s\S]*faktning 2% i to‘lanadi/);
     assert.deepEqual(await rejected(C), [], 'сервер принял свои условия'); }
-  step('зарплата: у каждого сотрудника свои оклад и KPI («Sozlash», с шаблона), шаблон не меняется');
+  // условия в долларах: у другого сотрудника — валюта USD, суммы — «$1 200»
+  { await nav(C, 'pay'); await C.getByRole('tab', { name: /Xodimlar/ }).click(); await C.waitForTimeout(200);
+    const row = C.locator('.pay-people tr', { hasText: 'Bekzod Yusupov' });
+    await row.getByRole('button', { name: 'Sozlash' }).click(); await C.waitForSelector('.pay-editor');
+    await C.locator('.pay-cur button', { hasText: 'USD' }).click();
+    assert.match(await txt(C, '.pay-editor'), /Oylik maosh, USD/);
+    await C.fill('#f-pay-fixed', '1200'); await C.fill('#f-pay-base', '300');
+    assert.match(await txt(C, '.pay-example'), /\$1 200/, 'пример — в долларах (KPI ещё нет — только оклад)');
+    await C.locator('.pay-editor').getByRole('button', { name: 'Saqlash' }).click(); await settle(C);
+    const bu = srv.g.state().users.find(u => u.name === 'Bekzod Yusupov'), bp = srv.g.state().pay.people[bu.id];
+    assert.ok(bp && bp.cur === 'USD' && bp.fixed === 1200 && bp.base === 300, JSON.stringify(bp));
+    assert.match((await C.locator('.pay-people tr', { hasText: 'Bekzod Yusupov' }).innerText()).replace(/[\u202f\u00a0]/g, ' '), /\$1 200[\s\S]*\$300/);
+    assert.deepEqual(await rejected(C), [], 'сервер принял условия в долларах'); }
+  step('зарплата: у каждого сотрудника свои оклад и KPI («Sozlash», с шаблона), шаблон не меняется; можно в долларах');
 
   // ---------- руководитель (владелец): вход создаёт CEO; видит всё и зарплату, ничего не меняет ----------
   await nav(C, 'staff');

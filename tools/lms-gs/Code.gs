@@ -21,7 +21,7 @@
  *
  * Запрос — POST с JSON { action, token, … }, ответ — JSON { ok, … } или { ok: false, code, error }.
  */
-var LMS_VERSION = 25;          // 25: гибкие условия зарплаты — KPI-бонус % от оклада, доплаты/удержания, KPI «% от факта», ступени (lms-pay.js); 24: свои условия зарплаты у каждого сотрудника (pay.people[id]: оклад, KPI-бонус, свои KPI; lms-pay.js); 23: «Imtiyozlar va talablar» уровня — сотрудникам только отмеченные варианты (levels[].offer); 22: «Qabul qildim» — уведомление SOP-менеджеру и CEO (asset_in); 21: цены — «Kontent → Narxlar», сотрудникам в «Baza» (prices); 20: защита правок (id карточек, тест — одна попытка, балл и статусы, минуты учёбы, уведомления другим);  2: файлы — отдельно на Диске, действие file; 3: ИИ через Claude API (действие ai);
+var LMS_VERSION = 26;          // 26: валюта условий зарплаты — сумы или доллары (pay cur, lms-pay.js); 25: гибкие условия зарплаты — KPI-бонус % от оклада, доплаты/удержания, KPI «% от факта», ступени (lms-pay.js); 24: свои условия зарплаты у каждого сотрудника (pay.people[id]: оклад, KPI-бонус, свои KPI; lms-pay.js); 23: «Imtiyozlar va talablar» уровня — сотрудникам только отмеченные варианты (levels[].offer); 22: «Qabul qildim» — уведомление SOP-менеджеру и CEO (asset_in); 21: цены — «Kontent → Narxlar», сотрудникам в «Baza» (prices); 20: защита правок (id карточек, тест — одна попытка, балл и статусы, минуты учёбы, уведомления другим);  2: файлы — отдельно на Диске, действие file; 3: ИИ через Claude API (действие ai);
                                // 4: адресаты идей — CEO, Project Manager, руководитель компании (свой вход, role 'leader');
                                // 5: у идеи несколько адресатов (to — список), repliedBy — кто ответил;
                                // 6: свой профиль — имя и фото, смена логина и пароля (действие account);
@@ -1451,6 +1451,7 @@ function installTriggers() {
               шаблон и своя фикса, как раньше
      schemes: [{ id, title, positions: [должности], fixed: фикса, base: KPI-бонус при выполнении 100%, kpis: [KPI], note }]
               — шаблоны («Shablonlar»): у кого своих условий нет, считается по шаблону своей должности
+   cur: 'UZS' (по умолчанию) или 'USD' — валюта всех сумм условий: оклад, бонус, доплаты, ставки KPI (v26).
    KPI-бонус: base — сумма, или baseMode 'pct' + basePct — процент от оклада (v25).
    extras: [{ id, name, amount }] — постоянные доплаты (транспорт, связь…) и удержания (amount < 0) каждого месяца (v25).
    KPI: { id, name, unit, src: 'manual' (вводит сотрудник) или показатель платформы (считает страница), type, … }
@@ -1477,7 +1478,7 @@ function installTriggers() {
     if (!pay || !u) return null;
     var me = (pay.people || {})[u.id] || {}, list = pay.schemes || [], s = null;
     if (Array.isArray(me.kpis)) return { own: true, fixed: num(me.fixed),
-      scheme: { id: 'u' + u.id, title: String(me.title || ''), positions: [], fixed: num(me.fixed), base: num(me.base), baseMode: me.baseMode === 'pct' ? 'pct' : 'sum', basePct: num(me.basePct), extras: Array.isArray(me.extras) ? me.extras : [], kpis: me.kpis, note: String(me.note || ''), from: me.from || null } };
+      scheme: { id: 'u' + u.id, title: String(me.title || ''), positions: [], fixed: num(me.fixed), base: num(me.base), cur: me.cur === 'USD' ? 'USD' : 'UZS', baseMode: me.baseMode === 'pct' ? 'pct' : 'sum', basePct: num(me.basePct), extras: Array.isArray(me.extras) ? me.extras : [], kpis: me.kpis, note: String(me.note || ''), from: me.from || null } };
     if (me.schemeId) s = list.filter(function (x) { return x && x.id === me.schemeId; })[0] || null;
     if (!s) s = list.filter(function (x) { return x && (x.positions || []).indexOf(u.position) >= 0; })[0] || null;
     if (!s) return null;
@@ -1499,6 +1500,7 @@ function installTriggers() {
       if ((o.type === 'plan' || o.type === 'bonus') && k.less) o.less = true;
       return o;
     }) };
+    if (s.cur === 'USD') o0.cur = 'USD';
     if (s.baseMode === 'pct') { o0.baseMode = 'pct'; o0.basePct = num(s.basePct); }
     var ex = (s.extras || []).filter(function (x) { return x && String(x.name || '').trim() && num(x.amount); })
       .map(function (x) { return { id: String(x.id), name: String(x.name).trim(), amount: num(x.amount) }; });

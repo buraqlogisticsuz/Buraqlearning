@@ -68,3 +68,12 @@ test('гибкие условия (v25): бонус — % от оклада, д�
   assert.equal(P.calc(snap, m.fixed, { s: 0, p: 13 }).lines[1].a, 1950000, '130 % — ступень 120 %: 130 %');
   assert.equal(P.calc(snap, m.fixed, { s: 0, p: 13 }).lines[1].p, 130);
 });
+
+test('валюта условий (v26): USD у своих условий и шаблона попадает в снимок; по умолчанию — сумы', () => {
+  const pay = { schemes: [{ id: 't', positions: ['X'], cur: 'USD', fixed: 900, kpis: [] }], people: { 1: { cur: 'USD', fixed: 1200, base: 300, kpis: [] }, 2: { fixed: 5000000, kpis: [] } } };
+  assert.equal(P.snapshot(P.schemeFor(pay, { id: 1 }).scheme).cur, 'USD');
+  assert.equal(P.snapshot(P.schemeFor(pay, { id: 2 }).scheme).cur, undefined, 'сумы — без поля, как раньше');
+  assert.equal(P.snapshot(P.schemeFor(pay, { id: 3, position: 'X' }).scheme).cur, 'USD', 'шаблон в долларах');
+  assert.equal(P.calc(P.snapshot(P.schemeFor(pay, { id: 1 }).scheme), 1200, {}).total, 1200);
+});
+

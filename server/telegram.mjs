@@ -98,7 +98,7 @@ export function startTelegram({ token, C, strings, fetch = globalThis.fetch, log
     }
     if (n.kind === 'pay' && n.pay) {
       const [y, mo] = String(n.pay.ym).split('-'), mn = (((strings || {}).months || {}).uz || [])[+mo - 1];
-      return tpl(T('n_pay_' + n.pay.s), { m: mn ? mn + ' ' + y : n.pay.ym, x: String(Math.round(n.pay.total || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0') + ' ' + T('pay_cur') }) + (n.pay.reply ? ' — ' + n.pay.reply : '');
+      return tpl(T('n_pay_' + n.pay.s), { m: mn ? mn + ' ' + y : n.pay.ym, x: (n.pay.cur === 'USD' ? '$' : '') + String(Math.round(n.pay.total || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0') + (n.pay.cur === 'USD' ? '' : ' ' + T('pay_cur')) }) + (n.pay.reply ? ' — ' + n.pay.reply : '');
     }
     if (lv) return tpl(T('n_promo_level'), { x: (lv.name && (lv.name.uz || lv.name)) || '' });
     return n.text && !n.kind ? n.text : T('tg_new');

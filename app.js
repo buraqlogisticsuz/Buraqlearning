@@ -2290,7 +2290,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     if ((n.kind === 'pp' || n.kind === 'pp-warn' || n.kind === 'pp-gone') && n.pp) return ppNotif(n, t);
     if ((n.kind === 'shot' || n.kind === 'shot-me') && n.shot) return shotNotif(n, t);
     if (n.kind === 'price' && n.price) return tpl(t('n_price'), { x: n.price.ttl || '' }) + (n.price.n ? ' ' + tpl(t('n_price_n'), { n: n.price.n }) : '');
-    if (n.kind === 'pay' && n.pay) return tpl(t('n_pay_' + n.pay.s), { m: ymLabel(n.pay.ym, lang, true), x: sumTxt(n.pay.total, t) }) + (n.pay.reply ? ' — ' + n.pay.reply : '');
+    if (n.kind === 'pay' && n.pay) return tpl(t('n_pay_' + n.pay.s), { m: ymLabel(n.pay.ym, lang, true), x: sumTxt(n.pay.total, t, n.pay.cur) }) + (n.pay.reply ? ' — ' + n.pay.reply : '');
     if (!n.promo) return n.text;
     var lv = levelsOf(db)[n.promo.li];
     return tpl(t('n_promo_level'), { x: lvlName(lv, lang) });
@@ -3264,7 +3264,10 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
   var PAY_MAX = 20, PAY_DRAFT_MAX = 40, PAY_TRIES = 30;   // a month per employee: sent, not sent (as on the server); tries kept in one
   function payId() { return 'pc' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
   function money(n) { return String(Math.round(+n || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0'); }
-  function sumTxt(n, t) { return money(n) + ' ' + t('pay_cur'); }
+  /* pay terms are in so‘m or in US dollars (snapshot.cur, v26): every amount is shown in the currency of its terms */
+  function curOf(x) { return x && x.cur === 'USD' ? 'USD' : 'UZS'; }
+  function curLab(cur, t) { return cur === 'USD' ? 'USD' : t('pay_cur'); }
+  function sumTxt(n, t, cur) { return cur === 'USD' ? ((+n || 0) < 0 ? '-' : '') + '$' + money(Math.abs(+n || 0)) : money(n) + ' ' + t('pay_cur'); }
   function payNum(v) { var n = parseFloat(String(v == null ? '' : v).replace(/\s/g, '').replace(',', '.')); return isFinite(n) ? n : 0; }
   function numTxt(n) { return String(Math.round(n * 100) / 100).replace('.', ','); }
   /* a platform figure for one month */
@@ -3277,10 +3280,10 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     return 0;
   }
   /* the condition of one indicator in plain words */
-  function payRule(k, t) {
+  function payRule(k, t, cur) {
     var un = k.unit ? ' ' + k.unit : '';
-    if (k.type === 'unit') return tpl(t(k.rate < 0 ? 'pay_rule_minus' : 'pay_rule_unit'), { u: k.unit || t('pay_unit1'), x: sumTxt(Math.abs(k.rate), t) });
-    if (k.type === 'bonus') return tpl(t(k.less ? 'pay_rule_bonus_less' : 'pay_rule_bonus'), { p: numTxt(k.plan) + un, x: sumTxt(k.amount, t) });
+    if (k.type === 'unit') return tpl(t(k.rate < 0 ? 'pay_rule_minus' : 'pay_rule_unit'), { u: k.unit || t('pay_unit1'), x: sumTxt(Math.abs(k.rate), t, cur) });
+    if (k.type === 'bonus') return tpl(t(k.less ? 'pay_rule_bonus_less' : 'pay_rule_bonus'), { p: numTxt(k.plan) + un, x: sumTxt(k.amount, t, cur) });
     if (k.type === 'pct') return tpl(t('pay_rule_pct'), { r: numTxt(k.rate) });
     var s = [tpl(t('pay_rule_plan'), { p: numTxt(k.plan) + un, w: numTxt(k.w) })];
     if (k.less) s.push(t('pay_rule_less'));
@@ -3290,15 +3293,15 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     return s.join(' · ');
   }
   /* how one line was counted */
-  function payHow(k, ln, base, t) {
+  function payHow(k, ln, base, t, cur) {
     var un = k.unit ? ' ' + k.unit : '';
-    if (k.type === 'unit') return numTxt(ln.f) + un + ' × ' + sumTxt(k.rate, t) + ' = ' + sumTxt(ln.a, t);
-    if (k.type === 'bonus') return numTxt(ln.f) + un + (ln.a ? ' ✓ ' : ' ✗ ') + '→ ' + sumTxt(ln.a, t);
-    if (k.type === 'pct') return sumTxt(ln.f, t) + ' × ' + numTxt(k.rate) + '% = ' + sumTxt(ln.a, t);
-    if (ln.p != null) return (k.less ? tpl(t('pay_how_less'), { f: numTxt(ln.f) + un, p: numTxt(k.plan) + un }) : numTxt(ln.f) + ' / ' + numTxt(k.plan) + un) + ' → ' + numTxt(ln.s) + '% → ' + tpl(t('pay_how_step'), { n: numTxt(ln.p) }) + ' × ' + numTxt(k.w) + '% × ' + sumTxt(base, t) + ' = ' + sumTxt(ln.a, t);
+    if (k.type === 'unit') return numTxt(ln.f) + un + ' × ' + sumTxt(k.rate, t, cur) + ' = ' + sumTxt(ln.a, t, cur);
+    if (k.type === 'bonus') return numTxt(ln.f) + un + (ln.a ? ' ✓ ' : ' ✗ ') + '→ ' + sumTxt(ln.a, t, cur);
+    if (k.type === 'pct') return sumTxt(ln.f, t, cur) + ' × ' + numTxt(k.rate) + '% = ' + sumTxt(ln.a, t, cur);
+    if (ln.p != null) return (k.less ? tpl(t('pay_how_less'), { f: numTxt(ln.f) + un, p: numTxt(k.plan) + un }) : numTxt(ln.f) + ' / ' + numTxt(k.plan) + un) + ' → ' + numTxt(ln.s) + '% → ' + tpl(t('pay_how_step'), { n: numTxt(ln.p) }) + ' × ' + numTxt(k.w) + '% × ' + sumTxt(base, t, cur) + ' = ' + sumTxt(ln.a, t, cur);
     var ratio = k.less ? tpl(t('pay_how_less'), { f: numTxt(ln.f) + un, p: numTxt(k.plan) + un }) : numTxt(ln.f) + ' / ' + numTxt(k.plan) + un;
     var below = !ln.s && k.min && (k.less ? ln.f > 0 : ln.f < k.plan * k.min / 100);
-    return ratio + ' → ' + numTxt(ln.s) + '%' + (below ? ' (' + tpl(t('pay_below'), { n: numTxt(k.min) }) + ')' : '') + ' × ' + numTxt(k.w) + '% × ' + sumTxt(base, t) + ' = ' + sumTxt(ln.a, t);
+    return ratio + ' → ' + numTxt(ln.s) + '%' + (below ? ' (' + tpl(t('pay_below'), { n: numTxt(k.min) }) + ')' : '') + ' × ' + numTxt(k.w) + '% × ' + sumTxt(base, t, cur) + ' = ' + sumTxt(ln.a, t, cur);
   }
   function PayStatus(p) { return h('span', { className: 'pay-st is-' + p.s }, p.t('pay_st_' + p.s)); }
   /* the tries of one visit: when, the typed figures, the total */
@@ -3309,25 +3312,25 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       h('ol', null, c.tries.map(function (y, i) {
         return h('li', { key: i }, h('span', { className: 'pay-hwhen' }, fmtDT(y.at).slice(11)),
           h('span', null, man.map(function (k) { return k.name + ': ' + numTxt((y.inputs || {})[k.id] || 0) + (k.unit ? ' ' + k.unit : ''); }).join(' · ') || '—'),
-          h('b', null, sumTxt(y.total, t)));
+          h('b', null, sumTxt(y.total, t, curOf(c.scheme))));
       })));
   }
   /* a saved calculation, line by line; check — the SOP manager: platform figures against today's data */
   function PayLines(p) {
-    var t = p.t, c = p.c, kp = {}, xp = {}, base = LmsPay.baseOf(c.scheme, c.fixed);
+    var t = p.t, c = p.c, kp = {}, xp = {}, base = LmsPay.baseOf(c.scheme, c.fixed), cur = curOf(c.scheme);
     (c.scheme.kpis || []).forEach(function (k) { kp[k.id] = k; });
     (c.scheme.extras || []).forEach(function (x) { xp['x:' + x.id] = x; });
     return h('div', { className: 'pay-lines' },
-      h('div', { className: 'pay-line is-fixed' }, h('span', null, t('pay_fixed')), h('span', null), h('b', null, sumTxt(c.fixed, t))),
+      h('div', { className: 'pay-line is-fixed' }, h('span', null, t('pay_fixed')), h('span', null), h('b', null, sumTxt(c.fixed, t, cur))),
       (c.lines || []).map(function (ln) {
-        if (ln.x) return h('div', { key: ln.k, className: 'pay-line is-extra' }, h('span', null, (xp[ln.k] || {}).name || '—'), h('span', { className: 'pay-how' }, t(ln.a < 0 ? 'pay_x_minus' : 'pay_x_plus')), h('b', { className: ln.a < 0 ? 'is-minus' : '' }, (ln.a > 0 ? '+' : '') + sumTxt(ln.a, t)));
+        if (ln.x) return h('div', { key: ln.k, className: 'pay-line is-extra' }, h('span', null, (xp[ln.k] || {}).name || '—'), h('span', { className: 'pay-how' }, t(ln.a < 0 ? 'pay_x_minus' : 'pay_x_plus')), h('b', { className: ln.a < 0 ? 'is-minus' : '' }, (ln.a > 0 ? '+' : '') + sumTxt(ln.a, t, cur)));
         var k = kp[ln.k] || { name: ln.k, type: 'unit', rate: 0 }, now = p.check && k.src && k.src !== 'manual' && p.u ? paySrcVal(p.db, p.u, c.ym, k.src) : null;
         return h('div', { key: ln.k, className: 'pay-line' },
           h('span', null, k.name, k.src && k.src !== 'manual' ? h('small', { className: 'pay-auto' }, t('pay_src_' + k.src)) : null),
-          h('span', { className: 'pay-how' }, payHow(k, ln, base, t), now !== null && now !== ln.f ? h('em', { className: 'pay-diff' }, ' ⚠ ' + tpl(t('pay_now'), { x: numTxt(now) })) : null),
-          h('b', { className: ln.a < 0 ? 'is-minus' : '' }, (ln.a > 0 ? '+' : '') + sumTxt(ln.a, t)));
+          h('span', { className: 'pay-how' }, payHow(k, ln, base, t, cur), now !== null && now !== ln.f ? h('em', { className: 'pay-diff' }, ' ⚠ ' + tpl(t('pay_now'), { x: numTxt(now) })) : null),
+          h('b', { className: ln.a < 0 ? 'is-minus' : '' }, (ln.a > 0 ? '+' : '') + sumTxt(ln.a, t, cur)));
       }),
-      h('div', { className: 'pay-line is-total' }, h('span', null, t('pay_total')), h('span', null, c.pct != null ? tpl(t('pay_pct_line'), { n: c.pct }) : ''), h('b', null, sumTxt(c.total, t))));
+      h('div', { className: 'pay-line is-total' }, h('span', null, t('pay_total')), h('span', null, c.pct != null ? tpl(t('pay_pct_line'), { n: c.pct }) : ''), h('b', null, sumTxt(c.total, t, cur))));
   }
   /* the total counts up when it changes */
   function useTween(v) {
@@ -3408,9 +3411,9 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           h('section', { className: 'box pay-terms' },
             h('div', { className: 'box-row', style: { marginTop: 0 } }, h('h2', { className: 'lor-h' }, t('pay_cond')), h('span', { className: 'pay-scheme' }, snap.title)),
             h('div', { className: 'pay-tiles' },
-              h('div', { className: 'tile' }, h('span', { className: 'lor-eyebrow' }, t('pay_fixed')), h('b', { className: 'tile-sm' }, sumTxt(r.fixed, t))),
-              h('div', { className: 'tile' }, h('span', { className: 'lor-eyebrow' }, t('pay_base') + (snap.baseMode === 'pct' ? ' · ' + tpl(t('pay_base_of'), { n: numTxt(snap.basePct) }) : '')), h('b', { className: 'tile-sm' }, sumTxt(LmsPay.baseOf(snap, r.fixed), t)))),
-            (snap.extras || []).length ? h('ul', { className: 'pay-extras' }, snap.extras.map(function (x) { return h('li', { key: x.id }, h('span', null, x.name), h('b', { className: x.amount < 0 ? 'is-minus' : '' }, (x.amount > 0 ? '+' : '') + sumTxt(x.amount, t))); })) : null,
+              h('div', { className: 'tile' }, h('span', { className: 'lor-eyebrow' }, t('pay_fixed')), h('b', { className: 'tile-sm' }, sumTxt(r.fixed, t, curOf(snap)))),
+              h('div', { className: 'tile' }, h('span', { className: 'lor-eyebrow' }, t('pay_base') + (snap.baseMode === 'pct' ? ' · ' + tpl(t('pay_base_of'), { n: numTxt(snap.basePct) }) : '')), h('b', { className: 'tile-sm' }, sumTxt(LmsPay.baseOf(snap, r.fixed), t, curOf(snap))))),
+            (snap.extras || []).length ? h('ul', { className: 'pay-extras' }, snap.extras.map(function (x) { return h('li', { key: x.id }, h('span', null, x.name), h('b', { className: x.amount < 0 ? 'is-minus' : '' }, (x.amount > 0 ? '+' : '') + sumTxt(x.amount, t, curOf(snap)))); })) : null,
             mine.scheme.note ? h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, mine.scheme.note) : null),
           h('section', { className: 'box' },
             h('h2', { className: 'lor-h' }, t('pay_kpis')),
@@ -3418,8 +3421,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
               var ln = lineOf[k.id], auto = k.src !== 'manual', pct = k.type === 'plan' ? Math.max(0, Math.min(ln.s || 0, k.steps ? Math.max(100, ln.s || 0) : k.cap || 100)) : null;
               return h('li', { key: k.id, className: 'pay-kpi' },
                 h('div', { className: 'pay-kpi-top' },
-                  h('div', null, h('b', null, k.name), h('div', { className: 'lor-sm lor-muted' }, payRule(k, t))),
-                  h('span', { className: cx('pay-amt', ln.a < 0 && 'is-minus', !ln.a && 'is-zero') }, (ln.a > 0 ? '+' : '') + sumTxt(ln.a, t))),
+                  h('div', null, h('b', null, k.name), h('div', { className: 'lor-sm lor-muted' }, payRule(k, t, curOf(snap)))),
+                  h('span', { className: cx('pay-amt', ln.a < 0 && 'is-minus', !ln.a && 'is-zero') }, (ln.a > 0 ? '+' : '') + sumTxt(ln.a, t, curOf(snap)))),
                 h('div', { className: 'pay-kpi-in' },
                   auto ? h('div', { className: 'pay-autoval' }, h('b', null, numTxt(vals[k.id]) + (k.unit ? ' ' + k.unit : '')), h('small', { className: 'pay-auto' }, t('pay_src_' + k.src) + ' · ' + t('pay_auto')))
                     : h('label', { className: 'pay-input' }, h('span', { className: 'sr-only' }, k.name),
@@ -3443,14 +3446,14 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     p.snap.kpis.forEach(function (k) { kp[k.id] = k; });
     return h('section', { className: 'pay-result', 'aria-live': 'polite' },
       h('span', { className: 'lor-eyebrow' }, t('pay_result') + ' · ' + ymLabel(p.ym, p.lang)),
-      h('div', { className: 'pay-total' }, h('b', null, money(shown)), h('span', null, t('pay_cur'))),
+      h('div', { className: 'pay-total' }, h('b', null, money(shown)), h('span', null, curLab(curOf(p.snap), t))),
       h('div', { className: 'pay-split' },
         h('div', null, h('small', null, t('pay_fixed')), h('b', null, money(r.fixed))),
         h('div', null, h('small', null, t('pay_kpi_sum')), h('b', null, (r.kpi > 0 ? '+' : '') + money(r.kpi))),
         r.extra ? h('div', null, h('small', null, t('pay_extras_s')), h('b', null, (r.extra > 0 ? '+' : '') + money(r.extra))) : null,
         r.pct != null ? h('div', null, h('small', null, t('pay_kpi_pct')), h('b', null, r.pct + '%')) : null),
       h('details', { className: 'pay-howbox' }, h('summary', null, t('pay_how')),
-        h('ul', null, r.lines.filter(function (ln) { return !ln.x; }).map(function (ln) { var k = kp[ln.k]; return h('li', { key: ln.k }, h('span', null, k.name), h('span', null, payHow(k, ln, base, t))); }))));
+        h('ul', null, r.lines.filter(function (ln) { return !ln.x; }).map(function (ln) { var k = kp[ln.k]; return h('li', { key: ln.k }, h('span', null, k.name), h('span', null, payHow(k, ln, base, t, curOf(p.snap)))); }))));
   }
   /* own history: when, for which month, how much, status and the SOP manager's answer */
   function PayHistory(p) {
@@ -3462,7 +3465,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
         return h('li', { key: c.id, className: cx('pay-hitem', on && 'is-open') },
           h('button', { type: 'button', className: 'pay-hrow', 'aria-expanded': on, onClick: function () { open[1](on ? null : c.id); } },
             h('span', { className: 'pay-hwhen' }, fmtDT(c.at)), h('span', null, ymLabel(c.ym, p.lang)),
-            h('b', null, sumTxt(c.total, t)), h('span', { className: 'lor-muted' }, (c.tries || []).length > 1 ? tpl(t('pay_tries_n'), { n: c.tries.length }) : c.pct != null ? 'KPI ' + c.pct + '%' : ''), h(PayStatus, { s: c.status, t: t })),
+            h('b', null, sumTxt(c.total, t, curOf(c.scheme))), h('span', { className: 'lor-muted' }, (c.tries || []).length > 1 ? tpl(t('pay_tries_n'), { n: c.tries.length }) : c.pct != null ? 'KPI ' + c.pct + '%' : ''), h(PayStatus, { s: c.status, t: t })),
           on ? h('div', { className: 'pay-hbody' },
             h(PayLines, { t: t, c: c }),
             h(PayTries, { t: t, c: c }),
@@ -3485,7 +3488,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       tab[0] === 'schemes' ? h(PaySchemes, p) : tab[0] === 'people' ? h(PayPeople, p) : h(PayHistAdmin, p));
   }
   function payNotify(d, c, s, reply) {
-    d.notifications.unshift({ id: nextId(d), userId: c.uid, kind: 'pay', route: 'pay', pay: { s: s, ym: c.ym, total: c.total, reply: reply || null }, at: Date.now(), read: false });
+    d.notifications.unshift({ id: nextId(d), userId: c.uid, kind: 'pay', route: 'pay', pay: Object.assign({ s: s, ym: c.ym, total: c.total, reply: reply || null }, curOf(c.scheme) === 'USD' ? { cur: 'USD' } : {}), at: Date.now(), read: false });
   }
   /* who calculated what and how — a timeline by day; approve or return with a comment */
   function PayHistAdmin(p) {
@@ -3500,7 +3503,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     all.filter(function (c) { return !fm[0] || c.ym === fm[0]; }).forEach(function (c) {
       var w = who[c.uid] = who[c.uid] || { uid: c.uid, n: 0, sent: 0, last: 0, total: 0 }, at = Math.max(c.at, ((c.tries || [])[(c.tries || []).length - 1] || {}).at || 0);
       w.n += tries(c); if (c.status !== 'draft') w.sent++;
-      if (at > w.last) { w.last = at; w.total = c.total; }
+      if (at > w.last) { w.last = at; w.total = c.total; w.cur = curOf(c.scheme); }
     });
     var whoList = Object.keys(who).map(function (k) { return who[k]; }).sort(function (a, b) { return b.last - a.last; });
     var days = [];
@@ -3542,7 +3545,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
             var x = userOf(db, w.uid);
             return h('tr', { key: w.uid, className: cx(String(w.uid) === fu[0] && 'is-on') },
               h('td', null, h('button', { type: 'button', className: 'pay-who-b', onClick: function () { fu[1](String(w.uid) === fu[0] ? '' : String(w.uid)); } }, h(Av, { name: x.name, src: x.avatar, size: 28 }), h('span', null, x.name, h('small', null, x.position || '')))),
-              h('td', null, h('b', null, w.n)), h('td', null, w.sent), h('td', null, fmtDT(w.last)), h('td', null, sumTxt(w.total, t)));
+              h('td', null, h('b', null, w.n)), h('td', null, w.sent), h('td', null, fmtDT(w.last)), h('td', null, sumTxt(w.total, t, w.cur)));
           }))))) : null,
       days.length ? days.map(function (g) {
         return h('section', { key: g.k, className: 'box pay-day' },
@@ -3554,7 +3557,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
                 h(Av, { name: w.name, src: w.avatar, size: 34 }),
                 h('span', { className: 'pay-tlwho' }, h('b', null, w.name), ' ', h('span', { className: 'lor-muted' }, tpl(t('pay_calced'), { m: ymLabel(c.ym, p.lang, true) })),
                   h('small', null, (w.position || '') + ' · ' + fmtDT(c.at).slice(11) + ((c.tries || []).length > 1 ? ' · ' + tpl(t('pay_tries_n'), { n: c.tries.length }) : '') + (c.note ? ' · «' + c.note + '»' : ''))),
-                h('span', { className: 'pay-tlsum' }, h('b', null, sumTxt(c.total, t)), c.pct != null ? h('small', null, 'KPI ' + c.pct + '%') : null),
+                h('span', { className: 'pay-tlsum' }, h('b', null, sumTxt(c.total, t, curOf(c.scheme))), c.pct != null ? h('small', null, 'KPI ' + c.pct + '%') : null),
                 h(PayStatus, { s: c.status, t: t })),
               on ? h('div', { className: 'pay-hbody' },
                 h(PayLines, { t: t, c: c, db: db, u: w, check: true }),
@@ -3594,6 +3597,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     sales: { src: 'manual', type: 'pct', rate: 2 },
     clients: { src: 'manual', type: 'plan', plan: 5, w: 40, min: 0, cap: 100, steps: PAY_STEPS },
     bonus: { src: 'att_late', type: 'bonus', plan: 0, amount: 300000, less: true } };
+  var PAY_PRESETS_USD = { absent: { rate: -15 }, errors: { rate: -5 }, bonus: { amount: 25 } };   // the same presets for terms in dollars
   /* one editor for a template and for a person: monthly pay, KPI bonus, note and the KPI list with a worked example.
      A template also has a title and positions; a person can start from a template (its numbers are copied) */
   function PayTermsForm(p) {
@@ -3601,18 +3605,19 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     function set(k, v) { var o = Object.assign({}, s); o[k] = v; st[1](o); }
     function setX(i, k, v) { var xs = s.extras.slice(); xs[i] = Object.assign({}, xs[i]); xs[i][k] = v; set('extras', xs); }
     function moveK(i, d) { var ks = s.kpis.slice(), j = i + d; if (j < 0 || j >= ks.length) return; var x = ks[i]; ks[i] = ks[j]; ks[j] = x; set('kpis', ks); }
-    function preset(id) { var o = Object.assign(payKpi(), JSON.parse(JSON.stringify(PAY_PRESETS[id])), { name: t('pp_' + id) }); o.unit = o.src !== 'manual' ? t('pay_u_' + o.src) : t('pp_u_' + id); set('kpis', s.kpis.filter(function (k) { return String(k.name || '').trim(); }).concat([o])); }
+    function preset(id) { var o = Object.assign(payKpi(), JSON.parse(JSON.stringify(PAY_PRESETS[id])), s.cur === 'USD' ? PAY_PRESETS_USD[id] || {} : {}, { name: t('pp_' + id) }); o.unit = o.src !== 'manual' ? t('pay_u_' + o.src) : id === 'sales' && s.cur === 'USD' ? 'USD' : t('pp_u_' + id); set('kpis', s.kpis.filter(function (k) { return String(k.name || '').trim(); }).concat([o])); }
     function setK(i, k, v) { var ks = s.kpis.slice(); ks[i] = Object.assign({}, ks[i]); ks[i][k] = v; if (k === 'src' && v !== 'manual' && !ks[i].unit) ks[i].unit = t('pay_u_' + v); set('kpis', ks); }
-    function from(id) { var x = (p.templates || []).filter(function (y) { return y.id === id; })[0]; if (!x) return; st[1](Object.assign({}, s, JSON.parse(JSON.stringify({ fixed: x.fixed, base: x.base, baseMode: x.baseMode || 'sum', basePct: x.basePct || '', extras: x.extras || [], note: x.note || '', kpis: (x.kpis || []).length ? x.kpis : [payKpi()] })), { from: x.id })); }
+    function from(id) { var x = (p.templates || []).filter(function (y) { return y.id === id; })[0]; if (!x) return; st[1](Object.assign({}, s, JSON.parse(JSON.stringify({ cur: x.cur || 'UZS', fixed: x.fixed, base: x.base, baseMode: x.baseMode || 'sum', basePct: x.basePct || '', extras: x.extras || [], note: x.note || '', kpis: (x.kpis || []).length ? x.kpis : [payKpi()] })), { from: x.id })); }
     function save() {
       if (!p.personal && !String(s.title || '').trim()) { er[1](t('fill_required')); return; }
       var c = { fixed: payNum(s.fixed), base: payNum(s.base), note: String(s.note || '').trim(), kpis: payCleanKpis(s.kpis) };
+      if (s.cur === 'USD') c.cur = 'USD';
       if (s.baseMode === 'pct') { c.baseMode = 'pct'; c.basePct = payNum(s.basePct); }
       var xs = payCleanExtras(s.extras); if (xs.length) c.extras = xs;
       if (p.personal) { if (s.from) c.from = s.from; } else Object.assign(c, { id: s.id, title: s.title.trim(), positions: s.positions || [] });
       p.onSave(c);
     }
-    var snap = LmsPay.snapshot(Object.assign({}, s, { base: payNum(s.base), basePct: payNum(s.basePct), extras: payCleanExtras(s.extras), kpis: payCleanKpis(s.kpis) })), ex = {};
+    var snap = LmsPay.snapshot(Object.assign({}, s, { cur: s.cur, base: payNum(s.base), basePct: payNum(s.basePct), extras: payCleanExtras(s.extras), kpis: payCleanKpis(s.kpis) })), ex = {};
     snap.kpis.forEach(function (k) { ex[k.id] = k.type === 'unit' ? 0 : k.plan; });
     var wsum = snap.kpis.filter(function (k) { return k.type === 'plan'; }).reduce(function (a, k) { return a + k.w; }, 0), hasPlan = snap.kpis.some(function (k) { return k.type === 'plan'; });
     var num = function (name, label, v, on, hint) { return h(Field, { name: name, label: label, type: 'number', value: v, hint: hint, onChange: on }); };
@@ -3626,19 +3631,23 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           (p.templates || []).map(function (x) { return h('option', { key: x.id, value: x.id }, x.title); }))) : null,
       h('div', { className: 'pay-ed-grid' },
         p.personal ? null : h(Field, { name: 'pay-title', label: t('pay_s_title'), required: true, value: s.title, error: er[0], placeholder: t('pay_s_title_ph'), onChange: function (v) { set('title', v); } }),
-        num('pay-fixed', t('pay_fixed_m') + ', ' + t('pay_cur'), s.fixed, function (v) { set('fixed', v); }),
+        h('div', { className: 'pay-cur-f' },
+          h('span', { className: 'lor-field-label' }, t('pay_cur_l')),
+          h('div', { className: 'seg pay-cur', role: 'group', 'aria-label': t('pay_cur_l') },
+            [['UZS', t('pay_cur')], ['USD', 'USD ($)']].map(function (x) { return h('button', { key: x[0], type: 'button', className: (s.cur || 'UZS') === x[0] ? 'is-on' : '', 'aria-pressed': (s.cur || 'UZS') === x[0], onClick: function () { set('cur', x[0]); } }, x[1]); }))),
+        num('pay-fixed', t('pay_fixed_m') + ', ' + curLab(s.cur, t), s.fixed, function (v) { set('fixed', v); }),
         h('div', { className: 'pay-base-f' },
           h('div', { className: 'seg pay-mode', role: 'group', 'aria-label': t('pay_base') },
-            [['sum', t('pay_cur')], ['pct', t('pay_mode_pct')]].map(function (x) { return h('button', { key: x[0], type: 'button', className: s.baseMode === x[0] ? 'is-on' : '', 'aria-pressed': s.baseMode === x[0], onClick: function () { set('baseMode', x[0]); } }, x[1]); })),
-          s.baseMode === 'pct' ? num('pay-basepct', t('pay_base') + ', %', s.basePct, function (v) { set('basePct', v); }, tpl(t('pay_base_pct_h'), { x: sumTxt(Math.round(payNum(s.fixed) * payNum(s.basePct) / 100), t) }))
-            : num('pay-base', t('pay_base') + ', ' + t('pay_cur'), s.base, function (v) { set('base', v); }, t('pay_base_h')))),
+            [['sum', curLab(s.cur, t)], ['pct', t('pay_mode_pct')]].map(function (x) { return h('button', { key: x[0], type: 'button', className: s.baseMode === x[0] ? 'is-on' : '', 'aria-pressed': s.baseMode === x[0], onClick: function () { set('baseMode', x[0]); } }, x[1]); })),
+          s.baseMode === 'pct' ? num('pay-basepct', t('pay_base') + ', %', s.basePct, function (v) { set('basePct', v); }, tpl(t('pay_base_pct_h'), { x: sumTxt(Math.round(payNum(s.fixed) * payNum(s.basePct) / 100), t, s.cur) }))
+            : num('pay-base', t('pay_base') + ', ' + curLab(s.cur, t), s.base, function (v) { set('base', v); }, t('pay_base_h')))),
       h('div', { className: 'pay-extras-ed' },
         h('h3', { className: 'wz-sub' }, t('pay_extras')),
         h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('pay_extras_h')),
         s.extras.map(function (x, i) {
           return h('div', { key: x.id, className: 'pay-x-row' },
             h(Field, { name: 'px-' + i + '-name', label: t('pay_x_name'), value: x.name, placeholder: t('pay_x_name_ph'), onChange: function (v) { setX(i, 'name', v); } }),
-            h(Field, { name: 'px-' + i + '-amount', label: t('pay_x_amount') + ', ' + t('pay_cur'), type: 'number', value: x.amount, hint: t('pay_x_amount_h'), onChange: function (v) { setX(i, 'amount', v); } }),
+            h(Field, { name: 'px-' + i + '-amount', label: t('pay_x_amount') + ', ' + curLab(s.cur, t), type: 'number', value: x.amount, hint: t('pay_x_amount_h'), onChange: function (v) { setX(i, 'amount', v); } }),
             h('button', { type: 'button', className: 'app-link pay-ed-del', onClick: function () { set('extras', s.extras.filter(function (_, j) { return j !== i; })); } }, t('remove')));
         }),
         h('div', null, h(Btn, { variant: 'outline', size: 'sm', onClick: function () { set('extras', s.extras.concat([{ id: 'x' + Date.now().toString(36), name: '', amount: '' }])); } }, '+ ' + t('pay_x_add')))),
@@ -3661,7 +3670,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
             k.type === 'plan' ? f('w', t('pay_k_w'), k.w, { type: 'number' }) : null,
             k.type === 'plan' && !k.steps ? f('min', t('pay_k_min'), k.min, { type: 'number', hint: t('pay_k_min_h') }) : null,
             k.type === 'plan' && !k.steps ? f('cap', t('pay_k_cap'), k.cap, { type: 'number' }) : null,
-            k.type === 'bonus' ? f('amount', t('pay_k_amount') + ', ' + t('pay_cur'), k.amount, { type: 'number' }) : null,
+            k.type === 'bonus' ? f('amount', t('pay_k_amount') + ', ' + curLab(s.cur, t), k.amount, { type: 'number' }) : null,
             k.type === 'plan' || k.type === 'bonus' ? h('label', { className: 'check pay-less' }, h('input', { type: 'checkbox', checked: !!k.less, onChange: function (e) { setK(i, 'less', e.target.checked); } }), t('pay_k_less')) : null,
             k.type === 'plan' ? h('label', { className: 'check pay-less' }, h('input', { type: 'checkbox', checked: !!k.steps, onChange: function (e) { setK(i, 'steps', e.target.checked ? JSON.parse(JSON.stringify(PAY_STEPS)) : undefined); } }), t('pay_k_steps')) : null,
             h('span', { className: 'pay-ed-move' },
@@ -3681,7 +3690,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
                 h('button', { type: 'button', className: 'pa-del', title: t('remove'), 'aria-label': t('remove'), onClick: function () { setK(i, 'steps', k.steps.filter(function (_, q) { return q !== j; })); } }, '×'));
             }),
             h('button', { type: 'button', className: 'app-link', onClick: function () { var last = k.steps[k.steps.length - 1] || { from: 80, pay: 50 }; setK(i, 'steps', k.steps.concat([{ from: payNum(last.from) + 20, pay: payNum(last.pay) + 20 }])); } }, '+ ' + t('pay_step_add'))) : null,
-          snap.kpis.filter(function (x) { return x.id === k.id; }).map(function (x) { return h('p', { key: 'r', className: 'lor-sm lor-muted', style: { margin: 0 } }, '→ ' + payRule(x, t)); }));
+          snap.kpis.filter(function (x) { return x.id === k.id; }).map(function (x) { return h('p', { key: 'r', className: 'lor-sm lor-muted', style: { margin: 0 } }, '→ ' + payRule(x, t, s.cur)); }));
       })),
       h('div', { className: 'box-row' },
         h(Btn, { variant: 'secondary', size: 'sm', onClick: function () { set('kpis', s.kpis.concat([payKpi()])); } }, '+ ' + t('pay_kpi_add')),
@@ -3689,7 +3698,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           h('option', { value: '' }, '+ ' + t('pp_add')),
           Object.keys(PAY_PRESETS).map(function (id) { return h('option', { key: id, value: id }, t('pp_' + id)); })),
         hasPlan ? h('span', { className: cx('lor-sm', wsum !== 100 ? 'pay-warn' : 'lor-muted') }, tpl(t('pay_wsum'), { n: numTxt(wsum) }) + (wsum !== 100 ? ' ' + t('pay_wsum_bad') : ' ✓')) : null),
-      h('p', { className: 'pay-example' }, tpl(t('pay_example'), { x: sumTxt(LmsPay.calc(snap, payNum(s.fixed), ex).total, t) })),
+      h('p', { className: 'pay-example' }, tpl(t('pay_example'), { x: sumTxt(LmsPay.calc(snap, payNum(s.fixed), ex).total, t, s.cur) })),
       h('div', { className: 'box-row' },
         p.onClear ? h('button', { type: 'button', className: 'app-link danger', onClick: p.onClear }, t('pay_own_clear')) : h('span'),
         h('div', { className: 'box-row', style: { marginTop: 0 } },
@@ -3721,10 +3730,10 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           h('div', { className: 'box-row', style: { marginTop: 0 } }, h('h2', { className: 'lor-h' }, s.title), h('span', { className: 'lor-count' }, tpl(t('pay_s_users'), { n: us.length }))),
           (s.positions || []).length ? h('div', { className: 'ac-chips' }, s.positions.map(function (x) { return h('span', { key: x, className: 'ac-chip is-static' }, x); })) : h('p', { className: 'lor-sm lor-muted', style: { margin: 0 } }, t('pay_s_nopos')),
           h('div', { className: 'pay-tiles' },
-            h('div', { className: 'tile' }, h('span', { className: 'lor-eyebrow' }, t('pay_fixed_m')), h('b', { className: 'tile-sm' }, sumTxt(s.fixed, t))),
-            h('div', { className: 'tile' }, h('span', { className: 'lor-eyebrow' }, t('pay_base') + (s.baseMode === 'pct' ? ' · ' + tpl(t('pay_base_of'), { n: numTxt(s.basePct) }) : '')), h('b', { className: 'tile-sm' }, sumTxt(LmsPay.baseOf(snap, s.fixed), t)))),
-          (snap.extras || []).length ? h('ul', { className: 'pay-extras' }, snap.extras.map(function (x) { return h('li', { key: x.id }, h('span', null, x.name), h('b', { className: x.amount < 0 ? 'is-minus' : '' }, (x.amount > 0 ? '+' : '') + sumTxt(x.amount, t))); })) : null,
-          h('ul', { className: 'pay-rules' }, snap.kpis.map(function (k) { return h('li', { key: k.id }, h('b', null, k.name), h('span', { className: 'lor-sm lor-muted' }, (k.src !== 'manual' ? t('pay_src_' + k.src) + ' · ' : '') + payRule(k, t))); })),
+            h('div', { className: 'tile' }, h('span', { className: 'lor-eyebrow' }, t('pay_fixed_m')), h('b', { className: 'tile-sm' }, sumTxt(s.fixed, t, curOf(s)))),
+            h('div', { className: 'tile' }, h('span', { className: 'lor-eyebrow' }, t('pay_base') + (s.baseMode === 'pct' ? ' · ' + tpl(t('pay_base_of'), { n: numTxt(s.basePct) }) : '')), h('b', { className: 'tile-sm' }, sumTxt(LmsPay.baseOf(snap, s.fixed), t, curOf(s))))),
+          (snap.extras || []).length ? h('ul', { className: 'pay-extras' }, snap.extras.map(function (x) { return h('li', { key: x.id }, h('span', null, x.name), h('b', { className: x.amount < 0 ? 'is-minus' : '' }, (x.amount > 0 ? '+' : '') + sumTxt(x.amount, t, curOf(s)))); })) : null,
+          h('ul', { className: 'pay-rules' }, snap.kpis.map(function (k) { return h('li', { key: k.id }, h('b', null, k.name), h('span', { className: 'lor-sm lor-muted' }, (k.src !== 'manual' ? t('pay_src_' + k.src) + ' · ' : '') + payRule(k, t, curOf(s)))); })),
           lvlOf(p.user) !== 'ceo' ? null : h('div', { className: 'box-row' },
             h('button', { type: 'button', className: 'app-link danger', onClick: function () { del(s); } }, t('remove')),
             h(Btn, { variant: 'secondary', size: 'sm', onClick: function () { ed[1](JSON.parse(JSON.stringify(Object.assign({ note: '' }, s)))); } }, t('pay_s_edit'))));
@@ -3760,10 +3769,10 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
           return h('tr', { key: u.id, className: cx(!m && 'is-none') },
             h('td', null, h('div', { className: 'lor-emp' }, h(Av, { name: u.name, src: u.avatar, size: 32 }), h('span', null, u.name, h('small', null, u.position)))),
             h('td', null, o ? h('span', { className: 'pay-src is-own' }, t('pay_src_own')) : m ? h('span', { className: 'pay-src' }, tpl(t('pay_src_tpl'), { x: m.scheme.title })) : h('span', { className: 'lor-muted' }, t('pay_src_none'))),
-            h('td', { className: 'num' }, m ? sumTxt(m.fixed, t) : '—'),
-            h('td', { className: 'num' }, m ? sumTxt(LmsPay.baseOf(LmsPay.snapshot(m.scheme), m.fixed), t) : '—', m && m.scheme.baseMode === 'pct' ? h('small', { className: 'lor-muted', style: { display: 'block' } }, tpl(t('pay_base_of'), { n: numTxt(m.scheme.basePct) })) : null),
+            h('td', { className: 'num' }, m ? sumTxt(m.fixed, t, curOf(m.scheme)) : '—'),
+            h('td', { className: 'num' }, m ? sumTxt(LmsPay.baseOf(LmsPay.snapshot(m.scheme), m.fixed), t, curOf(m.scheme)) : '—', m && m.scheme.baseMode === 'pct' ? h('small', { className: 'lor-muted', style: { display: 'block' } }, tpl(t('pay_base_of'), { n: numTxt(m.scheme.basePct) })) : null),
             h('td', null, m ? tpl(t('pay_kpi_n'), { n: (m.scheme.kpis || []).length }) : '—'),
-            h('td', null, last ? h('span', null, h('b', null, sumTxt(last.total, t)), ' ', h(PayStatus, { s: last.status, t: t })) : h('span', { className: 'lor-muted' }, '—')),
+            h('td', null, last ? h('span', null, h('b', null, sumTxt(last.total, t, curOf(last.scheme))), ' ', h(PayStatus, { s: last.status, t: t })) : h('span', { className: 'lor-muted' }, '—')),
             h('td', null, ro ? null : h(Btn, { variant: o ? 'secondary' : 'outline', size: 'sm', onClick: function () { ed[1](u.id); } }, t(o ? 'pay_own_edit' : 'pay_own_set'))));
         }))))));
   }

@@ -4708,4 +4708,6 @@ button.jf-name { padding: 0; background: none; border: 0; border-bottom: 1px sol
 .pay-ed-move { display: inline-flex; gap: 4px; }
 .pay-preset { width: auto; min-width: 200px; }
 @media (max-width: 720px) { .pay-x-row { grid-template-columns: minmax(0, 1fr); } }
+.pay-cur-f { display: flex; flex-direction: column; gap: 6px; grid-column: 1 / -1; }
+.pay-cur { align-self: flex-start; }
 
