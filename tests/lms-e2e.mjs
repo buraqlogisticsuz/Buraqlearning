@@ -461,6 +461,44 @@ try {
   await nav(E, 'pay'); assert.match(await txt(E, 'main'), /maosh va KPI shartlari biriktirilmagan — ularni CEO belgilaydi/);
   await nav(E, 'path');
   step('вкладка «Maosh va KPI» у сотрудника есть всегда; без схемы — «CEO belgilaydi»');
+  // интизом: SOP-менеджер даёт «Sariq kartochka» в «Xodimlar» → сотрудник видит её в «Mening profilim», «Tanishdim» и
+  // объяснение → SOP-менеджеру и CEO уведомление; отмена — с причиной
+  { await nav(A, 'staff'); const empName = srv.g.state().users.find(u => u.id === emp.id).name;
+    await A.locator('tr', { hasText: empName }).locator('.sp-btn').first().click(); await A.waitForSelector('.dc-panel');
+    await A.locator('.dc-panel').getByRole('button', { name: /Sariq kartochka berish/ }).click();
+    assert.match(await txt(A, '.dc-form'), /3 oy amal qiladi/);
+    await A.locator('.dc-panel').getByRole('button', { name: 'Berish' }).click();
+    assert.match(await txt(A, '.dc-form'), /Sababini yozing/, 'без причины не выдать');
+    await A.fill('#f-dc-reason', 'Bir haftada uch marta 20 daqiqadan kechikdi');
+    await A.locator('.dc-panel').getByRole('button', { name: 'Berish' }).click(); await settle(A);
+    const card = (srv.g.state().cards || []).find(c => c.uid === emp.id);
+    assert.ok(card && card.type === 'warn' && card.cat === 'late' && card.status === 'active' && card.exp - card.at === 90 * 864e5, JSON.stringify(card));
+    assert.ok(srv.g.state().notifications.some(n => n.userId === emp.id && n.kind === 'card'), 'сотруднику — уведомление');
+    assert.ok(await A.locator('tr', { hasText: empName }).locator('.dc-row .dc-glyph').count(), 'в списке — значок карточки у имени');
+    if (shots) await A.locator('.dc-panel').screenshot({ path: shots + '/30-intizom-sop.png' });
+    await E.evaluate(() => LmsClient.sync()); await E.waitForTimeout(500);
+    assert.ok(await E.locator('.user-btn .av-wrap.has-dot').count(), 'у аватара — точка');
+    await E.locator('.user-btn').first().click(); await E.waitForTimeout(200);
+    assert.match(await E.locator('.user-pop [role="menuitem"].profile').innerText(), /Mening profilim\s*1/);
+    await E.locator('.user-pop [role="menuitem"].profile').click(); await E.waitForSelector('#pf-cards');
+    assert.match(await txt(E, '#pf-cards'), /Sariq kartochka[\s\S]*Kechikish yoki ishga kelmaslik[\s\S]*Bir haftada uch marta/);
+    if (shots) { await E.locator('#pf-cards').scrollIntoViewIfNeeded(); await E.locator('.lor-modal').screenshot({ path: shots + '/31-intizom-profil.png' }); }
+    await E.locator('#pf-cards').getByRole('button', { name: 'Tushuntirish yozish' }).click();
+    await E.fill('#f-dc-rep-' + card.id, 'Avtobus yo‘nalishi o‘zgardi, endi erta chiqaman');
+    await E.locator('#pf-cards').getByRole('button', { name: 'Tanishdim va yuborish' }).click(); await settle(E);
+    const c2 = srv.g.state().cards.find(c => c.id === card.id);
+    assert.ok(c2.ackAt && c2.reply === 'Avtobus yo‘nalishi o‘zgardi, endi erta chiqaman', JSON.stringify(c2));
+    assert.ok(srv.g.state().notifications.some(n => n.kind === 'card_re' && n.userId !== emp.id && n.uid === emp.id), 'SOP-менеджеру — «ответил»');
+    assert.equal(await E.locator('#pf-cards').getByRole('button', { name: /Tanishdim/ }).count(), 0, 'второй раз не отметить');
+    assert.deepEqual(await rejected(E), [], 'сервер принял «Tanishdim» и объяснение');
+    await E.keyboard.press('Escape'); await E.waitForTimeout(200);
+    await A.evaluate(() => LmsClient.sync()); await A.waitForTimeout(400);
+    assert.match(await txt(A, '.dc-panel'), /tanishdi:[\s\S]*Xodimning tushuntirishi[\s\S]*Avtobus yo‘nalishi/i);
+    await A.locator('.dc-panel').getByRole('button', { name: 'Bekor qilish' }).last().click();
+    await A.fill('#f-dc-why', 'Sababi uzrli'); await A.locator('.dc-panel').getByRole('button', { name: 'Kartochkani bekor qilish' }).click(); await settle(A);
+    assert.equal(srv.g.state().cards.find(c => c.id === card.id).status, 'cancelled');
+    assert.deepEqual(await rejected(A), [], 'сервер принял карточку и отмену'); }
+  step('интизом: «Sariq kartochka» от SOP-менеджера, у сотрудника в профиле — «Tanishdim» и объяснение, отмена с причиной');
   await checkHeader(E, 'сотрудник'); await checkHeader(C, 'CEO'); await checkHeader(A, 'SOP-менеджер');
   await shot(E, 'shapka-xodim');
   step('шапка: подпись под логотипом, меню 16 px без обрезанных слов — у сотрудника, CEO и SOP-менеджера, 1600–390 px');

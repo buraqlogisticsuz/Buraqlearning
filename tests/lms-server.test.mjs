@@ -420,7 +420,7 @@ const pickN = n => ({ userId: n.userId, kind: n.kind, route: n.route, err: n.err
 test('since: та же версия — без данных; после правки — новое состояние', () => {
   const { D, A } = platform();
   const v = D({ action: 'load' });
-  assert.deepEqual(D({ action: 'since', rev: v.rev }), { ok: true, v: 26, ai: false, rev: v.rev, same: true });
+  assert.deepEqual(D({ action: 'since', rev: v.rev }), { ok: true, v: 27, ai: false, rev: v.rev, same: true });
   A({ action: 'patch', ops: [{ op: 'set', path: ['notifications', { id: 9 }], value: { id: 9, userId: 10427, text: 'yangi' }, after: null }] });
   const n = D({ action: 'since', rev: v.rev });
   assert.equal(n.rev, v.rev + 1); assert.equal(n.state.notifications[0].text, 'yangi');
@@ -1114,4 +1114,24 @@ test('зарплата (v25): бонус % от оклада, доплаты и 
   assert.deepEqual(D({ action: 'patch', ops: [{ op: 'set', path: ['payCalcs', { id: 'cv' }], value: c }] }).rejected, []);
   const bad = { ...c, id: 'cw', lines: r.lines.filter(x => !x.x), total: r.total - 300000 + 500000 };
   assert.match(D({ action: 'patch', ops: [{ op: 'set', path: ['payCalcs', { id: 'cw' }], value: bad }] }).rejected[0]?.reason || '', /не сходится/, 'без удержания — не сходится');
+});
+
+test('интизом (v27): карточку даёт SOP-менеджер; сотрудник видит только свои, один раз «Tanishdim» и объяснение, остальное — нет', () => {
+  const { g, A, D, Z } = platform();
+  const card = { id: 'dc1', uid: 10427, type: 'warn', cat: 'late', reason: 'Uch marta kechikdi', at: 1, by: 10001, exp: Date.now() + 90 * 864e5, status: 'active' };
+  assert.deepEqual(rejected(A({ action: 'patch', ops: [{ op: 'set', path: ['cards', { id: 'dc1' }], value: card, after: null }, { op: 'set', path: ['cards', { id: 'dc2' }], value: { ...card, id: 'dc2', uid: 10288 }, after: null }] })), []);
+  assert.deepEqual(D({ action: 'load' }).state.cards.map(x => x.id), ['dc1'], 'только своя');
+  assert.ok(!JSON.stringify(Z({ action: 'load' }).state.cards || []).includes('Uch marta'), 'чужую не видно');
+  const set = (k, v) => D({ action: 'patch', ops: [{ op: 'set', path: ['cards', { id: 'dc1' }, k], value: v }] });
+  assert.deepEqual(rejected(set('ackAt', 5)), []);
+  assert.ok(rejected(set('ackAt', 6)).length, '«Tanishdim» — один раз');
+  assert.deepEqual(rejected(set('reply', 'Avtobus kechikdi')), []); assert.deepEqual(rejected(set('replyAt', 7)), []);
+  assert.ok(rejected(set('reply', 'boshqa')).length, 'объяснение — один раз');
+  assert.ok(rejected(set('reason', 'yo‘q')).length, 'причину не меняет');
+  assert.ok(rejected(set('status', 'cancelled')).length, 'не отменяет');
+  assert.ok(rejected(D({ action: 'patch', ops: [{ op: 'del', path: ['cards', { id: 'dc1' }] }] })).length, 'не удаляет');
+  assert.ok(rejected(D({ action: 'patch', ops: [{ op: 'set', path: ['cards', { id: 'dc9' }], value: { ...card, id: 'dc9' }, after: null }] })).length, 'сам себе не даёт');
+  assert.deepEqual(rejected(D({ action: 'patch', ops: [{ op: 'set', path: ['notifications', { id: 77 }], value: { id: 77, userId: 10001, kind: 'card_re', cardRe: { name: 'Dilnoza', type: 'warn' }, route: 'staff', uid: 10427 }, after: null }] })), [], 'руководству — «ответил»');
+  const c = g.state().cards.find(x => x.id === 'dc1');
+  assert.ok(c.ackAt === 5 && c.reply === 'Avtobus kechikdi' && c.reason === 'Uch marta kechikdi');
 });

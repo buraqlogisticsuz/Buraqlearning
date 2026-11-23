@@ -4711,3 +4711,31 @@ button.jf-name { padding: 0; background: none; border: 0; border-bottom: 1px sol
 .pay-cur-f { display: flex; flex-direction: column; gap: 6px; grid-column: 1 / -1; }
 .pay-cur { align-self: flex-start; }
 
+/* ---------- «Intizom»: a card glyph (brand red only — a warning: outline on red tint, a hayfsan: solid red) ---------- */
+.dc-glyph { display: inline-block; width: 11px; height: 15px; border-radius: 2px; border: 1.5px solid var(--red); background: var(--red-soft); transform: rotate(-8deg); vertical-align: middle; flex: none; }
+.dc-glyph.is-hayfsan { background: var(--red); }
+.dc-glyph.is-off { border-color: var(--gray); background: transparent; }
+.dc-row { display: inline-flex; gap: 3px; margin-left: 6px; vertical-align: middle; }
+.av-wrap.has-dot::before { content: ""; position: absolute; top: -2px; right: -2px; width: 9px; height: 9px; border-radius: 50%; background: var(--red); border: 2px solid var(--navy); z-index: 1; }
+.dc-panel { gap: var(--space-3); }
+.dc-sum { display: inline-flex; align-items: center; gap: 6px; }
+.dc-hint { margin: 0; padding: 8px 12px; border-radius: var(--radius-sm); background: var(--red-soft); color: var(--ink); font-size: 13px; }
+.dc-form { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-3); border-radius: var(--radius-md); border: var(--hairline) solid var(--line); background: var(--surface-sunken); }
+.dc-form > b { font-weight: 500; display: flex; align-items: center; gap: 8px; }
+.dc-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.dc-item { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 10px; align-items: start; padding: 10px 12px; border-radius: var(--radius-md); border: var(--hairline) solid var(--line); background: var(--surface-raised); }
+.dc-item.is-active { border-color: var(--red); }
+.dc-item .dc-glyph { margin-top: 3px; }
+.dc-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.dc-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dc-top b { font-weight: 500; }
+.dc-cat { font-size: 12px; padding: 1px 8px; border-radius: var(--radius-pill); border: var(--hairline) solid var(--line); color: var(--ink-muted); }
+.dc-st { margin-left: auto; font-size: 12px; color: var(--ink-muted); }
+.dc-st.is-active { color: var(--red-text); }
+.dc-reason { margin: 0; font-size: 14px; line-height: 20px; white-space: pre-wrap; }
+.dc-reply { padding: 8px 10px; border-radius: var(--radius-sm); background: var(--surface-sunken); }
+.dc-reply p { margin: 2px 0 0; font-size: 13px; white-space: pre-wrap; }
+.dc-act, .dc-cancel { display: flex; flex-direction: column; gap: var(--space-2); margin-top: 4px; }
+.dc-past summary { cursor: pointer; font-size: 13px; color: var(--blue-text); margin-bottom: 8px; }
+.dc-mine { gap: var(--space-2); }
+

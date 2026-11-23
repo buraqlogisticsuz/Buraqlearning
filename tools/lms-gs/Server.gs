@@ -21,7 +21,7 @@
  *
  * Запрос — POST с JSON { action, token, … }, ответ — JSON { ok, … } или { ok: false, code, error }.
  */
-var LMS_VERSION = 26;          // 26: валюта условий зарплаты — сумы или доллары (pay cur, lms-pay.js); 25: гибкие условия зарплаты — KPI-бонус % от оклада, доплаты/удержания, KPI «% от факта», ступени (lms-pay.js); 24: свои условия зарплаты у каждого сотрудника (pay.people[id]: оклад, KPI-бонус, свои KPI; lms-pay.js); 23: «Imtiyozlar va talablar» уровня — сотрудникам только отмеченные варианты (levels[].offer); 22: «Qabul qildim» — уведомление SOP-менеджеру и CEO (asset_in); 21: цены — «Kontent → Narxlar», сотрудникам в «Baza» (prices); 20: защита правок (id карточек, тест — одна попытка, балл и статусы, минуты учёбы, уведомления другим);  2: файлы — отдельно на Диске, действие file; 3: ИИ через Claude API (действие ai);
+var LMS_VERSION = 27;          // 27: интизом — «Sariq kartochka» и «Hayfsan» (cards): даёт SOP-менеджер или CEO, сотрудник видит свои, «Tanishdim» и объяснение; 26: валюта условий зарплаты — сумы или доллары (pay cur, lms-pay.js); 25: гибкие условия зарплаты — KPI-бонус % от оклада, доплаты/удержания, KPI «% от факта», ступени (lms-pay.js); 24: свои условия зарплаты у каждого сотрудника (pay.people[id]: оклад, KPI-бонус, свои KPI; lms-pay.js); 23: «Imtiyozlar va talablar» уровня — сотрудникам только отмеченные варианты (levels[].offer); 22: «Qabul qildim» — уведомление SOP-менеджеру и CEO (asset_in); 21: цены — «Kontent → Narxlar», сотрудникам в «Baza» (prices); 20: защита правок (id карточек, тест — одна попытка, балл и статусы, минуты учёбы, уведомления другим);  2: файлы — отдельно на Диске, действие file; 3: ИИ через Claude API (действие ai);
                                // 4: адресаты идей — CEO, Project Manager, руководитель компании (свой вход, role 'leader');
                                // 5: у идеи несколько адресатов (to — список), repliedBy — кто ответил;
                                // 6: свой профиль — имя и фото, смена логина и пароля (действие account);
@@ -383,7 +383,7 @@ function emptyState_() {
     users: [], alumni: [], progress: {}, study: {}, requests: [], notifications: [], reminded: {}, audit: [],
     assets: [], errors: [], cases: [], journals: [], terms: [], prices: [], drills: [], sopUpdates: [], initiatives: [], surveys: [],
     attend: {}, attendCover: {}, attendImports: [], attendAlias: {}, xtasks: [], monthly: {},
-    pay: { schemes: [], people: {} }, payCalcs: []
+    pay: { schemes: [], people: {} }, payCalcs: [], cards: []
   };
 }
 
@@ -564,6 +564,7 @@ function viewFor_(st, me) {
   v.requests = own_(st.requests, 'userId', uid);
   v.notifications = own_(st.notifications, 'userId', uid);
   v.assets = own_(st.assets, 'uid', uid);
+  v.cards = own_(st.cards, 'uid', uid);   // интизом (v27): только свои карточки
   v.surveys = own_(st.surveys, 'uid', uid);
   v.audit = [];
   v.errors = (st.errors || []).filter(function (x) { return String(x.uid) === uid || (me.mentor && String(x.by) === uid); });
@@ -619,7 +620,7 @@ function leaderView_(st, me) {
 // поля своей карточки, которые сотрудник не меняет сам (их ставит SOP-менеджер)
 var LOCKED_USER = ['id', 'role', 'post', 'login', 'password', 'tg', 'status', 'position', 'department', 'cohort', 'trackId', 'mentor', 'level', 'levelXpBase', 'levelAt', 'levelTasks', 'startedAt', 'qaReport'];
 // списки «своих» записей: поле владельца
-var OWN = { requests: 'userId', notifications: 'userId', assets: 'uid', surveys: 'uid', initiatives: 'uid', drills: 'uid', audit: 'userId', errors: 'uid', xtasks: 'uid' };
+var OWN = { requests: 'userId', notifications: 'userId', assets: 'uid', surveys: 'uid', initiatives: 'uid', drills: 'uid', audit: 'userId', errors: 'uid', xtasks: 'uid', cards: 'uid' };
 // поля своих записей, которые ставит SOP-менеджер или наставник
 var LOCKED_ITEM = {
   requests: ['verdict', 'reply', 'repliedAt', 'score', 'type', 'lessonId', 'unread', 'closedAt'],   // балл теста пишет сервер (quiz_)
@@ -627,6 +628,7 @@ var LOCKED_ITEM = {
   xtasks: ['title', 'desc', 'due', 'xp', 'scale', 'li', 'by', 'at', 'review', 'doneAt'],
   errors: ['by', 'at', 'lessonId', 'cat', 'sev', 'text', 'impact', 'closedAt', 'status', 'retest'],   // повторную проверку закрывает сервер (retest_)
   assets: ['resolved', 'returnedAt'],   // о проблеме (issue) сотрудник сообщает сам; confirmedAt и mismatch — только в ответ на выданное (ownField_)
+  cards: ['type', 'cat', 'reason', 'at', 'by', 'exp', 'status', 'cancelAt', 'cancelBy', 'cancelWhy'],   // карточку даёт и отменяет SOP-менеджер или CEO
   audit: [], notifications: [], surveys: [], drills: []
 };
 var EMP_LESSON_STATUS = ['in-progress', 'question', 'exam-ready'];
@@ -648,12 +650,21 @@ function ownStatus_(top, item, v) {
   return null;
 }
 /* поле своей записи, которое можно только в ответ на выданное имущество: «принял» (confirmedAt) и «не совпадает» (mismatch) */
-function ownField_(top, item, k) {
+function ownField_(top, item, k, v) {
+  if (top === 'cards') return cardField_(item, k, v);
   if (top !== 'assets' || (k !== 'confirmedAt' && k !== 'mismatch')) return null;
   if (k === 'mismatch') return ['issued', 'mismatch'].indexOf(item.status) >= 0 ? null : 'поле «mismatch» меняет SOP-менеджер';
   return ['issued', 'active'].indexOf(item.status) >= 0 && !item.confirmedAt ? null : 'поле «confirmedAt» меняет SOP-менеджер';
 }
 
+/* своя карточка интизома (v27): сотрудник только один раз отмечает «Tanishdim» (ackAt) и один раз пишет объяснение
+   (reply, replyAt, до 1000 знаков; на отменённую — нет); остальное — SOP-менеджер или CEO */
+function cardField_(item, k, v) {
+  if (k === 'ackAt') return !item.ackAt && typeof v === 'number' ? null : '«Tanishdim» отмечается один раз';
+  if (k === 'reply') return !item.reply && item.status !== 'cancelled' && typeof v === 'string' && v.trim() && v.length <= 1000 ? null : 'объяснение — один раз, до 1000 знаков';
+  if (k === 'replyAt') return !item.replyAt && typeof v === 'number' ? null : 'объяснение — один раз';
+  return 'карточку меняет SOP-менеджер';
+}
 /* минуты учёбы (v20): день — ГГГГ-ММ-ДД не дальше суток от сегодняшнего по Ташкенту, минут — от 0 до 1440; прошлые дни не правятся */
 function studyDayOk_(k) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(k)) return false;
@@ -752,11 +763,13 @@ function checkEmployee_(st, me, op) {
       if (bad) return 'поле «' + bad + '» меняет ' + who;
       var nv = op.value || {}, sk = top === 'requests' ? 'state' : 'status';
       if (!LmsSync.equal(item[sk], nv[sk])) { var sb = ownStatus_(top, item, nv[sk]); if (sb) return sb; }
-      return ['confirmedAt', 'mismatch'].filter(function (k) { return !LmsSync.equal(item[k], nv[k]); }).map(function (k) { return ownField_(top, item, k); }).filter(Boolean)[0] || null;
+      var ff = top === 'cards' ? Object.keys(nv).concat(Object.keys(item)).filter(function (k, i, a) { return a.indexOf(k) === i && locked.indexOf(k) < 0; }) : ['confirmedAt', 'mismatch'];
+      return ff.filter(function (k) { return !LmsSync.equal(item[k], nv[k]); }).map(function (k) { return ownField_(top, item, k, nv[k]); }).filter(Boolean)[0] || null;
     }
     if (locked.indexOf(p[2]) >= 0) return 'поле «' + p[2] + '» меняет ' + who;
     var sk3 = top === 'requests' ? 'state' : 'status';
-    return p[2] === sk3 ? (p.length === 3 && op.op === 'set' ? ownStatus_(top, item, op.value) : 'неверный статус') : ownField_(top, item, p[2]);
+    if (top === 'cards' && (p.length !== 3 || op.op !== 'set')) return 'карточку меняет SOP-менеджер';
+    return p[2] === sk3 ? (p.length === 3 && op.op === 'set' ? ownStatus_(top, item, op.value) : 'неверный статус') : ownField_(top, item, p[2], op.value);
   }
 
   return 'нет прав на «' + top + '»';
@@ -886,7 +899,7 @@ function checkNew_(top, me, value) {
     if (String(value.userId) === uid) return null;
     if (value.promo) return 'поздравление с уровнем отправляет SOP-менеджер';
     var lead = me.role === 'leader' || lvl_(me) === 'boss';
-    var okKind = value.kind === 'shot' || value.kind === 'ini_in' || value.kind === 'asset_in' || (value.kind === 'xt' && value.xt && value.xt.k === 'sub') || (value.kind === 'err' && me.mentor) || (value.kind === 'ini' && lead);
+    var okKind = value.kind === 'shot' || value.kind === 'ini_in' || value.kind === 'asset_in' || value.kind === 'card_re' || (value.kind === 'xt' && value.xt && value.xt.k === 'sub') || (value.kind === 'err' && me.mentor) || (value.kind === 'ini' && lead);
     return okKind && !value.text ? null : 'уведомление другому — только о своём действии';
   }
   if (top === 'errors') {
@@ -894,6 +907,7 @@ function checkNew_(top, me, value) {
     return ['open', 'assigned'].indexOf(value.status) >= 0 && value.retest == null && value.closedAt == null ? null : 'новая ошибка — «открыта» или «повторная проверка»';
   }
   if (top === 'xtasks') return 'сверхзадачу выдаёт SOP-менеджер';
+  if (top === 'cards') return 'карточку даёт SOP-менеджер или CEO';
   if (String(value[OWN[top]]) !== uid) return 'запись — только от своего имени';
   // новая запись не приходит с полями, которые ставят SOP-менеджер или сервер (v20)
   if (top === 'requests' && (value.state !== 'open' || value.score != null || ['verdict', 'reply', 'repliedAt', 'closedAt'].some(function (k) { return value[k] != null; }))) return 'новая заявка — открытая, без балла и ответа';

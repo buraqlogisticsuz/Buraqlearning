@@ -80,6 +80,8 @@ export function startTelegram({ token, C, strings, fetch = globalThis.fetch, log
     if (n.kind === 'ini' && n.ini) return tpl(T('n_ini_' + n.ini.s), { x: n.ini.title }) + (n.ini.xp ? ' (+' + n.ini.xp + ' XP)' : '') + (n.ini.reply ? ' — ' + n.ini.reply : '');
     if (n.kind === 'asset' && n.asset) return tpl(T('n_as_' + n.asset.k), { x: n.asset.name });
     if (n.kind === 'asset_in' && n.assetIn) return tpl(T('n_asin_' + n.assetIn.k), { name: n.assetIn.name || '—', x: (n.assetIn.items || []).join(', ') });   // «Qabul qildim» (v22)
+    if ((n.kind === 'card' || n.kind === 'card_x') && n.card) return tpl(T('n_' + n.kind + '_' + n.card.type), { x: T('dc_cat_' + n.card.cat) });   // интизом (v27)
+    if ((n.kind === 'card_re' || n.kind === 'card_adm') && n.cardRe) return tpl(T('n_' + n.kind), { name: n.cardRe.name || '—', x: T('dc_' + n.cardRe.type) });
     if (n.kind === 'pulse') return T('n_pulse');
     if (n.kind === 'err' && n.err) return tpl(T(n.err.retrain ? 'n_err_train' : 'n_err'), { c: T('ec_' + n.err.cat), x: n.err.ttl });
     if (n.kind === 'errfix' && n.err) return tpl(T('n_errfix'), { name: n.err.name, x: n.err.ttl, n: n.err.score });
