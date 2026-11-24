@@ -10,7 +10,7 @@
 (function (root) {
   'use strict';
   var S = root.LmsSync;
-  var SERVER_V = 27;                      // версия сервера (tools/lms-gs), под которую написана эта страница
+  var SERVER_V = 28;                      // версия сервера (tools/lms-gs), под которую написана эта страница
   var URL_ = String(root.LMS_SERVER || '').trim();
   var DEMO = !URL_;                      // адреса нет — страница пишет «Server ulanmagan» (демо больше нет)
   var K = { token: 'lor-lms-token', cache: 'lor-lms-cache', queue: 'lor-lms-queue', lang: 'lor-lms-lang' };
@@ -174,7 +174,7 @@
     /* ИИ через сервер (ключ Claude API — только в свойствах скрипта): messages — [{ role, content }] */
     ai: function (messages, opts) {
       opts = opts || {};
-      return call('ai', { messages: messages, tier: opts.tier, json: !!opts.json }, opts.signal);
+      return call('ai', { messages: messages, tier: opts.tier, json: !!opts.json, long: !!opts.long }, opts.signal);
     },
     resetPassword: function (userId) { return call('resetPassword', { userId: userId }); },
     changePassword: function (old, password) { return call('password', { old: old, password: password }); },

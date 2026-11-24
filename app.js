@@ -1430,7 +1430,8 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
       opts = opts || {};
       var msgs = typeof input === 'string' ? [{ role: 'user', content: input }]
         : (input || []).map(function (m) { return { role: m.role === 'assistant' ? 'assistant' : 'user', content: String(m.content || '') }; });
-      return SV.ai(msgs, { tier: opts.modelTier === 'quick' ? 'quick' : 'default', json: json, signal: opts.signal }).then(function (r) {
+      return SV.ai(msgs, { tier: opts.modelTier === 'quick' ? 'quick' : 'default', json: json, long: !!opts.long, signal: opts.signal }).then(function (r) {
+        if (json && r.truncated) { var cut = new Error('truncated'); cut.code = 'ai_long'; throw cut; }   // JSON cut by the length limit cannot be read
         if (json) return looseJson(r.text);
         if (opts.onText) opts.onText({ text: r.text });
         return { text: r.text, truncated: !!r.truncated };
@@ -1453,7 +1454,9 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     if (c === 'ai_off' || c === 'ai_key') return t('srv_ai_unavail');
     if (c === 'net') return t('srv_net');
     if (c === 'refused') return t('ai_refused');
-    return t('ai_err');
+    if (c === 'ai_long') return t('ai_long');
+    /* anything else — with the server's own words, so a screenshot says what broke */
+    return t('ai_err') + (e && e.message && !/^(bad json|truncated)$/.test(e.message) ? ' (' + String(e.message).slice(0, 200) + ')' : '');
   }
   var LANG_NAME = { uz: 'o‘zbek tili (lotin yozuvi)', ru: 'русский язык', en: 'English', zh: '简体中文 (Simplified Chinese)' };
   function stems(s) { var m = String(s || '').toLowerCase().replace(/[‘’'`ʻʼ]/g, '').match(/[a-zа-яёқғҳў0-9]{3,}/g) || []; var o = {}; m.forEach(function (w) { o[w.slice(0, 5)] = 1; }); return o; }
@@ -9632,7 +9635,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     var res = qnScore(o.q, o.u), ta = qnTemperAll(o.q, res), measured = !!ta || res.some(function (r) { return r.n; });
     /* пометки «Javoblar sifati» (жёлтый / красный, «слишком хорошо») — готовым списком, только чтобы снизить уверенность */
     var notes = o.notes || qnQNotes(qnQuality(o.q, o.u.qa && o.u.qa.answers, o.u.qa && o.u.qa.meta));
-    return o.sampler.json(qnAiPrompt(o.q, o.u, res, ta, o.lang, { notes: notes }), { signal: o.signal }).then(function (r) {
+    return o.sampler.json(qnAiPrompt(o.q, o.u, res, ta, o.lang, { notes: notes }), { signal: o.signal, long: true }).then(function (r) {
       var x = qnAiClean(r, { measured: measured, emp: o.u.role === 'employee' && o.u.status !== 'candidate' }); if (!x) { var e = new Error('bad json'); e.code = 'invalid_json'; throw e; }
       var at = Date.now(), scores = res.filter(function (z) { return z.n; }).map(function (z) { return { s: z.s.id, m: z.few ? null : Math.round(z.mean * 100) / 100, n: z.n }; });
       o.update(function (db) { patchUser(db, o.u.id, function (z) { z.qaReport = { at: at, by: o.by, v: QN_AI_V, auto: !!o.auto, lang: o.lang, scores: scores, data: x }; }); });
@@ -9746,7 +9749,7 @@ var TOUCH_ICON = 'icons/apple-touch-icon.png';
     function make() {
       if (!sampler || busy[0] || !enough) return;
       var list = rows.slice(0, 40), c = new AbortController(); ctl.current = c; busy[1](true); er[1]('');
-      sampler.json(qnTeamPrompt(p.q, list, p.lang), { signal: c.signal }).then(function (r) {
+      sampler.json(qnTeamPrompt(p.q, list, p.lang), { signal: c.signal, long: true }).then(function (r) {
         var x = qnTeamClean(r, list.length); if (!x) { er[1](t('ai_bad_json')); return; }
         var at = Date.now(), ids = list.map(function (z) { return z.u.id; });
         p.update(function (d) { patchUser(d, p.user.id, function (z) { z.qaTeam = { at: at, by: p.user.id, v: QN_AI_V, lang: p.lang, ids: ids, data: x }; }); });

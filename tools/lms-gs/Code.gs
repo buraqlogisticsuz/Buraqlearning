@@ -21,7 +21,7 @@
  *
  * Запрос — POST с JSON { action, token, … }, ответ — JSON { ok, … } или { ok: false, code, error }.
  */
-var LMS_VERSION = 27;          // 27: интизом — «Sariq kartochka» и «Hayfsan» (cards): даёт SOP-менеджер или CEO, сотрудник видит свои, «Tanishdim» и объяснение; 26: валюта условий зарплаты — сумы или доллары (pay cur, lms-pay.js); 25: гибкие условия зарплаты — KPI-бонус % от оклада, доплаты/удержания, KPI «% от факта», ступени (lms-pay.js); 24: свои условия зарплаты у каждого сотрудника (pay.people[id]: оклад, KPI-бонус, свои KPI; lms-pay.js); 23: «Imtiyozlar va talablar» уровня — сотрудникам только отмеченные варианты (levels[].offer); 22: «Qabul qildim» — уведомление SOP-менеджеру и CEO (asset_in); 21: цены — «Kontent → Narxlar», сотрудникам в «Baza» (prices); 20: защита правок (id карточек, тест — одна попытка, балл и статусы, минуты учёбы, уведомления другим);  2: файлы — отдельно на Диске, действие file; 3: ИИ через Claude API (действие ai);
+var LMS_VERSION = 28;          // 28: длинный ответ ИИ (long) — до AI_MAX_TOKENS_LONG токенов: вывод по анкете и по коллективу не обрывается; 27: интизом — «Sariq kartochka» и «Hayfsan» (cards): даёт SOP-менеджер или CEO, сотрудник видит свои, «Tanishdim» и объяснение; 26: валюта условий зарплаты — сумы или доллары (pay cur, lms-pay.js); 25: гибкие условия зарплаты — KPI-бонус % от оклада, доплаты/удержания, KPI «% от факта», ступени (lms-pay.js); 24: свои условия зарплаты у каждого сотрудника (pay.people[id]: оклад, KPI-бонус, свои KPI; lms-pay.js); 23: «Imtiyozlar va talablar» уровня — сотрудникам только отмеченные варианты (levels[].offer); 22: «Qabul qildim» — уведомление SOP-менеджеру и CEO (asset_in); 21: цены — «Kontent → Narxlar», сотрудникам в «Baza» (prices); 20: защита правок (id карточек, тест — одна попытка, балл и статусы, минуты учёбы, уведомления другим);  2: файлы — отдельно на Диске, действие file; 3: ИИ через Claude API (действие ai);
                                // 4: адресаты идей — CEO, Project Manager, руководитель компании (свой вход, role 'leader');
                                // 5: у идеи несколько адресатов (to — список), repliedBy — кто ответил;
                                // 6: свой профиль — имя и фото, смена логина и пароля (действие account);
@@ -62,7 +62,8 @@ var LOGIN_RE = /^[a-z0-9][a-z0-9._-]{2,31}$/;   // логин: 3–32 симво
 var AUDIT_KEEP = 500;             // журнал нарушений защиты урока — последние 500 записей
 var AI_MODEL = 'claude-opus-5-5';  // свойство AI_MODEL меняет модель без правки кода
 var AI_LIMIT = 30, AI_LIMIT_ADMIN = 200;  // запросов к ИИ в день на сотрудника / SOP-менеджера
-var AI_MAX_TOKENS = 4096;         // ответ должен уложиться в минуту — столько Apps Script ждёт внешний запрос
+var AI_MAX_TOKENS = 4096;
+var AI_MAX_TOKENS_LONG = 16000;   // вывод ИИ по анкете и по коллективу (req.long, только CEO и SOP-менеджер): большой JSON по-узбекски         // ответ должен уложиться в минуту — столько Apps Script ждёт внешний запрос
 var AI_MAX_CHARS = 200000;        // длина запроса (текст стандартов + переписка)
 // модели, у которых Claude API сам повторяет отказанный запрос на запасной модели (fallbacks: "default")
 var AI_FALLBACK = ['claude-opus-5-5', 'claude-opus-5', 'claude-fable-5-1', 'claude-sonnet-5-5'];
@@ -1213,7 +1214,9 @@ function aiRequest_(s, req) {
   aiUsage_(function (u) { if ((u.n[uid] || 0) >= limit) throw err_('ai_limit', 'Лимит запросов к ИИ на сегодня исчерпан (' + limit + ')'); u.n[uid] = (u.n[uid] || 0) + 1; });
 
   var model = aiProp_('AI_MODEL', AI_MODEL);
-  var body = { model: model, max_tokens: +aiProp_('AI_MAX_TOKENS', AI_MAX_TOKENS), messages: msgs,
+  var maxT = +aiProp_('AI_MAX_TOKENS', AI_MAX_TOKENS);
+  if (req.long && me.role === 'admin') maxT = Math.max(maxT, AI_MAX_TOKENS_LONG);
+  var body = { model: model, max_tokens: maxT, messages: msgs,
     output_config: { effort: req.tier === 'quick' ? 'low' : 'medium' } };
   if (req.json) body.system = 'Reply with valid JSON only: no markdown code fences, no commentary before or after it.';
   var headers = { 'x-api-key': key, 'anthropic-version': '2023-06-01' };

@@ -420,7 +420,7 @@ const pickN = n => ({ userId: n.userId, kind: n.kind, route: n.route, err: n.err
 test('since: та же версия — без данных; после правки — новое состояние', () => {
   const { D, A } = platform();
   const v = D({ action: 'load' });
-  assert.deepEqual(D({ action: 'since', rev: v.rev }), { ok: true, v: 27, ai: false, rev: v.rev, same: true });
+  assert.deepEqual(D({ action: 'since', rev: v.rev }), { ok: true, v: 28, ai: false, rev: v.rev, same: true });
   A({ action: 'patch', ops: [{ op: 'set', path: ['notifications', { id: 9 }], value: { id: 9, userId: 10427, text: 'yangi' }, after: null }] });
   const n = D({ action: 'since', rev: v.rev });
   assert.equal(n.rev, v.rev + 1); assert.equal(n.state.notifications[0].text, 'yangi');
@@ -491,6 +491,11 @@ test('ИИ: без ключа — «не подключён»; с ключом �
   const j = ask(A, { json: true });
   assert.equal(j.truncated, true);
   assert.match(g.calls[1].body.system, /JSON only/); assert.deepEqual(g.calls[1].body.output_config, { effort: 'medium' });
+  // длинный вывод (анкета, коллектив, v28): CEO и SOP-менеджеру — до 16 000 токенов; сотруднику флаг не действует
+  replies.push({ body: { stop_reason: 'end_turn', content: [{ type: 'text', text: '{}' }] } }, { body: { stop_reason: 'end_turn', content: [{ type: 'text', text: 'ok' }] } });
+  ask(A, { json: true, long: true }); assert.equal(g.calls[2].body.max_tokens, 16000);
+  ask(D, { long: true }); assert.equal(g.calls[3].body.max_tokens, 4096);
+  g.calls.splice(2, 2);
 
   // отказ модели, перегрузка API (место в лимите возвращается), переписка должна заканчиваться вопросом
   replies.push({ body: { stop_reason: 'refusal', content: [] } });
@@ -501,7 +506,7 @@ test('ИИ: без ключа — «не подключён»; с ключом �
   assert.equal(ask(D).code, 'ai_key');
   assert.equal(D({ action: 'ai', messages: [{ role: 'user', content: 'a' }, { role: 'assistant', content: 'b' }] }).code, 'bad');
   const u = JSON.parse(g.props.AI_USAGE);
-  assert.equal(u.n['10427'], 2, 'учтены удачный запрос и отказ; сбои API — нет');
+  assert.equal(u.n['10427'], 3, 'учтены удачные запросы (с long — тоже) и отказ; сбои API — нет');
   assert.equal(u.tin, 120); assert.equal(u.tout, 30);
 });
 
